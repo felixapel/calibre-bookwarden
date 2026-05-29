@@ -1,0 +1,167 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Used by various libraries to generate executable scripts based on machine specifications
+#  Many such options exist; some are listed here:
+#  https://github.com/github/gitignore/blob/main/Python.gitignore
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.cwd
+.pytest_cache/
+pytestdebug.log
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the Python version
+#   is elected by the tool chain. Automated tools like tox or nox can override this file.
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#1173, pipenv managed virtualenvs should use the
+#   standard site-directory layout, so this is included for completeness.
+# .venv/
+# Pipfile.lock
+
+# poetry
+#   Similar to pipenv, poetry managed virtualenvs should use the standard site-directory layout.
+# .venv/
+# poetry.lock
+
+# pdm
+#   Similar to pipenv, pdm managed virtualenvs should use the standard site-directory layout.
+# .pdm-python
+# .pdm-build/
+
+# PEP 582; used by e.g. github.com/davidhalter/jedi
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# calibre-ai-auditor specific
+.state/
+.artifacts/
+artifacts/
+reports/
+scratch/
+src/calibre_ai_auditor/web/static/
+webui/dist/
+webui/node_modules/
+
+# Local libraries and ebooks (do not commit copyrighted books)
+user_library/
+fake_library/*
+!fake_library/README.md
+*.epub
+*.mobi
+*.azw3
+*.pdf
+*.cbz
+*.cbr

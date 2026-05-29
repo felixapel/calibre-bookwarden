@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Review: {{ title }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #1e293b; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .meta { color: #64748b; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    section { margin-bottom: 1.5rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; text-align: left; }
+    th { background: #f8fafc; }
+    .flag { color: #b45309; font-weight: 600; }
+    pre { background: #f1f5f9; padding: 0.75rem; overflow-x: auto; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  <p class="meta">Book key: <code>{{ book_key }}</code> · Run: {{ run_id }} · Status: {{ status }}</p>
+
+  {% if authors %}
+  <section>
+    <h2>Authors</h2>
+    <p>{{ authors | join(', ') }}</p>
+  </section>
+  {% endif %}
+
+  {% if risk_flags %}
+  <section>
+    <h2>Risk flags</h2>
+    <ul>
+      {% for flag in risk_flags %}<li class="flag">{{ flag }}</li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if resolved_fields %}
+  <section>
+    <h2>Proposed changes</h2>
+    <table>
+      <thead><tr><th>Field</th><th>Value</th><th>Confidence</th></tr></thead>
+      <tbody>
+        {% for row in resolved_fields %}
+        <tr><td>{{ row.field }}</td><td>{{ row.value }}</td><td>{{ row.confidence or '—' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% if extracted %}
+  <section>
+    <h2>Extracted from file</h2>
+    <pre>{{ extracted }}</pre>
+  </section>
+  {% endif %}
+
+  {% if candidates %}
+  <section>
+    <h2>Provider candidates ({{ candidates | length }})</h2>
+    <table>
+      <thead><tr><th>Provider</th><th>Title</th></tr></thead>
+      <tbody>
+        {% for c in candidates[:10] %}
+        <tr>
+          <td>{{ c.provider | default('—') }}</td>
+          <td>{{ c.metadata.title | default('—') if c.metadata else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% if snippets %}
+  <section>
+    <h2>Text snippets</h2>
+    {% for s in snippets[:5] %}
+    <p><strong>{{ s.source or s.get('source') }}</strong>{% if s.page_range or s.get('page_range') %} ({{ s.page_range or s.get('page_range') }}){% endif %}</p>
+    <pre>{{ (s.text or s.get('text', ''))[:800] }}</pre>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if decision %}
+  <section>
+    <h2>Judge decision</h2>
+    <pre>{{ decision }}</pre>
+  </section>
+  {% endif %}
+</body>
+</html>

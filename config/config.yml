@@ -1,0 +1,76 @@
+profile: default
+
+library:
+  path: null          # overridden by BOOKAUDIT_LIBRARY_PATH env var
+  read_only: true
+
+# ─── Storage ────────────────────────────────────────────────────────────────
+database:
+  backend: postgres
+  postgres_dsn: "postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit"
+
+queue:
+  backend: valkey
+  valkey_url: "redis://valkey:6379/0"
+
+rate_limits:
+  enabled: true
+  backend: valkey
+  valkey_url: "redis://valkey:6379/1"
+
+storage:
+  sqlite_path: "/state/bookaudit.db"   # fallback / legacy field, unused when postgres is active
+  artifacts_dir: "/artifacts"
+
+# ─── Extraction Sidecars ────────────────────────────────────────────────────
+extractors:
+  tika:
+    enabled: true
+    base_url: "http://tika:9998"
+    timeout_seconds: 60
+    write_limit: 200000
+    max_embedded_resources: 5
+
+# ─── Semantic Search / Vectors ──────────────────────────────────────────────
+vectors:
+  enabled: false           # set true when nomic-embed-text is pulled in Ollama
+  qdrant_url: "http://qdrant:6333"
+  collection: "bookaudit_evidence"
+  embedding_provider: ollama
+  embedding_model: "nomic-embed-text"
+  local_only: true
+
+# ─── Preview / PDF rendering ────────────────────────────────────────────────
+preview:
+  gotenberg_enabled: true
+  gotenberg_url: "http://gotenberg:3000"
+  timeout_seconds: 30
+
+# ─── Metadata Providers ─────────────────────────────────────────────────────
+providers:
+  calibre_fetch: true
+  openlibrary: true
+  google_books: true
+
+# ─── Security ───────────────────────────────────────────────────────────────
+allow_remote_file_upload: false
+
+paperless:
+  enabled: false
+  webhook_secret_env: "PAPERLESS_WEBHOOK_SECRET"
+
+# ─── Privacy ────────────────────────────────────────────────────────────────
+privacy:
+  allow_remote_text: false
+  allow_remote_images: false
+  max_remote_chars: 4000
+  max_images_per_book: 2
+
+# ─── LLM / AI ───────────────────────────────────────────────────────────────
+routing:
+  model_config: "config/models.yml"
+
+ollama_enabled: true
+ollama_base_url: "http://192.168.0.122:11434/v1"
+judge_model: "gemma4:e4b-it-q4_K_M"
+vision_model: "gemma4:e4b-it-q4_K_M"

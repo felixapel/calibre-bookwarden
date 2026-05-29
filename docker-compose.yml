@@ -1,0 +1,84 @@
+services:
+  app:
+    build: .
+    image: calibre-ai-auditor:v0.1
+    user: "${UID:-1000}:${GID:-1000}"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      BOOKAUDIT_LIBRARY_PATH: /library
+      BOOKAUDIT_DB_PATH: /state/bookaudit.db
+      BOOKAUDIT_ARTIFACTS_DIR: /artifacts
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit
+      BOOKAUDIT_READ_ONLY: "true"
+    volumes:
+      - ./fake_library:/library:ro
+      - ./user_library:/input_files:ro
+      - ./.state:/state
+      - ./.artifacts:/artifacts
+      - ./config:/app/config:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  tika:
+    image: apache/tika:latest
+    restart: unless-stopped
+    ports:
+      - "9998:9998"
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bookaudit
+      POSTGRES_PASSWORD: bookaudit
+      POSTGRES_DB: bookaudit
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookaudit -d bookaudit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:latest
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    volumes:
+      - valkey-data:/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:
+  valkey-data:
+  qdrant-data:
