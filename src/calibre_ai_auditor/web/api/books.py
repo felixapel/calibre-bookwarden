@@ -119,6 +119,84 @@ async def get_resolution(book_key: str, session: Session = Depends(get_session))
     return {"status": "success", "data": package.decision}
 
 
+@router.get("/{book_key}/verdict", response_model=APIResponse)
+async def get_book_verdict(
+    book_key: str,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> Any:
+    """Run the v1.0 ContentVerificationEngine on a book and return the BookVerdict.
+
+    Reads the latest EvidencePackage for the book, extracts deterministic
+    observations from its `extracted` and `snippets` fields, and produces
+    per-field verdicts via the engine.  No LLM calls — pure deterministic rules.
+    """
+    from calibre_ai_auditor.verification import (
+        ContentVerificationEngine,
+        DeclaredMetadata,
+        ObservationSet,
+    )
+    from calibre_ai_auditor.extractors.heuristics import (
+        extract_heuristics,
+        extract_isbn,
+    )
+
+    statement = select(BookRecord).where(BookRecord.book_key == book_key)
+    book = session.exec(statement).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    pkg_stmt = (
+        select(EvidencePackage)
+        .where(EvidencePackage.book_key == book_key)
+        .order_by(EvidencePackage.created_at.desc())
+    )
+    package = session.exec(pkg_stmt).first()
+
+    # Build declared metadata from the book record
+    cm = book.current_metadata or {}
+    declared = DeclaredMetadata(
+        title=cm.get("title"),
+        authors=cm.get("authors") or [],
+        publisher=cm.get("publisher"),
+        published_date=cm.get("published_date"),
+        language=cm.get("language"),
+        series=cm.get("series"),
+        series_index=cm.get("series_index"),
+        isbn=(cm.get("identifiers") or {}).get("isbn"),
+    )
+
+    # Build observations from the evidence package (deterministic only)
+    snippets_text = ""
+    if package and package.snippets:
+        snippets_text = "\n".join(s.get("text", "") for s in package.snippets)
+    extracted = (package.extracted if package else {}) or {}
+    heuristic_obs = extract_heuristics(package.snippets if package else []) if package else {}
+
+    obs = ObservationSet(
+        title_page_text=snippets_text[:5000] if snippets_text else None,
+        copyright_page_text=snippets_text[:5000] if snippets_text else None,
+        body_sample=snippets_text[:10000] if snippets_text else None,
+        isbn_extracted=(extracted.get("identifiers") or {}).get("isbn")
+        or heuristic_obs.get("identifiers", {}).get("isbn"),
+        title_extracted=extracted.get("title"),
+        authors_extracted=extracted.get("authors"),
+        publisher_extracted=extracted.get("publisher"),
+        date_extracted=extracted.get("published_date"),
+        language_detected=extracted.get("language"),
+    )
+
+    engine = ContentVerificationEngine()
+    verdict = engine.verify(
+        book_key=book_key,
+        run_id=book.run_id or "live",
+        declared=declared,
+        observed=obs,
+    )
+
+    return {"status": "success", "data": verdict.model_dump()}
+
+
 @router.get("/{book_key}/similar", response_model=APIResponse)
 async def get_similar_books(
     book_key: str,
