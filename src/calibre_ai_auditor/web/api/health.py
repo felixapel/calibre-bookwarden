@@ -1,12 +1,13 @@
 import shutil
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.extractors.tika_client import TikaClient
 from calibre_ai_auditor.llm.router import LLMRouter
 from calibre_ai_auditor.vectors.client import VectorClient
+from calibre_ai_auditor.verification.metrics import get_metrics
 
 router = APIRouter()
 
@@ -20,13 +21,20 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/metrics")
+async def prometheus_metrics() -> Response:
+    """Prometheus text exposition format for v1.0 worker pool + LLM + OCR metrics."""
+    body = get_metrics().render()
+    return Response(content=body, media_type="text/plain; version=0.0.4")
+
+
 @router.get("/doctor")
 async def doctor_check(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     results: dict[str, Any] = {
         "dependencies": {},
         "connectivity": {},
     }
-    
+
     # 1. System Tools
     tools = ["calibredb", "ebook-meta", "fetch-ebook-metadata", "ocrmypdf"]
     for tool in tools:
@@ -34,7 +42,7 @@ async def doctor_check(settings: Settings = Depends(get_settings)) -> dict[str, 
         results["dependencies"][tool] = {"found": path is not None, "path": path}
 
     # 2. Sidecars
-    
+
     # Tika
     tika = TikaClient(
         enabled=settings.extractors.tika.enabled,
@@ -66,5 +74,19 @@ async def doctor_check(settings: Settings = Depends(get_settings)) -> dict[str, 
             "ok": await provider.test_connection(),
             "name": provider.name,
         }
+
+    # v1.0: discover homelab inference hosts
+    from calibre_ai_auditor.verification.host_registry import (
+        HostRegistry,
+        HostRegistryConfig,
+        default_felix_homelab,
+    )
+    host_cfg = HostRegistryConfig(hosts=default_felix_homelab())
+    host_reg = HostRegistry(host_cfg)
+    try:
+        await host_reg.health_check_all()
+        results["connectivity"]["inference_hosts"] = host_reg.summary()
+    finally:
+        await host_reg.__aexit__(None, None, None)
 
     return results

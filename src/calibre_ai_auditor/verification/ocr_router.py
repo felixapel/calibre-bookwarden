@@ -14,6 +14,9 @@ This module is import-safe: if paddleocr or surya aren't installed, the provider
 are simply not registered.  Tesseract is the universal fallback.
 """
 
+# NOTE: fitz (PyMuPDF), paddleocr, and surya are all optional at runtime.
+# This file is excluded from strict mypy in pyproject.toml.
+
 from __future__ import annotations
 
 import asyncio
@@ -486,7 +489,10 @@ class OCRRouter:
         )
         # PaddleOCR / Surya expose .ocr_pdf_pages too; Tesseract already has it
         if hasattr(provider, "ocr_pdf_pages"):
-            return await provider.ocr_pdf_pages(pdf_path, page_range=page_range, language=language)
+            result: list[OCRPageResult] = await provider.ocr_pdf_pages(
+                pdf_path, page_range=page_range, language=language
+            )
+            return result
         raise RuntimeError(f"Provider {provider.name} does not support PDF page OCR")
 
     async def health(self) -> dict[str, bool]:

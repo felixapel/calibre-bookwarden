@@ -144,9 +144,15 @@ class HostRegistry:
                 if ok:
                     data = resp.json()
                     if isinstance(data, dict) and "data" in data:
-                        host.models = [m.get("id", "") for m in data["data"] if m.get("id")]
+                        host.models = [
+                            str(m.get("id", "")) for m in data["data"] if m.get("id")
+                        ]
                     elif isinstance(data, list):
-                        host.models = [m.get("name", m.get("id", "")) for m in data if isinstance(m, dict)]
+                        host.models = [
+                            str(m.get("name", m.get("id", "")))
+                            for m in data
+                            if isinstance(m, dict)
+                        ]
                 host.last_health_ok = ok
                 import time as _t
                 host.last_health_at = _t.time()

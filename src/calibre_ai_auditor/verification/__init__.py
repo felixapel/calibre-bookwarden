@@ -7,6 +7,15 @@ from .engine import (
     ObservationSet,
     build_observation_from_extraction,
 )
+from .engine_llm import (
+    LLMWitness,
+    WitnessCache,
+    WitnessCacheEntry,
+    WitnessConfig,
+    WitnessResult,
+    WITNESS_SCHEMA,
+    build_witness_prompt,
+)
 from .verdict import (
     AUTO_APPLY_MIN_CONFIDENCE,
     AUTO_APPLY_MIN_FIELD_CONFIDENCE,
@@ -39,4 +48,11 @@ __all__ = [
     "RestorePoint",
     "RestorePointStore",
     "ConservativeAutoApply",
+    "LLMWitness",
+    "WitnessCache",
+    "WitnessCacheEntry",
+    "WitnessConfig",
+    "WitnessResult",
+    "WITNESS_SCHEMA",
+    "build_witness_prompt",
 ]

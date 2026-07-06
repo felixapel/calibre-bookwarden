@@ -126,7 +126,7 @@ class RestorePointStore:
 
         # 3. Original cover (if changed)
         if original_cover and original_cover.exists():
-            target = rp_dir / "original.cover" + original_cover.suffix
+            target = rp_dir / ("original.cover" + original_cover.suffix)
             try:
                 shutil.copy2(original_cover, target)
             except OSError as e:

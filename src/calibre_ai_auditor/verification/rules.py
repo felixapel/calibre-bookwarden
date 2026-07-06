@@ -768,7 +768,7 @@ def verify_authors(
         )
 
     # Overlap (with transliteration + surname tolerance)
-    def _covered_by(src_list: list[str], dst_list: list[str]) -> bool:
+    def _covered_by(src_list: set[str] | list[str], dst_list: set[str] | list[str]) -> bool:
         for s_raw in src_list:
             s = _normalize_text(s_raw)
             for d_raw in dst_list:
@@ -1276,5 +1276,5 @@ RULE_REGISTRY = {
 }
 
 
-def get_rule(field: str):
+def get_rule(field: str) -> Any:
     return RULE_REGISTRY.get(field)

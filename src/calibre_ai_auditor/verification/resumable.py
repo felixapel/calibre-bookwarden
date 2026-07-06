@@ -80,7 +80,7 @@ class ResumableRunStore:
 
         if valkey_url:
             try:
-                import redis.asyncio as aioredis  # type: ignore
+                import redis.asyncio as aioredis
                 self._client = aioredis.from_url(valkey_url, decode_responses=True)
             except Exception as e:
                 logger.warning("ResumableRunStore: Valkey unavailable (%s); using memory", e)

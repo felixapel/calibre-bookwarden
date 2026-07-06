@@ -449,5 +449,198 @@ def config(
     typer.echo(json_lib.dumps(out, indent=2, default=str))
 
 
+@app.command()
+def verify(
+    ctx: typer.Context,
+    limit: Annotated[
+        int, typer.Option("--limit", help="Max books to verify (0 = unlimited)")
+    ] = 50,
+    library: Annotated[
+        str | None, typer.Option("--library", help="Override library path")
+    ] = None,
+    use_llm: Annotated[
+        bool, typer.Option("--use-llm/--no-llm", help="Call LLM for ambiguous fields")
+    ] = False,
+    format: Annotated[
+        str, typer.Option("--format", help="Report format: text|json")
+    ] = "text",
+) -> None:
+    """
+    v1.0 ContentVerificationEngine: verify Calibre metadata against book content.
+
+    Runs the deterministic engine on every book in the library.  With --use-llm,
+    ambiguous fields are sent to the configured LLM for adjudication.  Outputs
+    a per-book report with field-level verdicts.
+    """
+    import time as _t
+    from calibre_ai_auditor.verification import (
+        ContentVerificationEngine,
+        DeclaredMetadata,
+        LLMWitness,
+        ObservationSet,
+        WitnessConfig,
+    )
+    from calibre_ai_auditor.verification.metrics import get_metrics
+
+    settings: Settings = ctx.obj
+    lib_path = Path(library) if library else settings.library.path
+    if not lib_path:
+        typer.secho("Error: No library path configured.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    cli = CalibreCLI(lib_path)
+    books = cli.list_books()
+    if limit:
+        books = books[:limit]
+    if not books:
+        typer.secho("No books found.", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+
+    engine = ContentVerificationEngine()
+    metrics = get_metrics()
+    run_id = f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    metrics.set_run_progress(run_id, total=len(books), completed=0)
+
+    # Optional LLM witness
+    witness = None
+    if use_llm:
+        from calibre_ai_auditor.llm.router import LLMRouter
+
+        router = LLMRouter(settings)
+        witness = LLMWitness(router, WitnessConfig(cache_responses=True))
+
+    typer.echo(f"Verifying {len(books)} books in {lib_path} (run_id={run_id})")
+    started = _t.monotonic()
+    verdicts: list[dict[str, Any]] = []
+    counts: dict[str, int] = {"no_change": 0, "suggest_fix": 0, "needs_review": 0, "defer": 0}
+
+    for i, book in enumerate(books, start=1):
+        book_key = f"calibre:{book['id']}"
+        title = book.get("title", "")
+        authors_str = book.get("authors", "")
+        if isinstance(authors_str, str):
+            authors_list = [a.strip() for a in authors_str.split("&") if a.strip()]
+        else:
+            authors_list = []
+
+        # Extract real content from the first available format
+        formats = book.get("formats", [])
+        snippet_text = ""
+        for fmt in formats[:1]:
+            file_path = Path(fmt)
+            if file_path.exists():
+                snippets = extract_snippets(file_path, max_pages=3)
+                snippet_text = "\n".join(s.text for s in snippets)
+                break
+
+        heuristics = extract_heuristics(
+            [{"text": snippet_text, "source": "first_pages"}] if snippet_text else []
+        )
+
+        declared = DeclaredMetadata(
+            title=title,
+            authors=authors_list,
+            publisher=book.get("publisher"),
+            published_date=book.get("pubdate"),
+            language=book.get("languages"),
+            series=book.get("series"),
+            isbn=(book.get("identifiers") or {}).get("isbn") if book.get("identifiers") else None,
+        )
+        observed = ObservationSet(
+            title_page_text=snippet_text[:5000] if snippet_text else None,
+            body_sample=snippet_text[:10000] if snippet_text else None,
+            title_extracted=heuristics.get("title"),
+            authors_extracted=heuristics.get("authors") or [],
+            isbn_extracted=(heuristics.get("identifiers") or {}).get("isbn"),
+            evidence_quality="high" if len(snippet_text) > 500 else "low",
+        )
+
+        verdict = engine.verify(book_key=book_key, run_id=run_id, declared=declared, observed=observed)
+
+        # Optionally call LLM witness for ambiguous fields
+        if witness:
+            book_title_observed = verdict.field_verdicts.get("title")
+            book_title_str = book_title_observed.observed_value if book_title_observed else None
+            book_authors_observed = verdict.field_verdicts.get("authors")
+            book_authors_list = book_authors_observed.observed_value if book_authors_observed else None
+
+            for fname, fv in list(verdict.field_verdicts.items()):
+                if fv.verdict.value == "ambiguous":
+                    result = asyncio.run(
+                        witness.witness_field(
+                            field_name=fname,
+                            current_fv=fv,
+                            book_title=book_title_str,
+                            book_authors=book_authors_list,
+                        )
+                    )
+                    if result.success and result.refined_verdict:
+                        verdict.field_verdicts[fname] = result.refined_verdict
+                        if result.judge_call:
+                            metrics.record_llm_call(
+                                provider=result.judge_call.provider,
+                                model=result.judge_call.model,
+                                duration_ms=result.judge_call.duration_ms,
+                                tokens_in=result.judge_call.tokens_in,
+                                tokens_out=result.judge_call.tokens_out,
+                            )
+
+        counts[verdict.action.value] = counts.get(verdict.action.value, 0) + 1
+        metrics.record_book_action(verdict.action.value, run_id)
+
+        if format == "json":
+            verdicts.append(verdict.model_dump())
+        else:
+            typer.echo(
+                f"  [{i:>3}/{len(books)}] {book_key:20s} "
+                f"action={verdict.action.value:12s} "
+                f"conf={verdict.overall_confidence:3d} "
+                f"flags={','.join(verdict.risk_flags) or '-':20s}  "
+                f"title={title[:60]!r}"
+            )
+
+        metrics.set_run_progress(run_id, total=len(books), completed=i)
+
+    elapsed = _t.monotonic() - started
+    typer.secho("", fg=typer.colors.WHITE)
+    typer.secho(f"Done in {elapsed:.1f}s ({len(books)/elapsed:.1f} books/s)", fg=typer.colors.CYAN)
+    for action, count in counts.items():
+        typer.echo(f"  {action:14s} {count}")
+
+    if format == "json":
+        typer.echo(json_lib.dumps(
+            {"run_id": run_id, "elapsed_seconds": elapsed, "verdicts": verdicts},
+            indent=2,
+            default=str,
+        ))
+
+
+@app.command()
+def hosts(
+    ctx: typer.Context,  # noqa: ARG001
+) -> None:
+    """
+    v1.0: Discover and report homelab inference hosts (Ollama, LM Studio, etc.).
+    """
+    import asyncio as _aio
+    from calibre_ai_auditor.verification.host_registry import (
+        HostRegistry,
+        HostRegistryConfig,
+        default_felix_homelab,
+    )
+
+    async def _run() -> dict[str, Any]:
+        cfg = HostRegistryConfig(hosts=default_felix_homelab())
+        reg = HostRegistry(cfg)
+        try:
+            await reg.health_check_all()
+            return reg.summary()
+        finally:
+            await reg.__aexit__(None, None, None)
+
+    summary = _aio.run(_run())
+    typer.echo(json_lib.dumps(summary, indent=2, default=str))
+
+
 if __name__ == "__main__":
     app()
