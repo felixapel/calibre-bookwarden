@@ -2,7 +2,9 @@
 
 ## Delivery Strategy
 
-Evolve from a read-only metadata auditor into a full-stack library management system with robust safety controls and multi-provider intelligence.
+Evolve from a read-only metadata auditor into a full-stack library management
+system that does **content-ground verification** at scale. The book file is
+the primary source of truth; LLMs are witnesses, not generators.
 
 ## Release Plan
 
@@ -17,38 +19,97 @@ Evolve from a read-only metadata auditor into a full-stack library management sy
 | `v0.7` | **Ingest**: Watchers and Folder Auto-Audit | [DONE] |
 | `v0.8` | **Vision**: Vision-based cover verification | [DONE] |
 | `v0.9` | **Ecosystem Bridges**: Paperless-ngx & Comic/Manga support | [DONE] |
-| `v1.0` | **Stable**: Stable API/CLI Contract + Desktop App Mode | [PLANNED] |
+| `v1.0` | **Content-Ground Verification**: Per-field BookVerdict + scale | [DONE] |
+| `v1.0.x` | **Hardening**: WebUI Verify page + benchmark baselines + CI | [DONE] |
+| `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [PLANNED] |
+| `v1.2` | **MCP Server**: Expose audit tools to Hermes | [PLANNED] |
 
 ---
 
-## Completed Milestones
+## v1.0 — Content-Ground Verification (DONE)
 
-### ✅ Architecture Modernization
-- Implemented **Evidence-First** resolution engine.
-- Removed LiteLLM dependency for direct **OpenAI/Ollama** providers.
-- Integrated **Apache Tika** for robust PDF/Doc extraction.
-- Added **PostgreSQL** and **SQLite** dual-storage support.
-- Added **Valkey** for rate-limit caching and distributed locks.
+The Calibre metadata is no longer trusted by default. The book file itself
+becomes the witness stand and the LLM becomes the jury.
 
-### ✅ Modern WebUI
-- **Dashboard**: High-level health and metrics.
-- **Scan & Audit**: Direct control of the extraction pipeline.
-- **Review Queue**: Evidence ladder visualization and approval workflow.
-- *   **Settings**: Privacy controls and provider registry.
+### Core v1.0 Components
 
-### ✅ Safe Applied Writes
-- Automated **OPF Backups** before any `calibredb` modification.
-- Multi-field patch logic (`identifiers`, `tags`, etc.).
-- Robust **Undo** system using exported OPF files.
+- **`FieldVerdict` + `BookVerdict`** — Pydantic v2 schemas with cited `EvidenceSpan`s
+- **8 deterministic rules** — title/authors/isbn/publisher/date/language/series/series_index
+  with edition-tag, accent, ISBN-10↔13, fuzzy, and Cyrillic↔Latin transliteration tolerance
+- **`ContentVerificationEngine`** — orchestrates the rules, aggregates per-field verdicts,
+  decides `action`, gates `auto_apply_eligible`
+- **`LLMWitness`** — calls LLM only for ambiguous fields; never downgrades risk flags;
+  cached by prompt-hash for replay (107µs cached vs ~1s LLM call = 10000× speedup)
+- **Multi-tier OCR router** — Tesseract (default) + PaddleOCR + Surya behind feature flags;
+  routes by per-page hint (clean_scan / noisy_scan / multilingual / table_heavy)
+- **Multi-host discovery** — `HostRegistry` knows the gaming PC (RTX 3090),
+  Unraid (RTX 5060 Ti + 1660 SUPER), and local Ollama. Routes tasks by GPU class.
+- **`RestorePointStore`** — per-book restore points (OPF + cover + hardlinked file + JSON)
+  with 7-day TTL cleanup
+- **`ConservativeAutoApply`** — gates auto-apply on ≥80 confidence AND no high-risk flags
+  AND per-field thresholds AND no required-review
+- **`ResumableRunStore`** — Valkey Streams-backed per-book state with
+  `in_progress` rollback on worker crash (handles 50k books in 7.7ms)
+- **`Metrics`** + `/api/metrics` endpoint — Prometheus text exposition format
 
-### ✅ Ecosystem Bridges (v0.9)
+### v1.0 WebUI
+
+- **Per-field verdict rendering** on Review page — confirmed/mismatch/missing/ambiguous
+  chips with evidence spans and auto-apply eligibility badge
+- **Verify page** — start a v1.0 verify run over the Calibre library with live progress bar
+  and per-action counters (no_change / suggest_fix / needs_review / defer)
+- **Dashboard integration** — aggregated v1.0 verdict counts across all runs
+
+### v1.0 CLI
+
+- `bookaudit verify [--limit N] [--use-llm]` — runs the engine over a Calibre library
+- `bookaudit hosts` — discovers and reports homelab inference hosts
+
+### v1.0 Test Infrastructure
+
+- **141 backend tests** — 103 unit/integration + 38 benchmarks (pytest-benchmark)
+- **37 WebUI E2E tests** — Playwright across 8 spec files (every page covered)
+- **GitHub Actions + Gitea Actions CI** — 4-job workflow (backend / benchmarks /
+  webui-lint-build / webui-e2e)
+- **Benchmark baseline** at `tests/benchmarks/BASELINE.md` — captured numbers from
+  the dev container for regression detection
+
+### v1.0 Scope Decisions
+
+See [docs/architecture/v1_scope_decisions.md](docs/architecture/v1_scope_decisions.md)
+for what's in/out of v1.0:
+- ✅ Comics/manga in v1.0
+- ⏸ Audiobooks deferred to v1.1+ (expensive Whisper)
+- ✅ MCP server in v1.0 (small effort, big leverage)
+
+---
+
+## v1.1 — Comics Vision (PLANNED)
+
+- Cover identification via vision LLM (Qwen2.5-VL-7B / Pixtral-12B)
+- Komf integration for batch manga metadata matching against local Komga/Kavita
+- New fields: `volume`, `chapter`, `series_position` (decimal)
+- v1.0 engine extended with `verify_comic_cover()` rule
+- Comics-specific OCR router profile
+
+## v1.2 — MCP Server (PLANNED)
+
+- STDIO transport for personal AI workflows
+- Tools: `query_book_audit`, `list_problematic_books`, `get_run_metrics`
+- Hermes integration for "which of my books have the worst metadata?" workflows
+
+---
+
+## Historical Milestones (kept for context)
+
+### v0.9 — Ecosystem Bridges (DONE)
 - **Paperless-ngx**: Link audits to scanned document IDs.
 - **Komga/Kavita**: First-class support for Manga/Comics mode.
 
----
+### v0.8 — Vision (DONE)
+- Vision-based cover verification via vision LLMs.
 
-## Upcoming Milestones (v1.0)
-
-- Stable API/CLI contract and versioning policy.
-- Desktop / single-container “app mode” packaging.
-- Richer review-packet PDF templates with cover thumbnails.
+### v0.5 — Safe Applied Writes (DONE)
+- Automated OPF Backups before any calibredb modification.
+- Multi-field patch logic (identifiers, tags, etc.).
+- Robust Undo system using exported OPF files.

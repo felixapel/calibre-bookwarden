@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileSearch, Search, Settings, ShieldAlert, History, BookOpen, KeyRound, ShieldCheck, X, Copy } from 'lucide-react'
+import { LayoutDashboard, FileSearch, Search, Settings, ShieldAlert, History, BookOpen, KeyRound, ShieldCheck, X, Copy, Sparkles } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchHealth } from './api/client'
 import clsx from 'clsx'
@@ -12,6 +12,7 @@ import Review from './pages/Review'
 import Undo from './pages/Undo'
 import SettingsPage from './pages/Settings'
 import Duplicates from './pages/Duplicates'
+import Verify from './pages/Verify'
 
 
 function NavItem({ to, icon: Icon, children }: { to: string, icon: any, children: React.ReactNode }) {
@@ -55,6 +56,7 @@ function Sidebar() {
 
       <nav className="flex-1 px-4 py-2 space-y-1.5 overflow-y-auto">
         <NavItem to="/" icon={LayoutDashboard}>Dashboard</NavItem>
+        <NavItem to="/verify" icon={Sparkles}>Verify (v1.0)</NavItem>
         <NavItem to="/scan" icon={Search}>Scan Library</NavItem>
         <NavItem to="/inspect" icon={FileSearch}>Inspect File</NavItem>
         <NavItem to="/duplicates" icon={Copy}>Duplicates</NavItem>
@@ -123,6 +125,7 @@ export default function App() {
           <div className="flex-1">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/verify" element={<Verify />} />
               <Route path="/scan" element={<Scan />} />
               <Route path="/inspect" element={<Inspect />} />
               <Route path="/duplicates" element={<Duplicates />} />

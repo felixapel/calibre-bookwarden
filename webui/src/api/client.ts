@@ -164,3 +164,53 @@ export const fetchDuplicates = async () => {
   return res.json()
 }
 
+
+// ─── v1.0 verify API ──────────────────────────────────────────────────────
+
+export interface VerifyRunSummary {
+  run_id: string
+  status: 'running' | 'completed' | 'failed'
+  started_at: string
+  finished_at: string | null
+  total: number
+  completed: number
+  counts: Record<string, number>
+}
+
+export interface VerifyRunDetail extends VerifyRunSummary {
+  verdicts: any[]
+}
+
+export const startVerify = async (req: {
+  library?: string
+  limit?: number
+  use_llm?: boolean
+}) => {
+  const res = await fetchWithAuth('/api/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) throw new Error('Failed to start verify')
+  return res.json() as Promise<{ status: string; data: { run_id: string; started_at: string; total: number; status: string } }>
+}
+
+export const fetchVerifyRuns = async () => {
+  const res = await fetchWithAuth('/api/verify/runs')
+  if (!res.ok) throw new Error('Failed to fetch verify runs')
+  return res.json() as Promise<{ status: string; data: { runs: VerifyRunSummary[] } }>
+}
+
+export const fetchVerifyRun = async (runId: string) => {
+  const res = await fetchWithAuth(`/api/verify/${encodeURIComponent(runId)}`)
+  if (!res.ok) throw new Error(`Failed to fetch verify run ${runId}`)
+  return res.json() as Promise<{ status: string; data: VerifyRunDetail }>
+}
+
+// ─── Prometheus metrics ────────────────────────────────────────────────────
+
+export const fetchMetrics = async () => {
+  const res = await fetchWithAuth('/api/metrics')
+  if (!res.ok) throw new Error('Failed to fetch metrics')
+  return res.text()
+}

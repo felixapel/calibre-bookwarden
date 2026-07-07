@@ -1,18 +1,27 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchConfig, fetchDoctor, fetchHealth, fetchBooks, fetchDuplicates, fetchRuns } from '../api/client'
+import {
+  fetchConfig,
+  fetchDoctor,
+  fetchHealth,
+  fetchBooks,
+  fetchDuplicates,
+  fetchRuns,
+  fetchVerifyRuns,
+} from '../api/client'
 import { Link } from 'react-router-dom'
-import { 
-  Activity, 
-  Database, 
-  CheckCircle2, 
-  XCircle, 
-  Terminal, 
-  Link as LinkIcon, 
-  ShieldAlert, 
-  Copy, 
-  History, 
+import {
+  Activity,
+  Database,
+  CheckCircle2,
+  XCircle,
+  Terminal,
+  Link as LinkIcon,
+  ShieldAlert,
+  Copy,
+  History,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
+  Sparkles,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -23,6 +32,18 @@ export default function Dashboard() {
   const { data: booksData } = useQuery({ queryKey: ['books'], queryFn: fetchBooks })
   const { data: duplicatesData } = useQuery({ queryKey: ['duplicates'], queryFn: fetchDuplicates })
   const { data: runsData } = useQuery({ queryKey: ['runs'], queryFn: fetchRuns })
+  const { data: verifyRuns } = useQuery({ queryKey: ['verifyRuns'], queryFn: fetchVerifyRuns, refetchInterval: 10000 })
+
+  // Aggregate v1.0 verdict action counters from /api/verify/runs
+  const verifyActionCounts = (verifyRuns?.data?.runs ?? []).reduce<Record<string, number>>(
+    (acc, r) => {
+      for (const [action, count] of Object.entries(r.counts ?? {})) {
+        acc[action] = (acc[action] ?? 0) + count
+      }
+      return acc
+    },
+    {},
+  )
 
   const isOk = health?.status === 'ok'
 
@@ -141,6 +162,50 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* v1.0 Content Verdicts Panel */}
+      <Link
+        to="/verify"
+        className="glass-card p-6 rounded-2xl space-y-4 hover:scale-[1.005] hover:border-purple-500/40 transition-all duration-300 group block"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Sparkles className="w-5 h-5 text-purple-400" />
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300">
+                v1.0 Content Verdicts
+              </h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Per-book results from the ContentVerificationEngine across all verify runs
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-purple-400" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { key: 'no_change', label: 'No change', cls: 'text-emerald-400 bg-emerald-950/30 border-emerald-900/40' },
+            { key: 'suggest_fix', label: 'Suggest fix', cls: 'text-amber-400 bg-amber-950/30 border-amber-900/40' },
+            { key: 'needs_review', label: 'Needs review', cls: 'text-rose-400 bg-rose-950/30 border-rose-900/40' },
+            { key: 'defer', label: 'Defer', cls: 'text-purple-400 bg-purple-950/30 border-purple-900/40' },
+          ].map(({ key, label, cls }) => (
+            <div
+              key={key}
+              className={clsx(
+                'rounded-xl border p-3 flex flex-col gap-1',
+                cls,
+              )}
+            >
+              <span className="text-[10px] uppercase font-mono tracking-wider opacity-80">
+                {label}
+              </span>
+              <span className="text-2xl font-extrabold font-mono">
+                {verifyActionCounts[key] ?? 0}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Link>
 
       {/* Grid Cards Row 2 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

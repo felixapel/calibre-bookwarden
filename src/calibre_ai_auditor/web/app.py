@@ -18,6 +18,7 @@ from calibre_ai_auditor.web.api import (
     providers,
     reports,
     runs,
+    verify,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,7 @@ app.include_router(providers.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(bridges.router, prefix="/api")
+app.include_router(verify.router, prefix="/api")
 
 # Static files for the frontend
 static_dir = os.getenv("BOOKAUDIT_STATIC_DIR")
