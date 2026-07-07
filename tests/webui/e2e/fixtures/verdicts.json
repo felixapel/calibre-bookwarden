@@ -1,0 +1,149 @@
+{
+  "confirmed": {
+    "book_key": "calibre:1",
+    "run_id": "test_run",
+    "field_verdicts": {
+      "title": {
+        "field": "title",
+        "declared_value": "The Great Gatsby",
+        "observed_value": "The Great Gatsby",
+        "verdict": "confirmed",
+        "confidence": 99,
+        "evidence": [
+          {
+            "source": "title_page",
+            "text": "The Great Gatsby",
+            "page_range": "1",
+            "confidence": 99
+          }
+        ],
+        "requires_review": false,
+        "risk_flags": [],
+        "reason": "Titles match exactly.",
+        "is_deterministic": true,
+        "created_at": "2026-07-05T10:00:00Z"
+      }
+    },
+    "overall_confidence": 99,
+    "risk_flags": [],
+    "action": "no_change",
+    "auto_apply_eligible": false,
+    "proposed_patch": {},
+    "reasons": [
+      "[title] Titles match exactly."
+    ],
+    "created_at": "2026-07-05T10:00:00Z"
+  },
+  "mismatch": {
+    "book_key": "calibre:2",
+    "run_id": "test_run",
+    "field_verdicts": {
+      "title": {
+        "field": "title",
+        "declared_value": "WRONG TITLE",
+        "observed_value": "Some Real Book",
+        "verdict": "mismatch",
+        "confidence": 95,
+        "evidence": [
+          {
+            "source": "title_page",
+            "text": "Some Real Book",
+            "page_range": "1",
+            "confidence": 95
+          }
+        ],
+        "requires_review": false,
+        "risk_flags": [],
+        "reason": "Titles differ significantly.",
+        "is_deterministic": true,
+        "created_at": "2026-07-05T10:00:00Z"
+      }
+    },
+    "overall_confidence": 95,
+    "risk_flags": [],
+    "action": "suggest_fix",
+    "auto_apply_eligible": true,
+    "proposed_patch": {
+      "title": "Some Real Book"
+    },
+    "reasons": [
+      "[title] Titles differ significantly."
+    ],
+    "created_at": "2026-07-05T10:00:00Z"
+  },
+  "author_swap": {
+    "book_key": "calibre:3",
+    "run_id": "test_run",
+    "field_verdicts": {
+      "authors": {
+        "field": "authors",
+        "declared_value": [
+          "Wrong Author"
+        ],
+        "observed_value": [
+          "Right Author"
+        ],
+        "verdict": "mismatch",
+        "confidence": 92,
+        "evidence": [
+          {
+            "source": "title_page",
+            "text": "By Right Author",
+            "page_range": "1",
+            "confidence": 92
+          }
+        ],
+        "requires_review": true,
+        "risk_flags": [
+          "author_swap"
+        ],
+        "reason": "Author swap detected.",
+        "is_deterministic": true,
+        "created_at": "2026-07-05T10:00:00Z"
+      }
+    },
+    "overall_confidence": 92,
+    "risk_flags": [
+      "author_swap"
+    ],
+    "action": "needs_review",
+    "auto_apply_eligible": false,
+    "proposed_patch": {
+      "authors": [
+        "Right Author"
+      ]
+    },
+    "reasons": [
+      "[authors] Author swap detected."
+    ],
+    "created_at": "2026-07-05T10:00:00Z"
+  },
+  "ambiguous": {
+    "book_key": "calibre:4",
+    "run_id": "test_run",
+    "field_verdicts": {
+      "title": {
+        "field": "title",
+        "declared_value": "The Novel",
+        "observed_value": "The Novels",
+        "verdict": "ambiguous",
+        "confidence": 60,
+        "evidence": [],
+        "requires_review": true,
+        "risk_flags": [],
+        "reason": "Title similarity 0.62 is ambiguous; needs LLM adjudication.",
+        "is_deterministic": true,
+        "created_at": "2026-07-05T10:00:00Z"
+      }
+    },
+    "overall_confidence": 60,
+    "risk_flags": [],
+    "action": "needs_review",
+    "auto_apply_eligible": false,
+    "proposed_patch": {},
+    "reasons": [
+      "[title] Ambiguous match."
+    ],
+    "created_at": "2026-07-05T10:00:00Z"
+  }
+}

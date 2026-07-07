@@ -222,6 +222,12 @@ export default function Review() {
                       <span className="font-mono text-xs uppercase tracking-wider font-bold">
                         {fv.field}
                       </span>
+                      <span
+                        data-testid="verdict-label"
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-current/10"
+                      >
+                        {meta.label}
+                      </span>
                       <span className="text-[10px] opacity-70 font-mono">
                         conf {fv.confidence}
                       </span>

@@ -69,3 +69,48 @@ bookaudit audit --run latest
 - **Read-Only by Default**: The application will never modify your library unless explicitly configured.
 - **Deterministic Truth**: The book file itself is the primary source of truth; LLMs are evaluators, not dictators.
 - **Privacy-Centric**: Remote LLMs receive minimal context, capped by strict token limits and privacy filters.
+
+## Testing & Benchmarks
+
+### Backend (pytest)
+
+```bash
+# Fast unit + integration tests (~5s, no benchmarks)
+pytest -m "not benchmark and not ocr_live and not network"
+
+# Full benchmark suite (~45s)
+pytest --benchmark-only tests/benchmarks/
+
+# OCR comparison (requires real OCR deps)
+pytest -m "ocr_live" tests/benchmarks/test_bench_ocr_comparison.py
+
+# With coverage
+pytest --cov=src --cov-report=html
+```
+
+Baseline numbers are tracked in [tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md).
+
+### WebUI E2E (Playwright)
+
+```bash
+cd webui
+
+# Install Playwright browser (one-time)
+pnpm exec playwright install --with-deps chromium
+
+# Run all E2E tests
+pnpm e2e
+
+# Run with UI inspector
+pnpm e2e:ui
+
+# Run specific spec
+pnpm exec playwright test review.spec.ts
+```
+
+32 E2E tests across 7 spec files cover every page and the v1.0 verdict rendering.
+
+### CI integration
+
+- **GitHub Actions**: `.github/workflows/v1-tests.yml` (4 jobs: backend, benchmarks, webui-lint-build, webui-e2e)
+- **Gitea Actions**: `.gitea/workflows/v1-tests.yml` (same jobs, Gitea syntax, self-hosted on Unraid)

@@ -165,3 +165,10 @@ fake_library/*
 *.pdf
 *.cbz
 *.cbr
+
+# Test artifacts
+test-results/
+playwright-report/
+.benchmarks/baseline.json
+webui/test-results/
+webui/playwright-report/
