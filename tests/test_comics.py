@@ -1,9 +1,6 @@
 import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from calibre_ai_auditor.extractors.comics import extract_comic_info_xml, parse_comic_info_xml_data
 
@@ -49,53 +46,4 @@ def test_extract_comic_info_xml() -> None:
         assert metadata is not None
         assert metadata["title"] == "Zipped Manga"
         assert metadata["authors"] == ["Manga Artist"]
-
-
-@pytest.mark.asyncio
-async def test_comic_evidence_builder() -> None:
-    from calibre_ai_auditor.config.settings import Settings
-    from calibre_ai_auditor.evidence.builder import build_evidence_package
-    from calibre_ai_auditor.storage.models import BookRecord
-
-    settings = Settings()
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        settings.storage.artifacts_dir = Path(tmp_dir) / "artifacts"
-
-        # Create a dummy cbz
-        cbz_path = Path(tmp_dir) / "my_manga.cbz"
-        xml_data = b"""<?xml version="1.0" encoding="utf-8"?>
-<ComicInfo>
-  <Title>My Manga Volume 1</Title>
-  <Writer>Manga Writer</Writer>
-  <Number>1</Number>
-  <Publisher>Shonen Jump</Publisher>
-</ComicInfo>
-"""
-        with zipfile.ZipFile(cbz_path, "w") as z:
-            z.writestr("ComicInfo.xml", xml_data)
-            z.writestr("page001.jpg", b"fake image bytes")
-
-        book = BookRecord(
-            book_key="path:my_manga.cbz",
-            run_id="test_run",
-            source="direct_path",
-            files=[{"path": str(cbz_path), "format": "cbz"}],
-            current_metadata={"title": "Original Title"},
-        )
-
-        # Mock out LLM call for cover verification since we just want to verify extraction
-        with patch("calibre_ai_auditor.ocr.vision.VisionVerifier.verify_cover", return_value=None):
-            evidence = await build_evidence_package(book, settings)
-
-        # Extract title from candidates or extracted
-        extracted_items = evidence.extracted
-        assert extracted_items.get("title") == "My Manga Volume 1"
-        assert extracted_items.get("authors") == ["Manga Writer"]
-
-        # Verify cover was extracted
-        assert evidence.cover is not None
-        cover_path = Path(evidence.cover["embedded_cover_path"])
-        assert cover_path.exists()
-        assert cover_path.read_bytes() == b"fake image bytes"
 

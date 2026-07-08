@@ -5,10 +5,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from calibre_ai_auditor.config.settings import Settings, load_settings
-from calibre_ai_auditor.evidence.builder import build_evidence_package
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage
+from calibre_ai_auditor.verification.engine import (
+    ContentVerificationEngine,
+    DeclaredMetadata,
+    ObservationSet,
+)
 from calibre_ai_auditor.web.schemas import InspectRequest
 
 router = APIRouter()
@@ -91,36 +95,57 @@ async def list_fs(
 async def _build_inspection_package(
     path: Path, settings: Settings, *, no_providers: bool
 ) -> dict[str, Any]:
-    book_record = BookRecord(
-        book_key=f"path:{path}",
-        run_id="inspect",
-        source="direct_path",
-        current_metadata={"title": None, "authors": []},
-        files=[{"path": str(path), "format": path.suffix[1:].lower()}],
-    )
+    """Build an inspection result for a single file using the v1.0 engine.
 
+    For legacy /inspect compatibility we still return an EvidencePackage-shaped
+    dict, but the verdict comes from the v1.0 ContentVerificationEngine.
+    """
     snippets = extract_snippets(path)
     extracted = extract_heuristics([s.model_dump() for s in snippets])
+    snippet_text = "\n".join(s.text for s in snippets)
 
-    if no_providers:
-        package = EvidencePackage(
-            evidence_id=f"ev_inspect_path_{path.name}",
-            book_key=f"path:{path}",
-            run_id="inspect",
-            current=book_record.current_metadata,
-            extracted=extracted,
-            candidates=[],
-            snippets=[s.model_dump() for s in snippets],
-            risk_flags=[],
-        )
-    else:
-        if not book_record.current_metadata.get("title"):
-            book_record.current_metadata["title"] = extracted.get("title")
-        if not book_record.current_metadata.get("authors"):
-            book_record.current_metadata["authors"] = extracted.get("authors", [])
+    book_key = f"path:{path}"
 
-        package = await build_evidence_package(book_record, settings)
+    # Build declared metadata from the heuristic-extracted values (best-effort
+    # since inspect may not have Calibre-declared metadata yet)
+    declared = DeclaredMetadata(
+        title=extracted.get("title"),
+        authors=extracted.get("authors") or [],
+        isbn=(extracted.get("identifiers") or {}).get("isbn"),
+    )
+    observed = ObservationSet(
+        title_page_text=snippet_text[:5000] if snippet_text else None,
+        body_sample=snippet_text[:10000] if snippet_text else None,
+        title_extracted=extracted.get("title"),
+        authors_extracted=extracted.get("authors") or [],
+        isbn_extracted=(extracted.get("identifiers") or {}).get("isbn"),
+        evidence_quality="high" if len(snippet_text) > 500 else "low",
+    )
 
+    engine = ContentVerificationEngine()
+    verdict = engine.verify(
+        book_key=book_key,
+        run_id="inspect",
+        declared=declared,
+        observed=observed,
+    )
+
+    # Return as EvidencePackage-shaped dict for back-compat with existing UI
+    package = EvidencePackage(
+        evidence_id=f"ev_inspect_path_{path.name}",
+        book_key=book_key,
+        run_id="inspect",
+        current=declared.model_dump() if hasattr(declared, "model_dump") else {},
+        extracted={
+            "title": extracted.get("title"),
+            "authors": extracted.get("authors", []),
+            "identifiers": extracted.get("identifiers", {}),
+        },
+        candidates=[],
+        snippets=[s.model_dump() for s in snippets],
+        risk_flags=verdict.risk_flags,
+        decision=verdict.model_dump(),
+    )
     return package.model_dump()
 
 
