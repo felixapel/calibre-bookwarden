@@ -43,7 +43,7 @@ async def get_duplicates(
 ) -> Any:
     # 1. Fetch all books from database
     statement = select(BookRecord)
-    books = session.exec(statement).all()
+    books = list(session.exec(statement).all())
 
     # 2. Get direct duplicates (fuzzy matching and ISBN matching)
     from calibre_ai_auditor.rules.duplicates import find_duplicates
@@ -149,7 +149,7 @@ async def get_book_verdict(
     pkg_stmt = (
         select(EvidencePackage)
         .where(EvidencePackage.book_key == book_key)
-        .order_by(EvidencePackage.created_at.desc())
+        .order_by(EvidencePackage.created_at.desc())  # type: ignore[attr-defined]
     )
     package = session.exec(pkg_stmt).first()
 

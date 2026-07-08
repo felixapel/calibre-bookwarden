@@ -37,7 +37,7 @@ class ScanRequest(BaseModel):
     limit: int | None = None
 
 
-async def do_scan(settings: Settings, req: ScanRequest) -> dict:
+async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
     library_path = Path(req.library) if req.library else settings.library.path
     if not library_path:
         raise ValueError("Library path not set.")

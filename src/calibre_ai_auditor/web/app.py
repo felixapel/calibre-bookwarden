@@ -2,8 +2,9 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -93,20 +94,25 @@ app = FastAPI(
 
 # Trailing slash redirection middleware for nested frontend routes
 @app.middleware("http")
-async def redirect_trailing_slash(request: Request, call_next):
+async def redirect_trailing_slash(
+    request: Request, call_next: Any
+) -> Response:
     path = request.url.path
     if path != "/" and path.endswith("/") and not path.startswith("/api") and not path.startswith("/assets"):
         return RedirectResponse(
             url=str(request.url.replace(path=path[:-1])),
             status_code=301,
         )
-    return await call_next(request)
+    response: Response = await call_next(request)
+    return response
 
 
 # Cache control headers middleware
 @app.middleware("http")
-async def add_cache_control_headers(request: Request, call_next):
-    response = await call_next(request)
+async def add_cache_control_headers(
+    request: Request, call_next: Any
+) -> Response:
+    response: Response = await call_next(request)
     path = request.url.path
     if path.startswith("/assets/"):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
@@ -123,7 +129,7 @@ if api_key:
     from fastapi.responses import JSONResponse
 
     @app.middleware("http")
-    async def enforce_api_key(request: Request, call_next):
+    async def enforce_api_key(request: Request, call_next: Any) -> Response:
         if request.url.path.startswith("/api/") or request.url.path == "/api":
             header_key = request.headers.get("X-API-Key")
             if header_key != api_key:
@@ -131,7 +137,8 @@ if api_key:
                     status_code=401,
                     content={"detail": "Invalid or missing API Key"},
                 )
-        return await call_next(request)
+        response: Response = await call_next(request)
+        return response
 
 app.include_router(health.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
@@ -146,9 +153,10 @@ app.include_router(bridges.router, prefix="/api")
 app.include_router(verify.router, prefix="/api")
 
 # Static files for the frontend
-static_dir = os.getenv("BOOKAUDIT_STATIC_DIR")
-if not static_dir:
-    static_dir = os.path.join(os.path.dirname(__file__), "static")
+static_dir_str = os.getenv("BOOKAUDIT_STATIC_DIR")
+if not static_dir_str:
+    static_dir_str = os.path.join(os.path.dirname(__file__), "static")
+static_dir: str = static_dir_str
 
 if os.path.exists(static_dir):
     # Mount the assets directory explicitly

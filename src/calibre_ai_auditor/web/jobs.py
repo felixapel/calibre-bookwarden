@@ -102,17 +102,16 @@ async def run_job_from_payload(job_id: str, job_data: dict[str, Any], settings: 
     # 1. Update status to running
     await queue.update_job(job_id, {"status": "running"})
 
-    # 2. Resolve function
-    if func_name == "do_scan":
-        func = do_scan
-    elif func_name == "run_audit":
-        func = run_audit
-    elif func_name == "do_paperless_webhook_audit":
-        func = do_paperless_webhook_audit
-    elif func_name == "audit_ingested_file":
-        func = audit_ingested_file
-    else:
-
+    # 2. Resolve function. The dispatch is dynamic (string → callable), so we
+    # use a dict + .get() and cast the result to Any. The runtime contract
+    # (func is one of these four) is enforced by the elif chain below.
+    func: Any = {
+        "do_scan": do_scan,
+        "run_audit": run_audit,
+        "do_paperless_webhook_audit": do_paperless_webhook_audit,
+        "audit_ingested_file": audit_ingested_file,
+    }.get(func_name)
+    if func is None:
         err_msg = f"Unknown function name in payload: {func_name}"
         logger.error(err_msg)
         await queue.update_job(job_id, {"status": "failed", "error": err_msg})
@@ -129,7 +128,7 @@ async def run_job_from_payload(job_id: str, job_data: dict[str, Any], settings: 
         return
 
     # Pass progress callback if it's run_audit
-    if func == run_audit:
+    if func is run_audit:
         kwargs["progress_callback"] = make_progress_callback(job_id, queue)
 
 

@@ -111,7 +111,8 @@ async def paperless_webhook(
 ) -> Any:
     verify_paperless_webhook(request, settings)
 
-    doc_id = None
+    # doc_id can be int or str (parsed from JSON body, then int()'d later)
+    doc_id: int | str | None = None
 
     # Check queries first
     if document_id_query is not None:
