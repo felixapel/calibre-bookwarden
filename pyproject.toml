@@ -1,7 +1,7 @@
 [project]
 name = "calibre-ai-auditor"
-version = "0.1.0"
-description = "CLI for auditing Calibre book metadata with evidence packages and AI-assisted judgments"
+version = "1.0.0"
+description = "Content-ground metadata verification for Calibre libraries — the book file is the ground truth, LLMs are witnesses"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }

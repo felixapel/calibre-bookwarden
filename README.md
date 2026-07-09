@@ -1,76 +1,156 @@
 # calibre-ai-auditor
 
-A safer, more scalable, evidence-first metadata review system for Calibre libraries, inspired by Paperless-ngx and modern LLM orchestration patterns.
+A safer, more scalable, **content-ground metadata verification** system for
+Calibre libraries. Built around the principle that the book file is the
+ground truth and LLMs are witnesses, not generators.
 
 ## Status
 
-- **Version**: v0.1 (Current)
-- **Interface**: Full-stack WebUI (React/FastAPI) + CLI
+- **Version**: v1.0 (Content-Ground Verification)
+- **Interface**: Full-stack WebUI (React 19 / FastAPI) + CLI
 - **Default Mode**: Read-Only
-- **Runtime**: Docker (Linux/macOS recommended)
+- **Runtime**: Docker (Linux/macOS recommended); native works with `uv`
+
+## What's new in v1.0
+
+v1.0 replaces the v0.9 evidence-first pipeline with a **content-ground
+verification engine** that adjudicates each declared metadata field against
+the actual book content.
+
+| Component | v0.9 | v1.0 |
+|---|---|---|
+| Decision unit | Single `MetadataResolution` aggregate | **Per-field `FieldVerdict`** with cited `EvidenceSpan`s |
+| Adjudication | One LLM call decides everything | **8 deterministic rules** per field; **LLM witness** called only for ambiguous cases |
+| Auto-apply | Manual review queue | **Conservative auto-apply gate** (≥80% confidence, no high-risk flags, per-book restore point) |
+| Undo | OPF backup only | **RestorePointStore**: OPF + cover + hardlinked file + JSON snapshot, 7-day TTL |
+| Resume | None | **Valkey Streams** per-book state with `in_progress` rollback on worker crash |
+| OCR | None | **Multi-provider OCR router** (Tesseract / PaddleOCR / Surya) by page hint |
+| Inference | Single Ollama | **Multi-host discovery** (3090 + 5060 Ti + 1660 SUPER + remote) |
+| Observability | Logs | **Prometheus `/metrics`** with counters, gauges, histograms |
+| Scale tested | Hundreds of books | **10k–50k books** per run (linear scaling) |
 
 ## Core Philosophy
 
-`calibre-ai-auditor` evolves the concept of metadata management from simple "guessing" to a formal **Evidence-First** workflow. The system identifies matches and conflicts using deterministic extraction before leveraging AI for complex reasoning.
-
-1.  **Deterministic Extraction First**: Extract ISBNs, bylines, and snippets directly from book files (EPUB/PDF) using fast parsers and Apache Tika.
-2.  **External Verification**: Fetch candidates from OpenLibrary, Google Books, and Calibre providers.
-3.  **Model Reasoning Second**: Use local (Ollama) or remote (OpenAI) LLMs to evaluate the evidence package and judge candidates.
-4.  **Human Review Third**: Approve or reject changes through a structured WebUI review queue.
-5.  **Safe Write Last**: Apply fixes only after an automated OPF backup, with full undo capability.
+1.  **The book is the ground truth.** Extract ISBNs, titles, authors, dates,
+    publishers directly from EPUB/PDF content via deterministic rules before
+    anything else.
+2.  **Eight deterministic rules per field.** Title (fuzzy + edition-tag aware),
+    authors (set + transliteration), ISBN-13 (checksum), publisher (variant-tolerant),
+    date (year tolerance), language (ISO), series, series_index.
+3.  **LLMs are witnesses, not dictators.** The LLM is invoked only when a field
+    comes back `ambiguous` from the deterministic rules — never as the primary
+    source of truth.
+4.  **Conservative auto-apply.** A field is auto-applied only when (a) every
+    declared field has a deterministic verdict, (b) overall confidence ≥80,
+    (c) no high-risk flag is present, (d) per-field confidence ≥75.
+5.  **Every apply creates a restore point.** Per-book snapshot of OPF, cover,
+    file hardlink, and JSON metadata diff. 7-day TTL, bulk undo by run_id.
+6.  **Resumable on crash.** Worker crash mid-run rolls `in_progress` books back
+    to `pending`. Survives restarts via Valkey Streams.
 
 ## Key Features
 
-- **Evidence Ladder**: Visualize why a metadata suggestion was made, with clear source attribution.
-- **Smart Privacy**: Strict controls on what text or images are sent to remote providers (`allow_remote_text: false` by default).
-- **Sidecar Power**: Seamless integration with **Apache Tika** for document extraction, **Gotenberg** for PDF reports, and **Qdrant** for semantic duplicates.
-- **Homelab Ready**: Dual-database support (PostgreSQL/SQLite) and Valkey-backed job queues.
-- **Calibre CLI Native**: Uses standard `calibredb` tools for library operations, ensuring full compatibility.
+- **Per-field verdict rendering** — Review page shows colored chips for
+  `confirmed` / `mismatch` / `missing` / `ambiguous` per field, with cited
+  evidence spans.
+- **Conservative auto-apply** with per-book restore points — see
+  [docs/SAFETY.md](docs/SAFETY.md).
+- **Multi-host LLM routing** — auto-discovers 3090 (high), Unraid Ollama
+  (medium), and remote providers. Tasks route by GPU class.
+- **Multi-tier OCR** — Tesseract always available; PaddleOCR + Surya behind
+  the `[ocr]` optional extra.
+- **WebUI Verify page** — start a verify run from the browser, watch live
+  progress, drill into per-book verdicts.
+- **Privacy by default** — `allow_remote_text: false` and `allow_remote_images:
+  false` block sending snippets to cloud LLMs unless explicitly enabled.
+- **Read-Only by Default** — the application never modifies your library unless
+  you explicitly opt in.
 
 ## Quick Start (Docker)
 
-The easiest way to deploy the full stack is via Docker Compose:
-
 ```bash
+git clone git@github.com:felixapel/calibre-ai-auditor.git
+cd calibre-ai-auditor
+cp .env.example .env
 docker compose up -d
 ```
 
-Access the WebUI at [http://localhost:8080](http://localhost:8080).
+WebUI at <http://localhost:8080>. For full OCR providers:
+
+```bash
+pip install -e .[ocr]
+```
 
 ## CLI Quick Start
 
-For standalone file inspection or library management:
-
 ```bash
 source .venv/bin/activate
-# Check dependencies
-bookaudit doctor
-# Inspect a single file
+
+# Sanity checks
+bookaudit doctor          # verify calibredb, Tika, Qdrant, etc.
+bookaudit hosts           # discover homelab inference hosts
+
+# v1.0: content-ground verification
+bookaudit verify --limit 100                       # 100 books
+bookaudit verify --limit 100 --use-llm            # with LLM witness
+bookaudit verify --limit 0 --format json > out.json  # full library
+
+# Legacy v0.9 commands (still work as fallback)
 bookaudit inspect --path "/path/to/book.epub"
-# Scan your library
 bookaudit scan --limit 10
-# Run the audit engine
 bookaudit audit --run latest
 ```
 
 ## Documentation
 
-- **[SAFETY.md](docs/SAFETY.md)** — Critical info on read-only mode and backups.
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — System design and open-source inspirations.
-- **[API.md](docs/API.md)** — REST API endpoint reference.
-- **[DATABASE.md](docs/DATABASE.md)** — SQLite and PostgreSQL configuration.
-- **[USAGE.md](USAGE.md)** — Common workflows and tutorials.
-- **[ROADMAP.md](ROADMAP.md)** — Upcoming features and milestones.
-- **[MANGA_COMICS_MODE.md](docs/MANGA_COMICS_MODE.md)** — Design for future manga/comics support.
+### Quick reference
+- **[ROADMAP.md](ROADMAP.md)** — v0.1 through v1.2 milestones
+- **[USAGE.md](USAGE.md)** — Step-by-step WebUI and CLI workflows
+- **[CLI_REFERENCE.md](CLI_REFERENCE.md)** — All commands and flags
+
+### Architecture & design
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Component overview, data flow, design principles
+- **[docs/architecture/target-advanced-architecture.md](docs/architecture/target-advanced-architecture.md)** — Detailed v1.0 component breakdown
+- **[docs/architecture/integration-decisions.md](docs/architecture/integration-decisions.md)** — Architecture Decision Records
+- **[docs/architecture/v1_scope_decisions.md](docs/architecture/v1_scope_decisions.md)** — What's in / out of v1.0
+- **[docs/research/PEER_PROJECTS.md](docs/research/PEER_PROJECTS.md)** — Comparison vs `paperless-gpt`, `book-memex`, etc.
+
+### Operations
+- **[INSTALL.md](INSTALL.md)** — Native + Docker install paths
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** — Production deploy guide
+- **[docs/HOMELAB.md](docs/HOMELAB.md)** — Homelab-specific config
+- **[docs/DATABASE.md](docs/DATABASE.md)** — SQLite / PostgreSQL setup
+- **[docs/API.md](docs/API.md)** — REST endpoints reference
+- **[docs/SAFETY.md](docs/SAFETY.md)** — Read-only mode + restore points
+
+### Quality & calibration
+- **[TESTING.md](TESTING.md)** — Unit / integration / E2E / benchmark strategy
+- **[tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md)** — Performance baseline
+- **[docs/calibration/v1.0_calibration_runbook.md](docs/calibration/v1.0_calibration_runbook.md)** — Real-world calibration on Unraid
 
 ## Project Principles
 
-- **Evidence First**: Every metadata change must be tied to collected evidence snippets.
-- **Read-Only by Default**: The application will never modify your library unless explicitly configured.
-- **Deterministic Truth**: The book file itself is the primary source of truth; LLMs are evaluators, not dictators.
-- **Privacy-Centric**: Remote LLMs receive minimal context, capped by strict token limits and privacy filters.
+- **The book is the ground truth.** Content extraction always runs first;
+  LLMs only adjudicate, never replace.
+- **Read-Only by Default.** The application never modifies your library unless
+  you explicitly opt in.
+- **Deterministic before generative.** 8 deterministic rules cover ~95% of
+  fields correctly. LLMs handle the remaining ~5% ambiguities.
+- **Privacy-Centric.** Remote LLMs receive minimal context, capped by
+  strict token limits and privacy filters.
+- **Fail-safe, not fail-fast.** A failed LLM call is a `needs_review`, not
+  a crash. A failed OCR is a fallback path, not an error.
 
 ## Testing & Benchmarks
+
+**197 tests passing** across 4 suites:
+
+| Suite | Count | Time |
+|---|---|---|
+| Backend pytest (unit + integration + 38 benchmarks) | 133 | ~60s |
+| Backend web tests | 23 | ~2s |
+| WebUI Playwright E2E | 37 | ~10s |
+| Calibration smoke | 4 | <1s |
 
 ### Backend (pytest)
 
@@ -82,7 +162,8 @@ pytest -m "not benchmark and not ocr_live and not network"
 pytest --benchmark-only tests/benchmarks/
 
 # OCR comparison (requires real OCR deps)
-pytest -m "ocr_live" tests/benchmarks/test_bench_ocr_comparison.py
+pip install -e .[ocr]
+pytest -m ocr_live tests/benchmarks/test_bench_ocr_comparison.py
 
 # With coverage
 pytest --cov=src --cov-report=html
@@ -108,9 +189,13 @@ pnpm e2e:ui
 pnpm exec playwright test review.spec.ts
 ```
 
-32 E2E tests across 7 spec files cover every page and the v1.0 verdict rendering.
+37 E2E tests across 8 spec files cover every page and the v1.0 verdict rendering.
 
 ### CI integration
 
 - **GitHub Actions**: `.github/workflows/v1-tests.yml` (4 jobs: backend, benchmarks, webui-lint-build, webui-e2e)
 - **Gitea Actions**: `.gitea/workflows/v1-tests.yml` (same jobs, Gitea syntax, self-hosted on Unraid)
+
+## License
+
+GPL-3.0-or-later. See [LICENSE.md](LICENSE.md).

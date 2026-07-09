@@ -1,74 +1,144 @@
 # Usage Guide
 
-`calibre-ai-auditor` provides two primary ways to manage your library metadata: a modern **WebUI** for interactive review and a powerful **CLI** for automation and standalone inspection.
+`calibre-ai-auditor` v1.0 gives you two ways to manage your Calibre library metadata:
+
+1.  **WebUI** — interactive review with the v1.0 per-field verdict rendering
+2.  **CLI** — automatable for batch runs and cron jobs
+
+This guide walks through the canonical workflows for each.
+
+---
 
 ## 1. WebUI Workflow (Recommended)
 
-The WebUI is designed for high-concurrency homelab environments and provides the best experience for reviewing evidence.
+The WebUI is the primary interface for v1.0 content-ground verification.
+Designed for homelab use with multi-host inference.
 
 ### Dashboard
-Start at the **Dashboard** to see the overall health of your services. Ensure **Calibre CLI**, **Ollama**, and **PostgreSQL** (if using) are marked as **OK**.
 
-### Scanning
-1.  Navigate to **Scan Library**.
-2.  Set the **Limit** (e.g., 100 books) and click **Start Scan**.
-3.  The system will use `calibredb` to discover books and record their current metadata in the auditor's database.
+Start at the **Dashboard** to see:
+- System health (Calibre CLI, Tika, Qdrant)
+- Homelab inference host discovery (3090 + Unraid Ollama + remote)
+- Aggregated v1.0 verdict counters (no_change / suggest_fix / needs_review / defer)
+- Review queue size, duplicates count, applied fixes
 
-### Auditing
-Once a scan is complete, click **Start Audit** for that run.
-- The auditor will extract text snippets from the book files.
-*   It will query **OpenLibrary** and **Google Books** for matching candidates.
-- The **LLM Judge** will evaluate the evidence and candidates to produce a structured verdict.
+### Verify (v1.0) page — the new core workflow
 
-### Review Queue
-Navigate to **Review Queue** to see books that require manual confirmation.
-- **Evidence Ladder**: See exactly which snippet (e.g., Copyright page) matches a candidate.
-- **Risk Flags**: The system will warn you about "Author Swaps" or "ISBN Mismatches".
-- **Approve/Reject**: Click **Approve** to queue a change for application.
+The **Verify** page is where you trigger the v1.0 content-ground engine
+across your library.
 
-### Applying Changes
-Navigate to **Changes & Undo**. Review your approved patches and click **Apply** (requires write mode to be enabled). The system will automatically create an **OPF Backup** before modifying your library.
+1. Navigate to **Verify (v1.0)** in the sidebar.
+2. Set **Limit** (e.g. `50` books for a pilot run, `0` for the full library).
+3. Toggle **Use LLM witness** if you want ambiguous fields sent to the
+   configured LLM for adjudication. Leave off for fast deterministic-only runs.
+4. Click **Run v1.0 Verify**. The progress bar updates every 1.5s.
+5. When the run completes, click the row in **Recent verify runs** to drill
+   into per-book verdicts.
+
+**Action semantics**:
+- `no_change` — declared metadata matches observed content; no fix needed
+- `suggest_fix` — declared metadata disagrees with content; engine proposes a fix
+- `needs_review` — high-risk flag (`author_swap`, `isbn_conflict`, etc.) requires human eyes
+- `defer` — insufficient signal to decide deterministically; LLM witness should resolve
+
+**Auto-apply semantics**: books marked `auto_apply_eligible: true` in the
+verdict are queued for the next `bookaudit apply` run.
+
+### Review page — per-field verdicts
+
+When you click a book in the Review queue, the v1.0 per-field verdict rendering
+shows:
+
+- **Green chip** — `Confirmed` (declared matches content)
+- **Red chip** — `Mismatch` (declared disagrees with content); shows `declared` vs `observed` side-by-side
+- **Amber chip** — `Missing` (declared is None but observed has a value)
+- **Purple chip** — `Ambiguous` (deterministic engine couldn't decide; LLM witness will resolve)
+- **Risk badges** — `author_swap`, `isbn_conflict`, `wrong_book`, `series_mismatch`, `publisher_mismatch`
+
+The **auto-apply ready** badge appears when the book passes the conservative
+auto-apply gate. **manual review** means human approval is required.
+
+### Other pages
+
+- **Scan Library** — Triggers a Calibre DB scan (legacy v0.9 path; v1.0 uses
+  Verify instead)
+- **Inspect File** — Single-file inspection; useful before adding to library
+- **Duplicates** — Qdrant-backed semantic duplicate detection
+- **Changes & Undo** — v1.0 restore points + bulk undo by run_id
+- **Settings** — Provider config, privacy filters, local API key
 
 ---
 
 ## 2. CLI Workflow
 
-The CLI is ideal for standalone inspection of new files before they enter your library.
+The CLI is ideal for batch jobs, CI, and offline single-file inspection.
 
-### System Check
-Verify your environment and dependencies:
+### Sanity checks
+
 ```bash
+# Verify all dependencies are reachable
 bookaudit doctor
+
+# Discover homelab inference hosts (3090 + Unraid Ollama)
+bookaudit hosts
 ```
 
-### Standalone File Inspection
-Extract metadata and snippets from an EPUB or PDF without adding it to Calibre:
+### v1.0 content-ground verification
+
 ```bash
+# Pilot: 100 books, no LLM, text output
+bookaudit verify --limit 100
+
+# Pilot with LLM witness (slower, more accurate on ambiguous fields)
+bookaudit verify --limit 100 --use-llm
+
+# Full library as JSON (parseable, ~8k books/sec on dev container)
+bookaudit verify --limit 0 --format json > v1_audit.json
+
+# Apply auto-eligible fixes
+bookaudit apply --safe-only
+
+# Bulk undo a run
+bookaudit undo <run_id>
+```
+
+### Single-file inspection (no Calibre library required)
+
+```bash
+# Extract metadata from one file
 bookaudit inspect --path "/path/to/book.epub"
+
+# Skip provider fetching (deterministic only)
+bookaudit inspect --path "/path/to/book.epub" --no-providers
 ```
 
-### Library Management
-Run a scan and audit entirely from the terminal:
+### Library management (legacy v0.9 paths, still work)
+
 ```bash
-# Scan 10 books
-bookaudit scan --limit 10
-# Audit the latest run
+# Scan a Calibre library into the auditor DB
+bookaudit scan --limit 100
+
+# Run the v0.9 audit engine (one-shot LLM call per book)
 bookaudit audit --run latest
-# Export a summary report
-bookaudit report --run latest --format markdown
+
+# Apply approved fixes with OPF backup
+bookaudit apply --run latest
+
+# Roll back via OPF backup
+bookaudit undo <change_id>
 ```
 
 ---
 
-## 3. Configuration & Safety
+## 3. Real-world calibration on Unraid
 
-### Read-Only Mode
-By default, the app is in **Read-Only Mode**. You can browse, scan, and audit safely. To enable writing:
-1. Update your `.env` or `config.yml`: `BOOKAUDIT_READ_ONLY=false`.
-2. Ensure your Docker volume for `/library` is **not** marked as `:ro`.
+Before relying on auto-apply in production, calibrate the thresholds
+against your actual library. The full procedure lives in
+[docs/calibration/v1.0_calibration_runbook.md](docs/calibration/v1.0_calibration_runbook.md).
 
-### Privacy Filters
-Control what data is sent to remote LLMs (e.g., OpenAI):
-- `allow_remote_text`: Set to `false` to block sending snippets to remote models.
-- `max_remote_chars`: Caps the length of text sent to remote models.
-- `allow_remote_images`: Block sending cover images to remote vision models.
+Summary:
+1. Run a 100-book pilot: `bookaudit verify --limit 100 --format json > pilot.json`
+2. Manually classify 20 books: precision = TP / (TP + FP)
+3. If precision < 95%, tune `AUTO_APPLY_MIN_CONFIDENCE` in `verification/verdict.py`
+4. Re-run full library: `bookaudit verify --limit 0 --format json > full.json`
+5. Update [tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md) with your real numbers

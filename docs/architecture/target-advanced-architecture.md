@@ -1,15 +1,29 @@
-# Target Advanced Architecture
+# Target Advanced Architecture (v1.0)
 
-This document defines the production-grade target architecture for `calibre-ai-auditor`.
+This document defines the production-grade target architecture for
+`calibre-ai-auditor` v1.0. The canonical overview lives at the repo
+root: [../../ARCHITECTURE.md](../../ARCHITECTURE.md).
 
 ---
 
 ## 1. Principles
 
-1.  **Evidence-Based Decisions**: The system collects evidence deterministically. Large Language Models (LLMs) act strictly as judges evaluating the gathered evidence; they never directly rewrite or invent book records.
-2.  **Safety & Non-Destructive Mutations**: Any change made to a book's metadata must be backed up (storing the original file metadata and cover) with a simple single-command undo path.
-3.  **Local-First Hybrid Inference**: Core processes default to local utilities (Tesseract, Ollama, native parsers). High-cost cloud APIs (OpenAI, Gemini) are used strictly as fallback models for complex ambiguity resolution.
-4.  **Extensible Parsing Interfaces**: File formats and metadata provider backends are modeled as decoupled plugins, keeping boundaries clean.
+1.  **The book is the ground truth.** Content extraction always runs first.
+    LLMs only adjudicate, never replace.
+2.  **Deterministic before generative.** 8 deterministic rules cover ~95% of
+    fields correctly. The LLM witness handles the remaining ~5% ambiguities.
+3.  **Safety & Non-Destructive Mutations.** Every apply creates a per-book
+    restore point (OPF + cover + hardlinked file + JSON snapshot) with a
+    7-day TTL. Bulk undo by run_id is supported.
+4.  **Local-First Hybrid Inference.** Core processes default to local
+    utilities (Ollama, native parsers, Tesseract). High-cost cloud APIs
+    (OpenAI, Gemini) are used strictly as fallback models for complex
+    ambiguity resolution.
+5.  **Extensible Parsing Interfaces.** File formats and OCR / metadata
+    providers are modeled as decoupled plugins, keeping boundaries clean.
+6.  **Conservative Auto-Apply.** A book is auto-eligible only when every
+    field has a deterministic verdict AND overall_confidence ≥ 80 AND no
+    high-risk flag AND per-field confidence ≥ 75.
 
 ---
 
@@ -17,223 +31,364 @@ This document defines the production-grade target architecture for `calibre-ai-a
 
 ```mermaid
 flowchart TD
-    CLI[CLI CLI] --> App[FastAPI App Engine]
-    WebUI[React WebUI] --> App
-    
-    App --> Queue[Valkey Task Queue]
-    Queue --> Worker[Celery/Arq Worker Engine]
-    
-    Worker --> Extraction[Extraction Subsystem]
-    Worker --> Vector[Vector Search: Qdrant]
-    Worker --> Models[LLM Router Engine]
-    Worker --> Providers[Provider Adapters]
-    
-    Extraction --> Tika[Tika Server]
-    Extraction --> OCR[OCREngine / Tesseract]
-    Extraction --> PDF[PyMuPDF4LLM]
-    
-    Providers --> OL[OpenLibrary]
-    Providers --> GB[Google Books]
-    Providers --> Cal[Calibre CLI/API]
+    CLI[bookaudit CLI]
+    WebUI[React 19 + TS WebUI]
+    App[FastAPI Orchestrator]
+    Queue[Valkey Task Queue + ResumableRunStore]
+    Worker[Worker Pool]
+
+    %% v1.0 core
+    VER[ContentVerificationEngine]
+    WIT[LLMWitness]
+    OCR[OCRRouter: Tesseract/PaddleOCR/Surya]
+    RP[RestorePointStore]
+    HOST[HostRegistry: 3090/5060 Ti/1660 SUPER]
+
+    %% legacy still wired
+    EXTRACT[Multi-format Extractors]
+    TIKA[Tika Sidecar]
+    PDF[PyMuPDF4LLM]
+    VEC[Qdrant Vector Search]
+
+    %% providers
+    PROV[Provider Adapters]
+    OL[OpenLibrary]
+    GB[Google Books]
+    CAL[Calibre CLI/API]
+
+    %% infra
+    DB[(PostgreSQL/SQLite)]
+    VK[(Valkey)]
+    QD[(Qdrant)]
+    PROM[/metrics Prometheus]
+
+    CLI --> App
+    WebUI --> App
+    App --> Queue
+    Queue --> Worker
+    Worker --> VER
+    Worker --> OCR
+    Worker --> WIT
+    Worker --> EXTRACT
+    Worker --> VEC
+    Worker --> HOST
+    VER --> DB
+    WIT --> DB
+    Worker --> PROV
+    PROV --> OL
+    PROV --> GB
+    PROV --> CAL
+    Worker --> RP
+    EXTRACT --> TIKA
+    EXTRACT --> PDF
+    App --> PROM
 ```
 
 ---
 
-## 3. Main Data Flow
+## 3. v1.0 Book Processing Lifecycle
+
+1.  **Discovered**: A book is in the Calibre library DB; v1.0 reads `current_metadata`
+    via `calibredb list --for-machine`.
+2.  **Extracting**: Multi-format extractors pull text from the first available
+    format (EPUB / PDF / CBZ). Cover image extracted via PyMuPDF or
+    `calibredb` export.
+3.  **Building observation**: `extract_heuristics()` parses title page,
+    copyright page, ISBN block. Result becomes `ObservationSet`.
+4.  **Deterministic Probing**: `ContentVerificationEngine` runs 8 rules per
+    field. Each produces a `FieldVerdict` with cited `EvidenceSpan`.
+5.  **LLM Witnessing**: Only fields returning `ambiguous` are sent to the
+    LLM witness. Privacy filters redact remote-bound content unless
+    explicitly enabled.
+6.  **Verdict Aggregation**: per-field verdicts → `BookVerdict` with action
+    (`no_change` / `suggest_fix` / `needs_review` / `defer`) and
+    `auto_apply_eligible` flag.
+7.  **Review & Apply**:
+    - `no_change` → no action
+    - `suggest_fix` + `auto_apply_eligible: true` → safe to apply via
+      `bookaudit apply --safe-only`
+    - `needs_review` → human approval required
+    - `defer` → insufficient signal; needs LLM witness or more context
+8.  **Restoration**: every apply writes a `RestorePointStore` entry
+    (OPF + cover + hardlinked file + JSON).
+
+---
+
+## 4. v1.0 Content Verification Pipeline
 
 ```mermaid
-sequenceDiagram
-    participant User as User / Ingest Watcher
-    participant App as API Server / CLI
-    participant Queue as Task Queue
-    participant Worker as Background Worker
-    participant DB as SQLite DB
-    participant Qdrant as Qdrant Vector DB
-
-    User->>App: Ingest Ebook (Upload/File created)
-    App->>DB: Create Ingestion Record
-    App->>Queue: Push Ingestion Job (job_id)
-    App-->>User: Return Job Status (pending)
-
-    Worker->>Queue: Poll Job
-    Worker->>Worker: Parse & Extract (snippets/ISBN)
-    Worker->>Qdrant: Query title vector similarities
-    Worker->>DB: Update BookRecord status (audited/duplicate)
+flowchart LR
+    A[BookRecord from DB] --> B[extract_snippets]
+    B --> C[extract_heuristics]
+    C --> D[ObservationSet + DeclaredMetadata]
+    D --> E[ContentVerificationEngine.verify]
+    E --> F{Any ambiguous?}
+    F -- No --> G[BookVerdict]
+    F -- Yes --> H[LLMWitness per ambiguous field]
+    H --> G
+    G --> I{Conservative auto-apply gate?}
+    I -- Yes --> J[RestorePoint + calibredb set_metadata]
+    I -- No --> K[needs_review]
+    J --> L[BookRecord.status = action]
 ```
 
 ---
 
-## 4. Book Processing Lifecycle
+## 5. Per-Field Verdict Schema
 
-1.  **Discovered**: The file watcher or scanner identifies an EPUB/PDF file and creates a database record.
-2.  **Extracting**: The system parses the file format to retrieve basic metadata (ISBN, title, author) and first pages text.
-3.  **Enriching**: Parallel network queries fetch work candidates from Open Library, Google Books, and Calibre.
-4.  **Judging**: The LLM router requests structured verdicts matching the candidate metadata schema.
-5.  **Status Assignment**:
-    *   `safe`: Confidence exceeds 95% threshold; matches deterministic identifiers.
-    *   `needs_review`: Lower confidence or key discrepancies (e.g. author name swap).
-    *   `duplicate`: Duplicate detected via Qdrant title embeddings.
+```python
+class FieldVerdict(BaseModel):
+    field: str                    # title, authors, isbn, publisher, date, language, series, series_index
+    declared_value: Any
+    observed_value: Any | None
+    verdict: VerdictKind          # confirmed | mismatch | missing | ambiguous
+    confidence: int              # 0-100
+    evidence: list[EvidenceSpan] # cited source snippets
+    risk_flags: list[str]         # author_swap, isbn_conflict, etc.
+    reason: str | None
+    is_deterministic: bool
+```
 
----
-
-## 5. Evidence Package Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> Building: Extract Heuristics & Snippets
-    Building --> ProviderFetch: Query OpenLibrary & Google Books
-    ProviderFetch --> DeterministicCheck: ISBN/Title Rules Matching
-    DeterministicCheck --> LLMJudge: Routing to LLM for verdict
-    LLMJudge --> SQLitePersist: Save final EvidencePackage record
-    SQLitePersist --> [*]
+```python
+class BookVerdict(BaseModel):
+    book_key: str
+    field_verdicts: dict[str, FieldVerdict]
+    overall_confidence: int
+    risk_flags: list[str]
+    action: VerdictAction          # no_change | suggest_fix | needs_review | defer
+    auto_apply_eligible: bool
+    proposed_patch: dict[str, Any]
+    reasons: list[str]
 ```
 
 ---
 
 ## 6. Model Routing
 
-We map LLM requests to specific models dynamically based on the complexity and security requirements of the task:
+Per-task capability-based routing via `LLMRouter` + `HostRegistry`:
 
-*   **Fast Utility Task**: Normalization of titles and author strings is routed to local Ollama instances running lightweight models (`qwen3:8b`).
-*   **Deep Reasoning / Judge Task**: High-ambiguity audit judgments are routed to `gpt-5.5` or `gemini-2.5-pro` structured outputs.
-*   **Vision Task**: Evaluating cover image similarities is routed to vision-capable models (`gpt-5.4-mini` or local `qwen2.5vl:7b`).
-*   **Embedding Task**: Vector generation is routed to local `nomic-embed-text` or cloud `text-embedding-3-small`.
+| Task | Default | Fallback |
+|---|---|---|
+| Fast utility (title normalization, etc.) | Local Ollama (`qwen3:8b`) | Remote OpenAI (`gpt-4o-mini`) |
+| Deep reasoning / v1.0 witness | Local Ollama (`qwen3:8b`) | Gemini 2.5 Pro |
+| Vision (cover, title page) | Local Ollama vision model | `gpt-4o-mini` vision |
+| Embedding (semantic dedup) | Local `nomic-embed-text` | `text-embedding-3-small` |
 
----
-
-## 7. Document Conversion
-
-We provide clean sandboxing for document conversions to prevent untrusted files from compromising the container:
-*   **Stateless Gotenberg Container**: If a non-ebook format (e.g. `DOCX`, `RTF`, `HTML`) is ingested, the worker posts it to Gotenberg's `/forms/libreoffice/convert` API.
-*   **Output PDF**: The worker receives the clean output PDF and feeds it into the normal parsing pipeline (PyMuPDF4LLM).
+Privacy filters apply: `allow_remote_text: false` (default) and
+`allow_remote_images: false` block remote content by default.
 
 ---
 
-## 8. OCR and Text Extraction
+## 7. Multi-Host Inference (v1.0)
+
+`HostRegistry` discovers Ollama + LM Studio hosts. Each host has a
+`GPUClass` (`high` / `medium` / `low` / `cpu`).
+
+Tasks route by GPU class:
+- `heavy_vision` → `high` GPU (e.g. RTX 3090)
+- `bulk_ocr` → `medium` GPU (e.g. RTX 5060 Ti)
+- `embedding` → `medium` GPU
+
+Configured homelab hosts:
+- `192.168.0.89` — RTX 3090, LM Studio (high)
+- `192.168.0.122` — Unraid Ollama (medium, RTX 5060 Ti + 1660 SUPER)
+- `localhost:11434` — fallback (low/cpu)
+
+Discover via `bookaudit hosts`.
+
+---
+
+## 8. OCR Pipeline (v1.0)
 
 ```mermaid
 flowchart TD
-    Start[Ingested PDF] --> Check{Has extractable text?}
-    Check -- Yes --> Extract[PyMuPDF4LLM Text Extract]
-    Check -- No --> OCR[OCREngine via Tesseract OCR]
-    Extract --> Finish[Generate text snippets]
-    OCR --> Finish
+    Start[Ingested PDF] --> Classify{Page classifier}
+    Classify -- "text present" --> Skip[Skip OCR, use PyMuPDF]
+    Classify -- "clean_scan" --> Tesseract
+    Classify -- "noisy_scan / multilingual" --> Surya
+    Classify -- "table_heavy" --> PaddleOCR
+    Tesseract --> Finish
+    Surya --> Finish
+    PaddleOCR --> Finish
+    Skip --> Finish[Text snippets ready for verification]
+```
+
+Routing decision per page based on a per-page classifier hint. Tesseract is
+always available; PaddleOCR + Surya require the `[ocr]` optional extra.
+
+---
+
+## 9. Conservative Auto-Apply Gate (v1.0)
+
+```
+AUTO_APPLY_MIN_CONFIDENCE: int = 80
+AUTO_APPLY_MIN_FIELD_CONFIDENCE: int = 75
+
+HIGH_RISK_FLAGS = {
+    "author_swap", "isbn_conflict", "edition_ambiguous",
+    "cover_mismatch", "wrong_book", "series_mismatch",
+    "publisher_mismatch"
+}
+```
+
+A book is auto-apply eligible iff:
+1. Every declared field has a deterministic verdict (no `ambiguous`)
+2. `overall_confidence ≥ AUTO_APPLY_MIN_CONFIDENCE`
+3. No `HIGH_RISK_FLAGS` present
+4. Every per-field confidence ≥ `AUTO_APPLY_MIN_FIELD_CONFIDENCE`
+5. No field has `requires_review: true`
+
+---
+
+## 10. Restore Points (v1.0)
+
+Every apply creates:
+```
+.artifacts/restore/<run_id>/<book_key>/
+├── original.opf                 # calibredb export of pre-apply metadata
+├── original.<ext>               # hardlink to the original book file
+├── original.cover.<ext>          # original cover (if changed)
+├── before.json                   # full metadata snapshot
+├── after.json                    # full metadata snapshot
+└── restore.json                  # {run_id, book_key, applied_at, fields_changed}
+```
+
+TTL: 7 days (configurable). Bulk undo by `run_id` walks every entry.
+
+---
+
+## 11. Resumable Runs (v1.0)
+
+`ResumableRunStore` writes per-book state to Valkey Streams. On worker
+crash, the next worker rolls `in_progress` books back to `pending` and
+re-runs them. Handles 50k books in ~8ms.
+
+```
+run:<run_id>:books  (Valkey Stream entry per state transition)
+  XADD * book_key "calibre:42" status "in_progress" ts "..."
 ```
 
 ---
 
-## 9. Metadata Providers
+## 12. LLM Witness Caching (v1.0)
 
-All provider requests inherit from a base `BaseProvider` class, exposing:
-*   `fetch_candidates(title, authors, isbn) -> list[Candidate]`
-*   **Concurrency**: Every request is fired concurrently via `asyncio.gather` with a strict `timeout` parameter to avoid hanging threads.
-*   **Rate Limits & Cooldowns**: If a provider returns a `429 Too Many Requests` response, a Valkey cooldown lock is set to skip that provider for 10 minutes.
-
----
-
-## 10. Vector Search and Duplicate Detection
-
-*   **Embeddings**: We compute 384-dimensional dense vectors using local `nomic-embed-text`.
-*   **Storage**: Collections are stored in Qdrant with title and author payloads.
-*   **Duplicate Detection Query**:
-    ```python
-    qdrant_client.query_points(
-        collection_name="books",
-        query_vector=book_title_vector,
-        query_filter=Filter(must=[FieldCondition(key="language", match=MatchValue(value="en"))]),
-        limit=5
-    )
-    ```
-*   Similarity scores exceeding `0.85` trigger duplicate flags.
+Every LLM call is hashed on its rendered prompt. Same prompt + same schema
+→ same response, served from `WitnessCache` in 107µs vs ~1s for a real
+LLM call. **Cache hit ratio is the single most important metric for
+v1.0 cost control** — surfaced via `/api/metrics`.
 
 ---
 
-## 11. Queue and Worker Design
+## 13. Document Conversion
 
-To handle long-running OCR and LLM calls without blocking HTTP endpoints, we employ an asynchronous worker model:
-*   **Task Broker**: Valkey (Redis-compatible).
-*   **Worker Pool**: Async Arq or Celery worker nodes.
-*   **Locking**: Distributed mutex locks using `valkey.set(lock_key, token, nx=True, ex=300)` coordinate workers and prevent double-processing.
-
----
-
-## 12. Cache Design
-
-We utilize a two-tier caching strategy to limit network request latencies:
-1.  **RAM Cache**: Simple process-level dictionary caching for local CLI runs.
-2.  **Shared Valkey Cache**: Used by API servers and background workers.
-    *   **Provider requests**: Cached with a 24-hour TTL.
-    *   **LLM Responses**: Cached matching the hash of prompt instructions.
+For non-ebook formats (DOCX, RTF, HTML):
+- **Stateless Gotenberg Container**: `docker compose` includes
+  `gotenberg:8` on port 3000.
+- **Output PDF**: worker posts the file to
+  `/forms/libreoffice/convert`, receives a clean PDF, feeds it into the
+  PyMuPDF4LLM extraction path.
 
 ---
 
-## 13. Storage Model
+## 14. Queue and Worker Design
 
-Relational state is persisted in **SQLite** (leveraging SQLModel/SQLAlchemy ORM), and heavy raw files are saved to the filesystem:
-*   `metadata.db` contains: `runs`, `book_records`, `evidence_packages`, `changes`.
-*   `.artifacts/` directory contains: original cover images, text snippets, and backup OPF files.
-
----
-
-## 14. Calibre Integration
-
-We support a hybrid integration model to balance execution speed with database safety:
-*   **Read-Only Operations (Scans)**: Bypasses standard CLI subprocess latency by invoking `calibre-debug` with `calibre.library.db` directly to access cached records.
-*   **Write-Back Operations (Applies)**: Invokes the official CLI `calibredb set_metadata` to update the library, ensuring Calibre's internal events and index files stay synchronized.
+- **Task Broker**: Valkey (Redis-compatible).
+- **Worker Pool**: Async `web/jobs.py` worker pool driven by Valkey.
+- **Locking**: distributed mutex via `valkey.set(lock_key, token, nx=True, ex=300)`.
 
 ---
 
-## 15. Safe Write-Back
+## 15. Cache Design
 
-```mermaid
-flowchart TD
-    Apply[Apply Metadata Request] --> Backup[Backup: Read current metadata -> Write to backup.opf]
-    Backup --> CoverBackup[Copy current cover to backup.cover.jpg]
-    CoverBackup --> CalibreWrite[Invoke calibredb set_metadata]
-    CalibreWrite --> Verification[Read metadata back to verify change]
-    Verification --> Success[Log change success]
-```
+Two-tier:
+1. **RAM Cache**: process-level dictionary for local CLI runs.
+2. **Valkey Cache**: shared across API + workers. Provider requests cached
+   24h; LLM responses cached matching prompt-hash.
 
 ---
 
-## 16. Human Review Workflow
+## 16. Storage Model
 
-Suggestions containing high-risk flags (such as modifying the book's primary author, or changing an ISBN where conflicts exist) are never applied automatically:
-*   They are placed in the `needs_review` list.
-*   The user reviews the evidence package in the WebUI or CLI.
-*   Applying the patch requires an explicit user approval event.
-
----
-
-## 17. Observability
-
-*   **Structure Logging**: JSON logs containing correlation IDs for jobs.
-*   **Progress Metrics**: Tasks write percentage updates to the Valkey cache, allowing the React frontend to fetch real-time task progression.
+- `metadata.db` (SQLite by default; PostgreSQL in production):
+  - `runs`, `book_records`, `evidence_packages`, `changes`
+- `.artifacts/`:
+  - `covers/<book_key>.jpg`
+  - `restore/<run_id>/<book_key>/...` (per-book restore points)
+  - `metrics/baseline.json` (CI benchmark baseline)
+- `.benchmarks/` (CI baseline artifacts)
 
 ---
 
-## 18. Privacy and Security
+## 17. Calibre Integration
 
-*   **Remote Transmission Safeguards**: Full books are never sent to remote LLMs. Only small metadata segments and parsed text snippets (capped at 4,000 characters) are transmitted.
-*   **Configuration Control**: Remote uploads must be explicitly enabled via `allow_remote_file_upload: true`.
-
----
-
-## 19. Failure Handling
-
-*   **Model Failover**: If the primary LLM provider fails, the router automatically retries the task with a fallback provider (e.g. failing from local Ollama to remote OpenAI).
-*   **Transactional Rollbacks**: Any failure during backup or writing stages rolls back file swaps and reverts the database transaction.
+Hybrid model:
+- **Read-Only**: subprocess `calibredb list --for-machine --fields all` for
+  speed + safety.
+- **Write-Back**: official `calibredb set_metadata` to keep Calibre's
+  internal events and index files synchronized. v1.0 restore point is
+  written FIRST via `calibredb export_metadata`.
 
 ---
 
-## 20. Deployment Modes
+## 18. v1.0 Human Review Workflow
 
-*   **Development / CLI**: Light-weight, offline mode. Runs SQLite and in-memory caches locally without requiring Valkey or Qdrant containers.
-*   **Production Stack**: Full Docker-compose architecture deploying the FastAPI API server, React frontend, Qdrant vector database, and Valkey queues.
+- `needs_review` books land in the WebUI Review Queue with per-field
+  verdict chips (Confirmed / Mismatch / Missing / Ambiguous) and
+  evidence spans.
+- Author approves or rejects per-book via `POST /api/review/{key}/approve|reject`.
+- High-risk books (`author_swap`, `isbn_conflict`, etc.) are never
+  auto-applied — they always require human eyes.
 
 ---
 
-## 21. Open Questions
+## 19. Observability
 
-1.  *How do we handle Calibre library lock conflicts if the desktop GUI is open during an audit write operation?*
-2.  *Should we implement automatic database synchronization when the file watcher detects direct additions in Calibre's folder?*
+- **Structured Logging**: JSON logs with `run_id`, `book_key`, `host`
+  correlation IDs.
+- **Progress Metrics**: per-job progress written to Valkey for the React
+  frontend to poll.
+- **Prometheus `/metrics`**: counters (LLM calls, OCR pages, book actions),
+  gauges (queue depth, host health), histograms (LLM latency, render time).
+
+---
+
+## 20. Privacy and Security
+
+- `allow_remote_text: false` (default) — no snippets to remote LLMs.
+- `allow_remote_images: false` (default) — no cover images to remote vision.
+- `BOOKAUDIT_API_KEY` (optional) — middleware enforces `X-API-Key` header.
+- `BOOKAUDIT_READ_ONLY: true` (default) — blocks all writes.
+
+---
+
+## 21. Failure Handling
+
+- **Model Failover**: `LLMRouter` retries with next provider if primary
+  fails; `WitnessCache` serves the response if it's been seen before.
+- **Restore Points**: every apply writes restore point first; undo is
+  unconditional and restore-point-aware.
+- **Resume**: worker crash → `in_progress` rolled back to `pending`.
+- **Graceful Degradation**: failed OCR → `ambiguous` field → LLM witness
+  → human review. Nothing crashes.
+
+---
+
+## 22. Deployment Modes
+
+- **Development / CLI**: SQLite + in-memory cache. `pip install -e .`
+  + Calibre CLI on `$PATH`.
+- **Homelab (Docker Compose)**: full stack — Postgres + Valkey + Qdrant +
+  Tika + Gotenberg + FastAPI + WebUI.
+- **Production (single host)**: scale up Postgres + Valkey, run FastAPI
+  with `--workers 4`, put nginx in front for TLS.
+
+---
+
+## 23. Open Questions
+
+1. **Calibre library lock conflicts**: how do we handle if the Calibre
+   desktop GUI is open during an audit write? Current: rely on
+   `calibredb set_metadata`'s own file locking. Mitigation: `--wait-for-calibre-lock`
+   flag (planned for v1.0.1).
+2. **MCP server**: expose audit tools to Hermes agent (planned for v1.2).
+3. **Comics vision**: cover identification via vision LLM (planned for v1.1).
