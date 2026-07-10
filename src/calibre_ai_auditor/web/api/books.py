@@ -131,14 +131,13 @@ async def get_book_verdict(
     observations from its `extracted` and `snippets` fields, and produces
     per-field verdicts via the engine.  No LLM calls — pure deterministic rules.
     """
+    from calibre_ai_auditor.extractors.heuristics import (
+        extract_heuristics,
+    )
     from calibre_ai_auditor.verification import (
         ContentVerificationEngine,
         DeclaredMetadata,
         ObservationSet,
-    )
-    from calibre_ai_auditor.extractors.heuristics import (
-        extract_heuristics,
-        extract_isbn,
     )
 
     statement = select(BookRecord).where(BookRecord.book_key == book_key)
@@ -147,9 +146,7 @@ async def get_book_verdict(
         raise HTTPException(status_code=404, detail="Book not found")
 
     pkg_stmt = (
-        select(EvidencePackage)
-        .where(EvidencePackage.book_key == book_key)
-        .order_by(EvidencePackage.created_at.desc())  # type: ignore[attr-defined]
+        select(EvidencePackage).where(EvidencePackage.book_key == book_key).order_by(EvidencePackage.created_at.desc())  # type: ignore[attr-defined]
     )
     package = session.exec(pkg_stmt).first()
 
@@ -225,6 +222,3 @@ async def get_similar_books(
 
     results = await searcher.find_similar(title)
     return {"status": "success", "data": results}
-
-
-

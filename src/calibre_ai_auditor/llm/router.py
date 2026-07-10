@@ -37,10 +37,7 @@ class LLMRouter:
         """
         Simple routing logic.
         """
-        if task == "vision":
-            model = self.settings.vision_model or ""
-        else:
-            model = self.settings.judge_model or ""
+        model = self.settings.vision_model or "" if task == "vision" else self.settings.judge_model or ""  # noqa: SIM108
 
         # 1. Route to Google Gemini if model is gemini and google is configured
         if "gemini" in model.lower() and "google" in self.providers:
@@ -103,9 +100,7 @@ class LLMRouter:
 
         return request
 
-    async def execute_structured(
-        self, task: str, request: LLMRequest, schema: dict[str, Any]
-    ) -> LLMResponse:
+    async def execute_structured(self, task: str, request: LLMRequest, schema: dict[str, Any]) -> LLMResponse:
         provider = self.get_provider_for_task(task)
         request = self._apply_privacy_filters(provider, request)
         logger.info(f"Routing task '{task}' to provider '{provider.name}'")

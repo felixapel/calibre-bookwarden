@@ -76,11 +76,39 @@ def _normalize_text(value: Any) -> str:
 # Covers the 33 Russian Cyrillic letters.  Not a full library — just enough for
 # names like "Михаил Булгаков" ≈ "Mikhail Bulgakov".
 _CYRILLIC_TO_LATIN = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
-    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
-    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ё": "e",
+    "ж": "zh",
+    "з": "z",
+    "и": "i",
+    "й": "y",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "kh",
+    "ц": "ts",
+    "ч": "ch",
+    "ш": "sh",
+    "щ": "shch",
+    "ъ": "",
+    "ы": "y",
+    "ь": "",
+    "э": "e",
+    "ю": "yu",
+    "я": "ya",
 }
 
 
@@ -205,7 +233,8 @@ def verify_isbn(declared: Any, observed: Any, *, page_range: str | None = None) 
         )
 
     # Both exist — validate and compare
-    assert declared_clean and observed_clean
+    assert declared_clean, "declared ISBN must be valid"
+    assert observed_clean, "observed ISBN must be valid"  # noqa: B101
     decl_valid = _isbn_is_valid(declared_clean)
     obs_valid = _isbn_is_valid(observed_clean)
 
@@ -385,9 +414,9 @@ def verify_title(
     raw_decl = str(declared).strip()
     raw_decl_stripped_punct = raw_decl.rstrip("!?.,;:*")
     if (
-        raw_decl_stripped_punct and
-        _normalize_text(raw_decl_stripped_punct) == norm_obs and
-        raw_decl_stripped_punct != raw_decl
+        raw_decl_stripped_punct
+        and _normalize_text(raw_decl_stripped_punct) == norm_obs
+        and raw_decl_stripped_punct != raw_decl
     ):
         return FieldVerdict(
             field="title",
@@ -633,7 +662,8 @@ def verify_authors(
             reason="Authors declared but extraction returned no author info.",
         )
 
-    assert declared_list and observed_list
+    assert declared_list, "declared authors must be non-empty"
+    assert observed_list, "observed authors must be non-empty"  # noqa: B101
     if _authors_equal(declared_list, observed_list):
         if low_signal:
             return FieldVerdict(
@@ -678,9 +708,7 @@ def verify_authors(
         return a_words[-1] == b_words[-1] or a_words[-1] == b_words[0]
 
     def _surname_match_any(a: str, b_set: set[str]) -> bool:
-        for b in b_set:
-            if _surname_match(a, b):
-                return True
+        return any(_surname_match(a, b) for b in b_set)  # noqa: SIM110
         return False
 
     norm_decl = {_normalize_text(a) for a in declared_list if a}
@@ -699,14 +727,22 @@ def verify_authors(
 
     # If every declared author matches observed (modulo transliteration) AND the
     # sets are the same size, it's the same set.
-    if len(declared_list) == len(observed_list) and all(
-        any(_is_transliteration_match(d, o) or _surname_match(d_raw, o_raw)
-            for o, o_raw in zip(norm_obs, observed_list))
-        for d, d_raw in zip(norm_decl, declared_list)
-    ) and all(
-        any(_is_transliteration_match(o, d) or _surname_match(o_raw, d_raw)
-            for d, d_raw in zip(norm_decl, declared_list))
-        for o, o_raw in zip(norm_obs, observed_list)
+    if (
+        len(declared_list) == len(observed_list)
+        and all(
+            any(
+                _is_transliteration_match(d, o) or _surname_match(d_raw, o_raw)
+                for o, o_raw in zip(norm_obs, observed_list, strict=False)  # noqa: B905
+            )
+            for d, d_raw in zip(norm_decl, declared_list, strict=False)
+        )
+        and all(
+            any(
+                _is_transliteration_match(o, d) or _surname_match(o_raw, d_raw)
+                for d, d_raw in zip(norm_decl, declared_list, strict=False)  # noqa: B905
+            )
+            for o, o_raw in zip(norm_obs, observed_list, strict=False)  # noqa: B905
+        )
     ):
         return FieldVerdict(
             field="authors",
@@ -746,8 +782,11 @@ def verify_authors(
         )
 
     # Disjoint sets → author_swap risk (only if no surname match)
-    if not norm_decl.intersection(norm_obs) and not _cross(norm_decl, norm_obs) \
-            and not any(_surname_match_any(d_raw, set(observed_list)) for d_raw in declared_list):
+    if (
+        not norm_decl.intersection(norm_obs)
+        and not _cross(norm_decl, norm_obs)
+        and not any(_surname_match_any(d_raw, set(observed_list)) for d_raw in declared_list)
+    ):
         return FieldVerdict(
             field="authors",
             declared_value=declared_list,
@@ -785,10 +824,10 @@ def verify_authors(
     if obs_covered_by_decl and not decl_covered_by_obs:
         # declared has hallucinated extra
         extra = [
-            d_raw for d_raw in declared_list
+            d_raw
+            for d_raw in declared_list
             if not any(
-                _is_transliteration_match(d_raw, o_raw) or _surname_match(d_raw, o_raw)
-                for o_raw in observed_list
+                _is_transliteration_match(d_raw, o_raw) or _surname_match(d_raw, o_raw) for o_raw in observed_list
             )
         ]
         return FieldVerdict(
@@ -813,10 +852,10 @@ def verify_authors(
     if decl_covered_by_obs and not obs_covered_by_decl:
         # observed has additional co-author
         extra = [
-            o_raw for o_raw in observed_list
+            o_raw
+            for o_raw in observed_list
             if not any(
-                _is_transliteration_match(o_raw, d_raw) or _surname_match(o_raw, d_raw)
-                for d_raw in declared_list
+                _is_transliteration_match(o_raw, d_raw) or _surname_match(o_raw, d_raw) for d_raw in declared_list
             )
         ]
         return FieldVerdict(
@@ -948,9 +987,7 @@ def verify_publisher(declared: Any, observed: Any, *, page_range: str | None = N
     )
 
 
-def verify_published_date(
-    declared: Any, observed: Any, *, page_range: str | None = None
-) -> FieldVerdict:
+def verify_published_date(declared: Any, observed: Any, *, page_range: str | None = None) -> FieldVerdict:
     """Date rule: ±1 day / year-only tolerance."""
     if declared is None and observed is None:
         return FieldVerdict(

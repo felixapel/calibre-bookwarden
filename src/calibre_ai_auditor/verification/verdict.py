@@ -16,10 +16,10 @@ from pydantic import BaseModel, Field
 class VerdictKind(StrEnum):
     """Per-field adjudication result."""
 
-    confirmed = "confirmed"      # declared matches observed
-    mismatch = "mismatch"        # declared != observed, observed has higher truth value
-    missing = "missing"          # declared is None/empty but observed exists
-    ambiguous = "ambiguous"      # cannot decide deterministically, needs LLM witness
+    confirmed = "confirmed"  # declared matches observed
+    mismatch = "mismatch"  # declared != observed, observed has higher truth value
+    missing = "missing"  # declared is None/empty but observed exists
+    ambiguous = "ambiguous"  # cannot decide deterministically, needs LLM witness
 
 
 class VerdictAction(StrEnum):
@@ -37,11 +37,11 @@ class EvidenceSpan(BaseModel):
     Anchored to a location in the source so the UI can render it inline.
     """
 
-    source: str                       # title_page | copyright_page | ocr | cover | header | isbn_block
-    text: str                         # the literal substring that supports the verdict
-    page_range: str | None = None     # e.g. "1-3" or "p.42"
+    source: str  # title_page | copyright_page | ocr | cover | header | isbn_block
+    text: str  # the literal substring that supports the verdict
+    page_range: str | None = None  # e.g. "1-3" or "p.42"
     confidence: int = Field(ge=0, le=100)
-    locator: str | None = None        # free-form: "line 3", "regex match", etc.
+    locator: str | None = None  # free-form: "line 3", "regex match", etc.
 
 
 class JudgeCall(BaseModel):
@@ -50,10 +50,10 @@ class JudgeCall(BaseModel):
     `ambiguous` verdicts MUST list at least one JudgeCall before being marked final.
     """
 
-    provider: str                     # openai | ollama | google | lmstudio
+    provider: str  # openai | ollama | google | lmstudio
     model: str
-    prompt_hash: str                  # sha256 of the rendered prompt
-    response_hash: str                # sha256 of the response
+    prompt_hash: str  # sha256 of the rendered prompt
+    response_hash: str  # sha256 of the response
     tokens_in: int
     tokens_out: int
     duration_ms: int
@@ -63,7 +63,7 @@ class JudgeCall(BaseModel):
 class FieldVerdict(BaseModel):
     """Per-field adjudication result."""
 
-    field: str                        # title | authors | isbn | publisher | published_date | language | series | series_index | cover | tags
+    field: str  # title | authors | isbn | publisher | published_date | language | series | series_index | volume | chapter | series_position | cover | tags
     declared_value: Any
     observed_value: Any | None = None
     verdict: VerdictKind
@@ -73,7 +73,7 @@ class FieldVerdict(BaseModel):
     requires_review: bool = False
     risk_flags: list[str] = Field(default_factory=list)
     reason: str | None = None
-    is_deterministic: bool = True     # True if verdict came from rules (no LLM)
+    is_deterministic: bool = True  # True if verdict came from rules (no LLM)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

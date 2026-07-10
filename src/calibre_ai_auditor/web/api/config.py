@@ -18,33 +18,33 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
         "judge_model": settings_dict.get("judge_model"),
         "vision_model": settings_dict.get("vision_model"),
     }
-    
+
     # Library
     if "library" in settings_dict:
         sanitized["library"] = {
             "path": settings_dict["library"].get("path"),
             "read_only": settings_dict["library"].get("read_only"),
         }
-        
+
     # Database
     if "database" in settings_dict:
         sanitized["database"] = {
             "backend": settings_dict["database"].get("backend"),
         }
-        
+
     # Queue
     if "queue" in settings_dict:
         sanitized["queue"] = {
             "backend": settings_dict["queue"].get("backend"),
         }
-        
+
     # Rate limits
     if "rate_limits" in settings_dict:
         sanitized["rate_limits"] = {
             "enabled": settings_dict["rate_limits"].get("enabled"),
             "backend": settings_dict["rate_limits"].get("backend"),
         }
-        
+
     # Vectors
     if "vectors" in settings_dict:
         sanitized["vectors"] = {
@@ -54,15 +54,15 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
             "embedding_model": settings_dict["vectors"].get("embedding_model"),
             "local_only": settings_dict["vectors"].get("local_only"),
         }
-        
+
     # Providers
     if "providers" in settings_dict:
         sanitized["providers"] = settings_dict["providers"].copy() if settings_dict["providers"] else {}
-        
+
     # Privacy
     if "privacy" in settings_dict:
         sanitized["privacy"] = settings_dict["privacy"].copy() if settings_dict["privacy"] else {}
-        
+
     # Extractors
     if "extractors" in settings_dict and "tika" in settings_dict["extractors"]:
         tika = settings_dict["extractors"]["tika"]
@@ -74,25 +74,25 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
                 "max_embedded_resources": tika.get("max_embedded_resources"),
             }
         }
-        
+
     # Paperless
     if "paperless" in settings_dict:
         sanitized["paperless"] = {
             "enabled": settings_dict["paperless"].get("enabled"),
             "import_document_types": settings_dict["paperless"].get("import_document_types"),
         }
-        
+
     # Preview
     if "preview" in settings_dict:
         sanitized["preview"] = {
             "gotenberg_enabled": settings_dict["preview"].get("gotenberg_enabled"),
             "timeout_seconds": settings_dict["preview"].get("timeout_seconds"),
         }
-        
+
     # Manga Mode
     if "manga_mode" in settings_dict:
         sanitized["manga_mode"] = settings_dict["manga_mode"].copy() if settings_dict["manga_mode"] else {}
-        
+
     return sanitized
 
 

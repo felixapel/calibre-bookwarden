@@ -22,13 +22,13 @@ def get_engine(settings: Settings) -> Engine:
     return _engine
 
 
-
 def init_db(settings: Settings) -> None:
     engine = get_engine(settings)
     SQLModel.metadata.create_all(engine)
 
     # Perform runtime migrations for added columns
     from sqlalchemy import inspect, text
+
     inspector = inspect(engine)
     if "bookrecord" in inspector.get_table_names():
         columns = [c["name"] for c in inspector.get_columns("bookrecord")]

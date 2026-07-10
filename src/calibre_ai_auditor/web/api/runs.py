@@ -56,10 +56,7 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
 
         for book in books:
             authors_str = book.get("authors", "")
-            if isinstance(authors_str, str):
-                authors = [a.strip() for a in authors_str.split("&")]
-            else:
-                authors = []
+            authors = [a.strip() for a in authors_str.split("&")] if isinstance(authors_str, str) else []  # noqa: SIM108
 
             book_key = f"calibre:{book['id']}"
             existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
@@ -70,10 +67,7 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
                     "authors": authors,
                     "identifiers": book.get("identifiers", {}),
                 }
-                existing.files = [
-                    {"path": f, "format": Path(f).suffix[1:].lower()}
-                    for f in book.get("formats", [])
-                ]
+                existing.files = [{"path": f, "format": Path(f).suffix[1:].lower()} for f in book.get("formats", [])]
                 existing.status = "scanned"
                 book_record = existing
             else:
@@ -87,18 +81,11 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
                         "authors": authors,
                         "identifiers": book.get("identifiers", {}),
                     },
-                    files=[
-                        {"path": f, "format": Path(f).suffix[1:].lower()}
-                        for f in book.get("formats", [])
-                    ],
+                    files=[{"path": f, "format": Path(f).suffix[1:].lower()} for f in book.get("formats", [])],
                 )
             try:
                 full_metadata = cli.show_metadata(book["id"])
-                lang = (
-                    full_metadata.get("languages", [None])[0]
-                    if full_metadata.get("languages")
-                    else None
-                )
+                lang = full_metadata.get("languages", [None])[0] if full_metadata.get("languages") else None
                 book_record.current_metadata.update(
                     {
                         "publisher": full_metadata.get("publisher"),
@@ -145,9 +132,7 @@ async def list_runs(session: Annotated[Session, Depends(get_session)]) -> Any:
 
 
 @router.post("/runs/scan")
-async def scan(
-    req: ScanRequest, settings: Annotated[Settings, Depends(get_settings)]
-) -> dict[str, str]:
+async def scan(req: ScanRequest, settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
     job_id = await start_job("scan", do_scan, settings, req)
     return {"job_id": job_id}
 
@@ -158,7 +143,6 @@ async def get_job(job_id: str) -> dict[str, Any]:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job.model_dump()
-
 
 
 @router.post("/runs/{run_id}/revert")
@@ -178,7 +162,10 @@ async def revert_run(
     changes = session.exec(changes_stmt).all()
 
     if not changes:
-        return {"status": "success", "data": {"message": f"No active changes found to revert for run {run_id}"}}
+        return {
+            "status": "success",
+            "data": {"message": f"No active changes found to revert for run {run_id}"},
+        }
 
     cli = CalibreCLI(settings.library.path)
     apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
@@ -189,14 +176,14 @@ async def revert_run(
     for change in changes:
         try:
             apply_engine.undo_change(session, change)
-            
+
             # Reset book record status back to suggest_fix
             book_stmt = select(BookRecord).where(BookRecord.book_key == change.book_key)
             book = session.exec(book_stmt).first()
             if book:
                 book.status = "suggest_fix"
                 session.add(book)
-                
+
             reverted_count += 1
         except Exception as e:
             errors.append(f"Failed to revert change {change.id} for book {change.book_key}: {e}")
@@ -206,4 +193,7 @@ async def revert_run(
     if errors:
         raise HTTPException(status_code=500, detail=f"Revert completed with errors: {'; '.join(errors)}")
 
-    return {"status": "success", "data": {"message": f"Successfully reverted {reverted_count} changes for run {run_id}"}}
+    return {
+        "status": "success",
+        "data": {"message": f"Successfully reverted {reverted_count} changes for run {run_id}"},
+    }

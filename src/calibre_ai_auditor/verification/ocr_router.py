@@ -91,8 +91,7 @@ class TesseractProvider:
 
     async def ocr_page(self, image: bytes, *, language: str = "en") -> OCRPageResult:
         raise NotImplementedError(
-            "TesseractProvider.ocr_page expects a pre-rendered image; "
-            "for PDF use TesseractProvider.ocr_pdf_pages()."
+            "TesseractProvider.ocr_page expects a pre-rendered image; for PDF use TesseractProvider.ocr_pdf_pages()."
         )
 
     async def ocr_pages(self, images: list[bytes], *, language: str = "en") -> list[OCRPageResult]:
@@ -100,7 +99,8 @@ class TesseractProvider:
 
     async def health(self) -> bool:
         proc = await asyncio.create_subprocess_exec(
-            self.ocrmypdf_path, "--version",
+            self.ocrmypdf_path,
+            "--version",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -126,11 +126,15 @@ class TesseractProvider:
             out_pdf = tmp_dir / "out.pdf"
             cmd = [
                 self.ocrmypdf_path,
-                "--sidecar", str(sidecar),
-                "--pages", page_range,
-                "--optimize", "0",
+                "--sidecar",
+                str(sidecar),
+                "--pages",
+                page_range,
+                "--optimize",
+                "0",
                 "--skip-text",
-                "--language", self._map_lang(language),
+                "--language",
+                self._map_lang(language),
                 str(pdf_path),
                 str(out_pdf),
             ]
@@ -169,8 +173,16 @@ class TesseractProvider:
     def _map_lang(lang: str) -> str:
         # ocrmypdf uses ISO 639-2/B codes; "en" -> "eng"
         mapping = {
-            "en": "eng", "de": "deu", "fr": "fra", "es": "spa", "it": "ita",
-            "pt": "por", "nl": "nld", "ru": "rus", "ja": "jpn", "zh": "chi_sim",
+            "en": "eng",
+            "de": "deu",
+            "fr": "fra",
+            "es": "spa",
+            "it": "ita",
+            "pt": "por",
+            "nl": "nld",
+            "ru": "rus",
+            "ja": "jpn",
+            "zh": "chi_sim",
         }
         return mapping.get(lang, "eng")
 
@@ -209,9 +221,7 @@ class PaddleOCRProvider:
             try:
                 from paddleocr import PaddleOCR  # type: ignore
             except ImportError as e:
-                raise RuntimeError(
-                    "paddleocr not installed. Install with: pip install paddleocr paddlepaddle"
-                ) from e
+                raise RuntimeError("paddleocr not installed. Install with: pip install paddleocr paddlepaddle") from e
             self._ocr = PaddleOCR(use_angle_cls=True, lang=self.lang, use_gpu=self.use_gpu)
         return self._ocr
 
@@ -248,9 +258,7 @@ class PaddleOCRProvider:
                 pix = await asyncio.to_thread(page.get_pixmap, matrix=fitz.Matrix(2.0, 2.0))
                 img_bytes = pix.tobytes("png")
                 loop = asyncio.get_event_loop()
-                ocr_result = await loop.run_in_executor(
-                    None, lambda b=img_bytes: ocr.ocr(b, cls=True)
-                )
+                ocr_result = await loop.run_in_executor(None, lambda b=img_bytes: ocr.ocr(b, cls=True))
                 # Parse PaddleOCR result: [[(box, (text, conf))], ...]
                 text_lines = []
                 confidences = []
@@ -261,11 +269,7 @@ class PaddleOCRProvider:
                             confidences.append(float(line[1][1]))
                 joined = "\n".join(text_lines)
                 avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
-                quality = (
-                    OCRQuality.high if avg_conf > 0.9
-                    else OCRQuality.medium if avg_conf > 0.7
-                    else OCRQuality.low
-                )
+                quality = OCRQuality.high if avg_conf > 0.9 else OCRQuality.medium if avg_conf > 0.7 else OCRQuality.low
                 results.append(
                     OCRPageResult(
                         page_number=pnum,
@@ -322,9 +326,7 @@ class SuryaProvider:
                 from surya.model.recognition.model import load_model as load_rec_model
                 from surya.model.recognition.processor import load_processor as load_rec_processor
             except ImportError as e:
-                raise RuntimeError(
-                    "surya-ocr not installed. Install with: pip install surya-ocr"
-                ) from e
+                raise RuntimeError("surya-ocr not installed. Install with: pip install surya-ocr") from e
             self._predictor = {
                 "det_model": load_det_model(),
                 "det_processor": load_det_processor(),
@@ -374,20 +376,21 @@ class SuryaProvider:
             predictions = await loop.run_in_executor(
                 None,
                 lambda: run_ocr(
-                    images, langs,
-                    predictor["det_model"], predictor["det_processor"],
-                    predictor["rec_model"], predictor["rec_processor"],
+                    images,
+                    langs,
+                    predictor["det_model"],
+                    predictor["det_processor"],
+                    predictor["rec_model"],
+                    predictor["rec_processor"],
                 ),
             )
             results: list[OCRPageResult] = []
-            for pnum, pred in zip(page_nums, predictions):
+            for pnum, pred in zip(page_nums, predictions, strict=False):
                 text_lines = [line.text for line in pred.text_lines]
                 confs = [line.confidence for line in pred.text_lines]
                 avg_conf = sum(confs) / len(confs) if confs else 0.0
                 quality = (
-                    OCRQuality.high if avg_conf > 0.85
-                    else OCRQuality.medium if avg_conf > 0.6
-                    else OCRQuality.low
+                    OCRQuality.high if avg_conf > 0.85 else OCRQuality.medium if avg_conf > 0.6 else OCRQuality.low
                 )
                 results.append(
                     OCRPageResult(
@@ -465,7 +468,7 @@ class OCRRouter:
           2. First registered provider
           3. Tesseract (always last resort)
         """
-        for pname, provider in self.providers.items():
+        for pname, provider in self.providers.items():  # noqa: B007
             if hint in provider.best_for:
                 return provider
         # Fallback to first available
@@ -485,7 +488,9 @@ class OCRRouter:
         provider = self.choose_provider(hint)
         logger.info(
             "OCR routing: hint=%s → provider=%s for %s",
-            hint.value, provider.name, pdf_path.name,
+            hint.value,
+            provider.name,
+            pdf_path.name,
         )
         # PaddleOCR / Surya expose .ocr_pdf_pages too; Tesseract already has it
         if hasattr(provider, "ocr_pdf_pages"):

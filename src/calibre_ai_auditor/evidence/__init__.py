@@ -22,6 +22,5 @@ See:
 # subsystem instead.
 __all__: list[str] = []
 DEPRECATION_NOTICE = (
-    "calibre_ai_auditor.evidence is deprecated as of v1.0; "
-    "use calibre_ai_auditor.verification instead."
+    "calibre_ai_auditor.evidence is deprecated as of v1.0; use calibre_ai_auditor.verification instead."
 )

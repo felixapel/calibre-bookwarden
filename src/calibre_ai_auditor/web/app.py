@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 from collections.abc import AsyncGenerator
@@ -46,7 +47,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Start Valkey background workers
     await start_worker_task(settings)
-    
+
     watcher_task = None
 
     if settings.library.path and settings.library.path.exists():
@@ -72,17 +73,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     logger.info("Shutting down Calibre AI Auditor API...")
-    
+
     # Stop Valkey background workers
     await stop_worker_task()
-    
+
     if watcher_task:
         watcher_task.cancel()
-        try:
-            await watcher_task
-        except asyncio.CancelledError:
-            pass
-
+        with contextlib.suppress(asyncio.CancelledError):
+            await watcher_task  # noqa: SIM105
 
 
 app = FastAPI(
@@ -92,11 +90,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Trailing slash redirection middleware for nested frontend routes
 @app.middleware("http")
-async def redirect_trailing_slash(
-    request: Request, call_next: Any
-) -> Response:
+async def redirect_trailing_slash(request: Request, call_next: Any) -> Response:
     path = request.url.path
     if path != "/" and path.endswith("/") and not path.startswith("/api") and not path.startswith("/assets"):
         return RedirectResponse(
@@ -109,9 +106,7 @@ async def redirect_trailing_slash(
 
 # Cache control headers middleware
 @app.middleware("http")
-async def add_cache_control_headers(
-    request: Request, call_next: Any
-) -> Response:
+async def add_cache_control_headers(request: Request, call_next: Any) -> Response:
     response: Response = await call_next(request)
     path = request.url.path
     if path.startswith("/assets/"):
@@ -139,6 +134,7 @@ if api_key:
                 )
         response: Response = await call_next(request)
         return response
+
 
 app.include_router(health.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
@@ -169,12 +165,12 @@ if os.path.exists(static_dir):
     async def serve_spa(full_path: str) -> FileResponse:
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
-        
+
         # Check if the requested file exists in the static_dir
         file_path = os.path.join(static_dir, full_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)
-        
+
         # Fallback to SPA index.html
         return FileResponse(os.path.join(static_dir, "index.html"))
 else:

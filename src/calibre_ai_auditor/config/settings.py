@@ -8,9 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class LibrarySettings(BaseModel):
-    path: Path | None = Field(
-        None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "library_path", "path")
-    )
+    path: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "library_path", "path"))
     read_only: bool = True
 
 
@@ -125,19 +123,17 @@ class Settings(BaseSettings):
     profile: str = "default"
     library: LibrarySettings = Field(default_factory=_default_library)
     storage: StorageSettings = Field(default_factory=_default_storage)
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
-    queue: QueueSettings = Field(default_factory=QueueSettings)
-    rate_limits: RateLimitSettings = Field(default_factory=RateLimitSettings)
-    vectors: VectorSettings = Field(default_factory=VectorSettings)
-    providers: ProviderSettings = Field(default_factory=ProviderSettings)
-    privacy: PrivacySettings = Field(default_factory=PrivacySettings)
-    extractors: ExtractorSettings = Field(default_factory=ExtractorSettings)
-    paperless: PaperlessSettings = Field(default_factory=PaperlessSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)  # type: ignore[arg-type]
+    queue: QueueSettings = Field(default_factory=QueueSettings)  # type: ignore[arg-type]
+    rate_limits: RateLimitSettings = Field(default_factory=RateLimitSettings)  # type: ignore[arg-type]
+    vectors: VectorSettings = Field(default_factory=VectorSettings)  # type: ignore[arg-type]
+    providers: ProviderSettings = Field(default_factory=ProviderSettings)  # type: ignore[arg-type]
+    privacy: PrivacySettings = Field(default_factory=PrivacySettings)  # type: ignore[arg-type]
+    extractors: ExtractorSettings = Field(default_factory=ExtractorSettings)  # type: ignore[arg-type]
+    paperless: PaperlessSettings = Field(default_factory=PaperlessSettings)  # type: ignore[arg-type]
     preview: PreviewSettings = Field(default_factory=PreviewSettings)
     manga_mode: MangaSettings = Field(default_factory=MangaSettings)
-    model_config_path: Path = Field(
-        default=Path("config/models.yml"), alias="routing__model_config"
-    )
+    model_config_path: Path = Field(default=Path("config/models.yml"), alias="routing__model_config")
 
     open_ai_api_key: str | None = Field(
         None,
@@ -172,13 +168,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Flat aliases for common Docker env vars
-    library_path_env: Path | None = Field(
-        None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH")
-    )
+    library_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH"))
     db_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_DB_PATH"))
-    artifacts_dir_env: Path | None = Field(
-        None, validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR")
-    )
+    artifacts_dir_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR"))
     read_only_env: bool | None = Field(
         None,
         validation_alias=AliasChoices("BOOKAUDIT_READ_ONLY"),

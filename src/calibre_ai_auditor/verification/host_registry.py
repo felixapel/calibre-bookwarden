@@ -37,9 +37,9 @@ class HostKind(StrEnum):
 class GPUClass(StrEnum):
     """Coarse GPU capability bucket for routing decisions."""
 
-    high = "high"     # 3090, 4090, A100, etc. — can run 13B+ models
+    high = "high"  # 3090, 4090, A100, etc. — can run 13B+ models
     medium = "medium"  # 3060, 4060 Ti, 5060 Ti — 7B models comfortably
-    low = "low"        # 1660 SUPER, etc. — 7B-q4 or smaller
+    low = "low"  # 1660 SUPER, etc. — 7B-q4 or smaller
     cpu = "cpu"
 
 
@@ -47,11 +47,11 @@ class GPUClass(StrEnum):
 class InferenceHost:
     """A single inference host with its capabilities."""
 
-    name: str                       # "felix-server", "gaming-pc"
-    base_url: str                   # e.g. http://192.168.0.122:11434/v1
+    name: str  # "felix-server", "gaming-pc"
+    base_url: str  # e.g. http://192.168.0.122:11434/v1
     kind: HostKind
     gpu_class: GPUClass
-    gpu_name: str | None = None     # "RTX 3090", "RTX 5060 Ti"
+    gpu_name: str | None = None  # "RTX 3090", "RTX 5060 Ti"
     models: list[str] = field(default_factory=list)
     enabled: bool = True
     last_health_at: float = 0.0
@@ -116,9 +116,7 @@ class HostRegistry:
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> HostRegistry:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.config.health_check_timeout_seconds)
-        )
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(self.config.health_check_timeout_seconds))
         return self
 
     async def __aexit__(self, *_exc: Any) -> None:
@@ -129,9 +127,7 @@ class HostRegistry:
     async def health_check_all(self) -> dict[str, bool]:
         """Probe every host's /v1/models endpoint. Updates last_health_* state."""
         if not self._client:
-            self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(self.config.health_check_timeout_seconds)
-            )
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self.config.health_check_timeout_seconds))
         results: dict[str, bool] = {}
         for host in self.config.hosts:
             if not host.enabled:
@@ -144,17 +140,12 @@ class HostRegistry:
                 if ok:
                     data = resp.json()
                     if isinstance(data, dict) and "data" in data:
-                        host.models = [
-                            str(m.get("id", "")) for m in data["data"] if m.get("id")
-                        ]
+                        host.models = [str(m.get("id", "")) for m in data["data"] if m.get("id")]
                     elif isinstance(data, list):
-                        host.models = [
-                            str(m.get("name", m.get("id", "")))
-                            for m in data
-                            if isinstance(m, dict)
-                        ]
+                        host.models = [str(m.get("name", m.get("id", ""))) for m in data if isinstance(m, dict)]
                 host.last_health_ok = ok
                 import time as _t
+
                 host.last_health_at = _t.time()
                 results[host.name] = ok
             except Exception as e:
@@ -212,8 +203,20 @@ class HostRegistry:
 async def discover_hosts(timeout: float = 5.0) -> list[InferenceHost]:
     """Probe the standard Felix homelab ports and return what's reachable."""
     candidates = [
-        ("gaming-pc-3090", "http://192.168.0.89:1234/v1", HostKind.lmstudio, GPUClass.high, "RTX 3090"),
-        ("unraid-ollama", "http://192.168.0.122:11434/v1", HostKind.ollama, GPUClass.medium, "RTX 5060 Ti + 1660 SUPER"),
+        (
+            "gaming-pc-3090",
+            "http://192.168.0.89:1234/v1",
+            HostKind.lmstudio,
+            GPUClass.high,
+            "RTX 3090",
+        ),
+        (
+            "unraid-ollama",
+            "http://192.168.0.122:11434/v1",
+            HostKind.ollama,
+            GPUClass.medium,
+            "RTX 5060 Ti + 1660 SUPER",
+        ),
         ("local-ollama", "http://localhost:11434/v1", HostKind.ollama, GPUClass.cpu, None),
     ]
     found: list[InferenceHost] = []
@@ -230,9 +233,13 @@ async def discover_hosts(timeout: float = 5.0) -> list[InferenceHost]:
                         models = [m.get("name", "") for m in data if isinstance(m, dict)]
                     found.append(
                         InferenceHost(
-                            name=name, base_url=url, kind=kind,
-                            gpu_class=gpu_class, gpu_name=gpu_name,
-                            models=models, last_health_ok=True,
+                            name=name,
+                            base_url=url,
+                            kind=kind,
+                            gpu_class=gpu_class,
+                            gpu_name=gpu_name,
+                            models=models,
+                            last_health_ok=True,
                         )
                     )
             except Exception:

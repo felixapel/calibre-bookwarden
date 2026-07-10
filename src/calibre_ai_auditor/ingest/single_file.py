@@ -42,8 +42,8 @@ async def audit_ingested_file(settings: Settings, file_path: Path) -> dict[str, 
 
     engine = get_engine(settings)
     with Session(engine) as session:
-        run = Run(run_id=run_id, status="started")
-        session.add(run)
+        new_run = Run(run_id=run_id, status="started")
+        session.add(new_run)
 
         existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
         file_info = {
@@ -75,8 +75,8 @@ async def audit_ingested_file(settings: Settings, file_path: Path) -> dict[str, 
     await run_audit(settings, run_id, judge=True, save_evidence=True)
 
     with Session(engine) as session:
-        run = session.exec(select(Run).where(Run.run_id == run_id)).first()
-        if run:
+        run: Run | None = session.exec(select(Run).where(Run.run_id == run_id)).first()
+        if run is not None:
             run.status = "completed"
             session.add(run)
             session.commit()

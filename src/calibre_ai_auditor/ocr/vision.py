@@ -52,24 +52,21 @@ class VisionVerifier:
                 engine = get_engine(self.settings)
                 # Ensure the cache table exists (e.g. in test environments)
                 from sqlmodel import SQLModel
+
                 SQLModel.metadata.create_all(engine)
 
                 cached_response = None
                 with Session(engine) as session:
                     # 1. Try exact SHA-256 match
                     if sha256:
-                        record = session.exec(
-                            select(CoverVisionCache).where(CoverVisionCache.sha256 == sha256)
-                        ).first()
+                        record = session.exec(select(CoverVisionCache).where(CoverVisionCache.sha256 == sha256)).first()
                         if record:
                             logger.info(f"Cover vision cache hit via SHA-256 for: {cover_path.name}")
                             cached_response = record.response
 
                     # 2. Try exact phash match
                     if not cached_response and phash:
-                        record = session.exec(
-                            select(CoverVisionCache).where(CoverVisionCache.phash == phash)
-                        ).first()
+                        record = session.exec(select(CoverVisionCache).where(CoverVisionCache.phash == phash)).first()
                         if record:
                             logger.info(f"Cover vision cache hit via exact phash for: {cover_path.name}")
                             cached_response = record.response
@@ -77,7 +74,7 @@ class VisionVerifier:
                     # 3. Try similar phash match (Hamming distance <= 4)
                     if not cached_response and phash:
                         records = session.exec(
-                            select(CoverVisionCache).where(CoverVisionCache.phash != None)
+                            select(CoverVisionCache).where(CoverVisionCache.phash.is_not(None))
                         ).all()
                         for rec in records:
                             if rec.phash and compare_phashes(phash, rec.phash) <= 4:
@@ -97,9 +94,7 @@ class VisionVerifier:
         try:
             provider = self.router.get_provider_for_task("vision")
             if not provider.supports_vision:
-                logger.warning(
-                    f"Selected vision provider '{provider.name}' does not support vision."
-                )
+                logger.warning(f"Selected vision provider '{provider.name}' does not support vision.")
                 return None
         except Exception as e:
             logger.warning(f"Failed to find vision provider: {e}")
@@ -113,7 +108,7 @@ class VisionVerifier:
             logger.error(f"Failed to encode cover image for vision: {e}")
             return None
 
-        # Define schema for structured output
+        # Define schema for structured output (extended for comics/manga vision)
         schema = {
             "type": "object",
             "properties": {
@@ -121,27 +116,36 @@ class VisionVerifier:
                 "authors": {"type": ["array", "null"], "items": {"type": "string"}},
                 "publisher": {"type": ["string", "null"]},
                 "isbn": {"type": ["string", "null"]},
+                "volume": {"type": ["integer", "null"]},
+                "chapter": {"type": ["number", "null"]},
+                "series_position": {"type": ["number", "null"]},
                 "confidence": {"type": "number"},
                 "explanation": {"type": "string"},
             },
-            "required": ["title", "authors", "publisher", "isbn", "confidence", "explanation"],
+            "required": ["title", "authors", "publisher", "isbn", "volume", "chapter", "series_position", "confidence", "explanation"],
             "additionalProperties": False,
         }
 
-        # Build prompt
-        system_prompt = (
-            "You are a cover metadata auditor. Analyze the provided book cover image. "
-            "Extract the exact title, author(s), publisher, and ISBN if visible on the cover. "
-            "Assess your confidence in the extraction (0.0 to 1.0) and explain your reasoning."
-        )
+        # Build prompt (comic-aware if manga_mode)
+        is_comic = getattr(self.settings, "manga_mode", None) and self.settings.manga_mode.enabled
+        if is_comic:
+            system_prompt = (
+                "You are a comic/manga cover metadata auditor. Analyze the provided book cover image. "
+                "Extract the exact title, author(s), publisher, ISBN if visible, volume number, chapter number (use decimal), "
+                "and series position. For manga covers, prioritize series title, volume/edition from art, and any chapter hints. "
+                "Assess your confidence in the extraction (0.0 to 1.0) and explain your reasoning."
+            )
+        else:
+            system_prompt = (
+                "You are a cover metadata auditor. Analyze the provided book cover image. "
+                "Extract the exact title, author(s), publisher, and ISBN if visible on the cover. "
+                "Assess your confidence in the extraction (0.0 to 1.0) and explain your reasoning."
+            )
 
         user_content = [
             {
                 "type": "text",
-                "text": (
-                    "Extract metadata from this book cover. "
-                    "Output strictly as JSON matching the schema."
-                ),
+                "text": ("Extract metadata from this book cover. Output strictly as JSON matching the schema."),
             },
             {
                 "type": "image_url",
@@ -162,27 +166,22 @@ class VisionVerifier:
         )
 
         try:
-            logger.info(
-                f"Running vision cover verification on model '{self.settings.vision_model}'..."
-            )
+            logger.info(f"Running vision cover verification on model '{self.settings.vision_model}'...")
             response = await self.router.execute_structured("vision", req, schema)
-            
+
             result = None
             if isinstance(response.content, dict):
                 result = response.content
             else:
                 import json
+
                 result = cast(dict[str, Any], json.loads(response.content))
 
             if result and (sha256 or phash):
                 try:
                     engine = get_engine(self.settings)
                     with Session(engine) as session:
-                        cache_record = CoverVisionCache(
-                            sha256=sha256,
-                            phash=phash,
-                            response=result
-                        )
+                        cache_record = CoverVisionCache(sha256=sha256, phash=phash, response=result)
                         session.add(cache_record)
                         session.commit()
                         logger.info(f"Cached cover vision response in database for: {cover_path.name}")
@@ -194,3 +193,27 @@ class VisionVerifier:
             logger.error(f"Vision cover verification failed: {e}")
             return None
 
+
+async def verify_comic_cover(vision_verifier: VisionVerifier, cover_path: Path) -> dict[str, Any] | None:
+    """
+    Comic/Manga specific cover verification using vision LLM.
+    Extracts series, volume, chapter (decimal), title from cover art.
+    Intended for use when ComicInfo.xml is missing or to cross-verify.
+    """
+    # Reuse the main verifier but the prompt inside is now comic-aware if manga_mode enabled
+    result = await vision_verifier.verify_cover(cover_path)
+    if not result:
+        return None
+
+    # Normalize for comic fields (decimal chapter per Weebarr)
+    comic_result = {
+        "title": result.get("title"),
+        "authors": result.get("authors", []),
+        "series": result.get("title"),  # often the series is the main title on cover
+        "volume": result.get("volume"),
+        "chapter": result.get("chapter"),
+        "series_position": result.get("series_position") or result.get("chapter"),
+        "confidence": result.get("confidence", 0.5),
+        "explanation": result.get("explanation", ""),
+    }
+    return comic_result

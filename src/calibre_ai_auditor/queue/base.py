@@ -24,7 +24,6 @@ class JobQueue(ABC):
         pass
 
 
-
 class CacheBackend(ABC):
     @abstractmethod
     async def get(self, key: str) -> Any | None:

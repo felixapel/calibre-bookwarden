@@ -22,9 +22,7 @@ class CalibreCLI:
     ) -> subprocess.CompletedProcess[str]:
         try:
             logger.debug(f"Running Calibre command: {' '.join(cmd)}")
-            return subprocess.run(
-                cmd, capture_output=capture_output, text=True, check=True, timeout=timeout
-            )
+            return subprocess.run(cmd, capture_output=capture_output, text=True, check=True, timeout=timeout)
         except subprocess.TimeoutExpired as e:
             logger.error(f"Calibre command timed out after {timeout}s: {' '.join(cmd)}")
             raise CalibreCLIError(f"Command '{' '.join(cmd)}' timed out.") from e
@@ -59,7 +57,7 @@ class CalibreCLI:
         result = self._run_command(cmd)
         json_part = self._extract_json(result.stdout)
         if not json_part:
-             return []
+            return []
         return cast(list[dict[str, Any]], json.loads(json_part))
 
     def show_metadata(self, book_id: int) -> dict[str, Any]:
@@ -79,7 +77,7 @@ class CalibreCLI:
         result = self._run_command(cmd)
         json_part = self._extract_json(result.stdout)
         if not json_part:
-             raise CalibreCLIError(f"Book with ID {book_id} not found (no JSON output).")
+            raise CalibreCLIError(f"Book with ID {book_id} not found (no JSON output).")
         books = cast(list[dict[str, Any]], json.loads(json_part))
         if not books:
             raise CalibreCLIError(f"Book with ID {book_id} not found.")

@@ -10,7 +10,7 @@ def extract_pdf_cover(pdf_path: Path, output_path: Path) -> bool:
     Returns True if successful, False otherwise.
     """
     try:
-        import fitz  # PyMuPDF
+        import fitz  # type: ignore[import-untyped]  # PyMuPDF
 
         if not pdf_path.exists():
             logger.error(f"PDF file not found: {pdf_path}")

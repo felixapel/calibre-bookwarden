@@ -134,12 +134,8 @@ class RestorePointStore:
 
         # 4. Metadata snapshots
         now = datetime.now(UTC)
-        (rp_dir / "before.json").write_text(
-            json.dumps(before_metadata, indent=2, default=str)
-        )
-        (rp_dir / "after.json").write_text(
-            json.dumps(after_metadata, indent=2, default=str)
-        )
+        (rp_dir / "before.json").write_text(json.dumps(before_metadata, indent=2, default=str))
+        (rp_dir / "after.json").write_text(json.dumps(after_metadata, indent=2, default=str))
         (rp_dir / "restore.json").write_text(
             json.dumps(
                 {
@@ -245,10 +241,11 @@ class ConservativeAutoApply:
         """Returns (eligible, reason)."""
         if not verdict.auto_apply_eligible:
             return False, f"BookVerdict.auto_apply_eligible=False (action={verdict.action.value})"
-        if not self.allow_high_risk and verdict.risk_flags and any(
-            rf in HIGH_RISK_FLAGS for rf in verdict.risk_flags
-        ):
-            return False, f"High-risk flag present: {[f for f in verdict.risk_flags if f in HIGH_RISK_FLAGS]}"
+        if not self.allow_high_risk and verdict.risk_flags and any(rf in HIGH_RISK_FLAGS for rf in verdict.risk_flags):
+            return (
+                False,
+                f"High-risk flag present: {[f for f in verdict.risk_flags if f in HIGH_RISK_FLAGS]}",
+            )
         if verdict.overall_confidence < 80:
             return False, f"Overall confidence {verdict.overall_confidence} < 80"
         if not verdict.proposed_patch:

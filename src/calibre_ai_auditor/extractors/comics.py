@@ -37,7 +37,7 @@ def extract_comic_info_xml(file_path: Path) -> dict[str, Any] | None:
         # If it's a RAR file (.cbr), try to use rarfile library if available
         if suffix == ".cbr":
             try:
-                import rarfile
+                import rarfile  # type: ignore[import-not-found]
 
                 if rarfile.is_rarfile(str(file_path)):
                     with rarfile.RarFile(str(file_path), "r") as rf:
@@ -50,9 +50,7 @@ def extract_comic_info_xml(file_path: Path) -> dict[str, Any] | None:
                             xml_data = rf.read(xml_filename)
                             return parse_comic_info_xml_data(xml_data)
             except ImportError:
-                logger.debug(
-                    "rarfile library not installed; skipping RAR .cbr metadata extraction."
-                )
+                logger.debug("rarfile library not installed; skipping RAR .cbr metadata extraction.")
             except Exception as e:
                 logger.warning(f"Failed to read RAR archive {file_path}: {e}")
 
@@ -77,6 +75,7 @@ def parse_comic_info_xml_data(xml_data: bytes) -> dict[str, Any] | None:
             "Series": "series",
             "Number": "series_index",
             "Volume": "volume",
+            "Chapter": "chapter",  # for comics
             "Writer": "authors",
             "Publisher": "publisher",
             "Year": "year",
@@ -97,6 +96,12 @@ def parse_comic_info_xml_data(xml_data: bytes) -> dict[str, Any] | None:
                 elif meta_key == "series_index":
                     with contextlib.suppress(ValueError):
                         val = float(val)
+                elif meta_key == "volume":
+                    with contextlib.suppress(ValueError):
+                        val = int(val)
+                elif meta_key == "chapter":
+                    with contextlib.suppress(ValueError):
+                        val = float(val)  # decimal per convention
                 metadata[meta_key] = val
 
         # Handle publish date if Year/Month exist

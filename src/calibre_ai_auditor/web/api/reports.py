@@ -34,9 +34,7 @@ async def preview_html(
         raise HTTPException(status_code=404, detail="Book not found")
 
     package = session.exec(
-        select(EvidencePackage)
-        .where(EvidencePackage.book_key == key)
-        .order_by(desc(EvidencePackage.created_at))
+        select(EvidencePackage).where(EvidencePackage.book_key == key).order_by(desc(EvidencePackage.created_at))
     ).first()
 
     renderer = PreviewRenderer()

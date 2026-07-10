@@ -58,11 +58,8 @@ def _build_observation_set(book: BookRecord) -> ObservationSet:
             snippet_text = "\n".join(s.text for s in snippets)
             break
 
-    heuristics = extract_heuristics(
-        [{"text": snippet_text, "source": "first_pages"}] if snippet_text else []
-    )
+    heuristics = extract_heuristics([{"text": snippet_text, "source": "first_pages"}] if snippet_text else [])
 
-    cm = book.current_metadata or {}
     return ObservationSet(
         title_page_text=snippet_text[:5000] if snippet_text else None,
         body_sample=snippet_text[:10000] if snippet_text else None,
@@ -78,16 +75,16 @@ def _build_observation_set(book: BookRecord) -> ObservationSet:
 
 def _build_declared(book: BookRecord) -> DeclaredMetadata:
     """Build DeclaredMetadata from a BookRecord's current_metadata."""
-    cm = book.current_metadata or {}
+    current_meta = book.current_metadata or {}
     return DeclaredMetadata(
-        title=cm.get("title"),
-        authors=cm.get("authors") or [],
-        publisher=cm.get("publisher"),
-        published_date=cm.get("pubdate"),
-        language=cm.get("languages"),
-        series=cm.get("series"),
-        series_index=cm.get("series_index"),
-        isbn=(cm.get("identifiers") or {}).get("isbn") if cm.get("identifiers") else None,
+        title=current_meta.get("title"),
+        authors=current_meta.get("authors") or [],
+        publisher=current_meta.get("publisher"),
+        published_date=current_meta.get("pubdate"),
+        language=current_meta.get("languages"),
+        series=current_meta.get("series"),
+        series_index=current_meta.get("series_index"),
+        isbn=(current_meta.get("identifiers") or {}).get("isbn") if current_meta.get("identifiers") else None,
     )
 
 
@@ -130,7 +127,6 @@ async def run_audit(
                 if judge:
                     try:
                         from calibre_ai_auditor.llm.router import LLMRouter
-
                         from calibre_ai_auditor.verification.engine_llm import (
                             LLMWitness,
                             WitnessConfig,

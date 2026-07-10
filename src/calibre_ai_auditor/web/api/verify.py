@@ -12,24 +12,24 @@ instead of a single aggregate MetadataResolution.
 
 import asyncio
 import logging
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Body, HTTPException
+from pydantic import BaseModel
 
 from calibre_ai_auditor.calibre.cli import CalibreCLI
-from calibre_ai_auditor.config.settings import Settings, load_settings
+from calibre_ai_auditor.config.settings import load_settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
-from calibre_ai_auditor.verification.engine import DeclaredMetadata, ObservationSet
-from calibre_ai_auditor.verification.engine import ContentVerificationEngine
+from calibre_ai_auditor.verification.engine import (
+    ContentVerificationEngine,
+    DeclaredMetadata,
+    ObservationSet,
+)
 from calibre_ai_auditor.verification.metrics import get_metrics
-from calibre_ai_auditor.verification.resumable import BookStatus, ResumableRunStore
-from calibre_ai_auditor.verification.restore import RestorePointStore
-from calibre_ai_auditor.verification.verdict import BookVerdict, VerdictAction
+from calibre_ai_auditor.verification.resumable import ResumableRunStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/verify", tags=["Verify"])
@@ -53,7 +53,9 @@ _runs: dict[str, dict[str, Any]] = {}
 
 
 @router.post("", response_model=VerifyStartResponse)
-async def start_verify(req: VerifyRequest = Body(default_factory=VerifyRequest)) -> VerifyStartResponse:
+async def start_verify(
+    req: VerifyRequest = Body(default_factory=VerifyRequest),
+) -> VerifyStartResponse:
     settings = load_settings()
     lib_path = Path(req.library) if req.library else settings.library.path
     if not lib_path:
@@ -68,7 +70,7 @@ async def start_verify(req: VerifyRequest = Body(default_factory=VerifyRequest))
         books = books[: req.limit]
 
     run_id = f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     metrics = get_metrics()
     metrics.set_run_progress(run_id, total=len(books), completed=0)
 
@@ -115,9 +117,7 @@ async def start_verify(req: VerifyRequest = Body(default_factory=VerifyRequest))
                     published_date=book.get("pubdate"),
                     language=book.get("languages"),
                     series=book.get("series"),
-                    isbn=(book.get("identifiers") or {}).get("isbn")
-                    if book.get("identifiers")
-                    else None,
+                    isbn=(book.get("identifiers") or {}).get("isbn") if book.get("identifiers") else None,
                 )
                 observed = ObservationSet(
                     title_page_text=snippet_text[:5000] if snippet_text else None,
@@ -139,9 +139,7 @@ async def start_verify(req: VerifyRequest = Body(default_factory=VerifyRequest))
                 )
 
                 _runs[run_id]["verdicts"].append(verdict.model_dump())
-                _runs[run_id]["counts"][verdict.action.value] = (
-                    _runs[run_id]["counts"].get(verdict.action.value, 0) + 1
-                )
+                _runs[run_id]["counts"][verdict.action.value] = _runs[run_id]["counts"].get(verdict.action.value, 0) + 1
                 metrics.record_book_action(verdict.action.value, run_id)
                 await store.mark_completed(book_key)
                 _runs[run_id]["completed"] = i
@@ -151,7 +149,7 @@ async def start_verify(req: VerifyRequest = Body(default_factory=VerifyRequest))
                 await store.mark_failed(f"calibre:{book['id']}")
 
         _runs[run_id]["status"] = "completed"
-        _runs[run_id]["finished_at"] = datetime.now(timezone.utc)
+        _runs[run_id]["finished_at"] = datetime.now(UTC)
         logger.info("Verify run %s completed: %s", run_id, _runs[run_id]["counts"])
 
     # Fire-and-forget; the run id is returned to the caller

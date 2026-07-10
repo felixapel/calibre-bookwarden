@@ -21,7 +21,6 @@ deterministic rules explicitly cannot.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -193,10 +192,7 @@ def build_witness_prompt(
             text = ev.text or ""
             if len(text) > snippet_chars:
                 text = text[:snippet_chars] + "..."
-            lines.append(
-                f"  - source={ev.source} page={ev.page_range or '?'} "
-                f"conf={ev.confidence}: {text!r}"
-            )
+            lines.append(f"  - source={ev.source} page={ev.page_range or '?'} conf={ev.confidence}: {text!r}")
         snippet_block = "\n".join(lines)
 
     parts: list[str] = []
@@ -206,8 +202,7 @@ def build_witness_prompt(
     parts.append(f"OBSERVED (extracted from book): {observed_value!r}")
     parts.append("")
     parts.append(
-        f"DETERMINISTIC ENGINE SAID: verdict={deterministic_verdict.value} "
-        f"confidence={deterministic_confidence}"
+        f"DETERMINISTIC ENGINE SAID: verdict={deterministic_verdict.value} confidence={deterministic_confidence}"
     )
     if deterministic_reason:
         parts.append(f"  reason: {deterministic_reason}")
@@ -241,7 +236,7 @@ def build_witness_prompt(
 class WitnessConfig:
     """Settings for the LLM witness."""
 
-    provider_hint: str = "auto"      # "auto" | "local" | "remote"
+    provider_hint: str = "auto"  # "auto" | "local" | "remote"
     max_remote_chars: int = 4000
     cost_per_book_cap_usd: float = 0.02
     cache_responses: bool = True
@@ -309,9 +304,7 @@ class LLMWitness:
             snippet_chars=self.config.max_remote_chars,
         )
 
-        prompt_hash = WitnessCache._hash(
-            {"messages": messages, "schema": WITNESS_SCHEMA}
-        )
+        prompt_hash = WitnessCache._hash({"messages": messages, "schema": WITNESS_SCHEMA})
 
         # Cache lookup
         if self.config.cache_responses:
@@ -372,9 +365,7 @@ class LLMWitness:
                 provider=provider.name,
                 model=req.model,
                 prompt_hash=prompt_hash[:16],
-                response_hash=hashlib.sha256(
-                    json.dumps(parsed, sort_keys=True).encode("utf-8")
-                ).hexdigest()[:16],
+                response_hash=hashlib.sha256(json.dumps(parsed, sort_keys=True).encode("utf-8")).hexdigest()[:16],
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 duration_ms=duration_ms,
@@ -452,11 +443,7 @@ class LLMWitness:
 
         # If LLM says still_ambiguous, preserve the original confidence+reason
         # but mark is_deterministic=False.
-        final_reason = (
-            "; ".join(str(r) for r in reasons)
-            if reasons
-            else original.reason
-        )
+        final_reason = "; ".join(str(r) for r in reasons) if reasons else original.reason
 
         return FieldVerdict(
             field=field_name,

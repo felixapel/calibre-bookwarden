@@ -8,12 +8,12 @@ from .engine import (
     build_observation_from_extraction,
 )
 from .engine_llm import (
+    WITNESS_SCHEMA,
     LLMWitness,
     WitnessCache,
     WitnessCacheEntry,
     WitnessConfig,
     WitnessResult,
-    WITNESS_SCHEMA,
     build_witness_prompt,
 )
 from .verdict import (

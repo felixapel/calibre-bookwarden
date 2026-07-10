@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
-from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage
+from calibre_ai_auditor.storage.models import EvidencePackage
 from calibre_ai_auditor.verification.engine import (
     ContentVerificationEngine,
     DeclaredMetadata,
@@ -28,12 +28,12 @@ def get_settings() -> Settings:
 def check_sandbox(path: Path, settings: Settings) -> Path:
     # Resolve the path to get the absolute normalized path
     resolved_path = path.resolve()
-    
+
     # Allowed roots
     allowed_roots: list[Path] = []
     if settings.library.path:
         allowed_roots.append(Path(settings.library.path).resolve())
-    
+
     # Check if resolved_path is relative to any of the allowed roots
     is_safe = False
     for root in allowed_roots:
@@ -43,10 +43,10 @@ def check_sandbox(path: Path, settings: Settings) -> Path:
                 break
         except ValueError:
             continue
-            
+
     if not is_safe:
         raise HTTPException(status_code=403, detail="Access denied: Path is outside sandboxed directories")
-        
+
     return resolved_path
 
 
@@ -61,11 +61,11 @@ async def list_fs(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None  # noqa: B904 from None
 
     if not target.exists() or not target.is_dir():
         raise HTTPException(status_code=404, detail="Directory not found")
-    
+
     directories = []
     files = []
     try:
@@ -79,8 +79,8 @@ async def list_fs(
                     size = 0
                 files.append({"name": entry.name, "path": str(entry), "size_bytes": size})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        raise HTTPException(status_code=500, detail=str(e)) from e  # noqa: B904
+
     resolved_library_path = Path(settings.library.path).resolve() if settings.library.path else None
     parent_dir = str(target.parent) if (resolved_library_path and target != resolved_library_path) else None
 
@@ -88,13 +88,11 @@ async def list_fs(
         "current_dir": str(target),
         "parent_dir": parent_dir,
         "directories": sorted(directories, key=lambda x: x["name"].lower()),
-        "files": sorted(files, key=lambda x: x["name"].lower())
+        "files": sorted(files, key=lambda x: x["name"].lower()),
     }
 
 
-async def _build_inspection_package(
-    path: Path, settings: Settings, *, no_providers: bool
-) -> dict[str, Any]:
+async def _build_inspection_package(path: Path, settings: Settings, *, no_providers: bool) -> dict[str, Any]:
     """Build an inspection result for a single file using the v1.0 engine.
 
     For legacy /inspect compatibility we still return an EvidencePackage-shaped
@@ -150,16 +148,14 @@ async def _build_inspection_package(
 
 
 @router.post("/inspect/path")
-async def inspect_path(
-    req: InspectRequest, settings: Annotated[Settings, Depends(get_settings)]
-) -> dict[str, Any]:
+async def inspect_path(req: InspectRequest, settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Any]:
     path = Path(req.path)
     try:
         path = check_sandbox(path, settings)
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e  # noqa: B904
 
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")

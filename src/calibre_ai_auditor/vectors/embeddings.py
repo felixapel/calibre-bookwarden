@@ -1,6 +1,6 @@
-from collections import OrderedDict
 import logging
-from typing import cast
+from collections import OrderedDict
+from typing import Any, cast
 
 import httpx
 from openai import AsyncOpenAI
@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 class EmbeddingClient:
     _global_cache: OrderedDict[str, list[float]] = OrderedDict()
     _max_cache_size: int = 1000
-
 
     def __init__(
         self,
@@ -48,7 +47,7 @@ class EmbeddingClient:
         ):
             # OpenAI compatible embeddings endpoint
             try:
-                client = AsyncOpenAI(api_key=self.api_key or "noop", base_url=self.base_url or None)
+                client: Any = AsyncOpenAI(api_key=self.api_key or "noop", base_url=self.base_url or None)
                 response = await client.embeddings.create(input=[text], model=self.model)
                 result = response.data[0].embedding
             except Exception as e:
@@ -68,6 +67,7 @@ class EmbeddingClient:
                     result = cast(list[float], data.get("embedding", {}).get("values", []))
             except Exception as e:
                 logger.error(f"Failed to fetch Google embeddings: {e}")
+            # result stays [] if exception
 
         else:
             # Default to Ollama native /api/embeddings endpoint
@@ -78,7 +78,7 @@ class EmbeddingClient:
 
             # Remove '/v1' if present for the native Ollama endpoint
             ollama_url = f"{url.replace('/v1', '')}/api/embeddings"
-            payload = {"model": self.model, "prompt": text}
+            payload: dict[str, Any] = {"model": self.model, "prompt": text}
 
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
@@ -114,5 +114,3 @@ def get_embedding_client(settings: Settings) -> EmbeddingClient:
         provider=provider,
         api_key=api_key,
     )
-
-

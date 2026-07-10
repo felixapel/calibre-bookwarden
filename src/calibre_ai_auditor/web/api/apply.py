@@ -171,6 +171,6 @@ async def undo_change(
 
         session.commit()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to undo change: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to undo change: {e}") from None
 
     return {"status": "success", "data": {"message": f"Change {change_id} successfully undone"}}

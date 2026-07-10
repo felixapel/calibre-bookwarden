@@ -81,6 +81,7 @@ async def doctor_check(settings: Settings = Depends(get_settings)) -> dict[str, 
         HostRegistryConfig,
         default_felix_homelab,
     )
+
     host_cfg = HostRegistryConfig(hosts=default_felix_homelab())
     host_reg = HostRegistry(host_cfg)
     try:

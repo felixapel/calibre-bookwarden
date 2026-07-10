@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -6,7 +6,7 @@ from sqlmodel import JSON, Column, Field, SQLModel
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Metadata(BaseModel):
@@ -17,6 +17,10 @@ class Metadata(BaseModel):
     language: str | None = None
     series: str | None = None
     series_index: float | None = None
+    # Comic/Manga specific (v1.1 vision support)
+    volume: int | None = None
+    chapter: float | None = None  # decimal per Weebarr convention
+    series_position: float | None = None
     identifiers: dict[str, str] = {}
     tags: list[str] = []
 
@@ -101,4 +105,3 @@ class CoverVisionCache(SQLModel, table=True):
     phash: str | None = Field(default=None, index=True)
     response: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utc_now)
-

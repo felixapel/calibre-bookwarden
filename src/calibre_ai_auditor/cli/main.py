@@ -3,7 +3,7 @@ import json as json_lib
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from sqlmodel import Session, desc, select
@@ -48,9 +48,7 @@ async def _audit_run(
             final_run_id,
             judge=judge,
             save_evidence=save_evidence,
-            progress_callback=lambda current, total: typer.echo(
-                f"  Auditing book {current}/{total}"
-            ),
+            progress_callback=lambda current, total: typer.echo(f"  Auditing book {current}/{total}"),
         )
     typer.secho("Audit complete.", fg=typer.colors.GREEN)
 
@@ -58,9 +56,7 @@ async def _audit_run(
 @app.callback()
 def main(
     ctx: typer.Context,
-    config: Annotated[
-        Path | None, typer.Option("--config", "-c", help="Path to config.yml")
-    ] = None,
+    config: Annotated[Path | None, typer.Option("--config", "-c", help="Path to config.yml")] = None,
 ) -> None:
     """
     Calibre AI Auditor - Evidence-first metadata auditing.
@@ -79,11 +75,7 @@ def doctor(ctx: typer.Context) -> None:
     tools = ["calibredb", "ebook-meta", "fetch-ebook-metadata", "ocrmypdf"]
     for tool in tools:
         path = shutil.which(tool)
-        status = (
-            typer.style("FOUND", fg=typer.colors.GREEN)
-            if path
-            else typer.style("MISSING", fg=typer.colors.RED)
-        )
+        status = typer.style("FOUND", fg=typer.colors.GREEN) if path else typer.style("MISSING", fg=typer.colors.RED)
         typer.echo(f"  {tool:25} : {status} ({path or 'N/A'})")
 
     typer.echo(f"\nLibrary path: {settings.library.path}")
@@ -124,9 +116,7 @@ def scan(
             full_meta = cli.show_metadata(book_id)
 
             book_key = f"calibre:{book_id}"
-            existing = session.exec(
-                select(BookRecord).where(BookRecord.book_key == book_key)
-            ).first()
+            existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
             if existing:
                 existing.run_id = run_id
                 existing.current_metadata = full_meta
@@ -160,11 +150,11 @@ def scan(
             indexer = VectorIndexer(vclient, eclient)
             for b in books:
                 book_key = f"calibre:{b['id']}"
-                record = session.exec(
+                existing_book: BookRecord | None = session.exec(
                     select(BookRecord).where(BookRecord.book_key == book_key)
                 ).first()
-                if record:
-                    asyncio.run(indexer.index_book(record))
+                if existing_book:
+                    asyncio.run(indexer.index_book(existing_book))
 
     typer.secho(f"Scan complete. Found {len(books)} books.", fg=typer.colors.GREEN)
 
@@ -173,9 +163,7 @@ def scan(
 def inspect(
     ctx: typer.Context,
     path: Annotated[Path, typer.Option("--path", help="Path to ebook file")],
-    no_providers: Annotated[
-        bool, typer.Option("--no-providers", help="Skip external fetch")
-    ] = False,
+    no_providers: Annotated[bool, typer.Option("--no-providers", help="Skip external fetch")] = False,
 ) -> None:
     """
     standalone inspection of a single file.
@@ -201,12 +189,8 @@ def inspect(
 def audit(
     ctx: typer.Context,
     run: Annotated[str, typer.Option("--run", help="Run ID or 'latest'")] = "latest",
-    judge: Annotated[
-        bool, typer.Option("--judge/--no-judge", help="Enable or skip LLM judgment")
-    ] = True,
-    save_evidence: Annotated[
-        bool, typer.Option("--save-evidence", help="Persist evidence JSON")
-    ] = True,
+    judge: Annotated[bool, typer.Option("--judge/--no-judge", help="Enable or skip LLM judgment")] = True,
+    save_evidence: Annotated[bool, typer.Option("--save-evidence", help="Persist evidence JSON")] = True,
 ) -> None:
     """
     Build evidence packages and optionally call the judge model.
@@ -328,15 +312,13 @@ def ingest_paperless(
 
     bridge = PaperlessBridge(settings)
 
-    async def run_ingest():
+    async def run_ingest() -> None:
         engine = get_engine(settings)
         init_db(settings)
 
         # Test connection first
         if not await bridge.test_connection():
-            typer.secho(
-                "Error: Could not connect to Paperless-ngx. Check logs.", fg=typer.colors.RED
-            )
+            typer.secho("Error: Could not connect to Paperless-ngx. Check logs.", fg=typer.colors.RED)
             raise typer.Exit(1)
 
         typer.echo("Fetching candidate documents from Paperless-ngx...")
@@ -375,9 +357,7 @@ def ingest_paperless(
                 book_key = f"paperless:{doc_id}"
 
                 # Check if already exists
-                existing = session.exec(
-                    select(BookRecord).where(BookRecord.book_key == book_key)
-                ).first()
+                existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
 
                 # Construct file and metadata info
                 file_info = {
@@ -452,18 +432,10 @@ def config(
 @app.command()
 def verify(
     ctx: typer.Context,
-    limit: Annotated[
-        int, typer.Option("--limit", help="Max books to verify (0 = unlimited)")
-    ] = 50,
-    library: Annotated[
-        str | None, typer.Option("--library", help="Override library path")
-    ] = None,
-    use_llm: Annotated[
-        bool, typer.Option("--use-llm/--no-llm", help="Call LLM for ambiguous fields")
-    ] = False,
-    format: Annotated[
-        str, typer.Option("--format", help="Report format: text|json")
-    ] = "text",
+    limit: Annotated[int, typer.Option("--limit", help="Max books to verify (0 = unlimited)")] = 50,
+    library: Annotated[str | None, typer.Option("--library", help="Override library path")] = None,
+    use_llm: Annotated[bool, typer.Option("--use-llm/--no-llm", help="Call LLM for ambiguous fields")] = False,
+    format: Annotated[str, typer.Option("--format", help="Report format: text|json")] = "text",
 ) -> None:
     """
     v1.0 ContentVerificationEngine: verify Calibre metadata against book content.
@@ -473,6 +445,7 @@ def verify(
     a per-book report with field-level verdicts.
     """
     import time as _t
+
     from calibre_ai_auditor.verification import (
         ContentVerificationEngine,
         DeclaredMetadata,
@@ -518,10 +491,7 @@ def verify(
         book_key = f"calibre:{book['id']}"
         title = book.get("title", "")
         authors_str = book.get("authors", "")
-        if isinstance(authors_str, str):
-            authors_list = [a.strip() for a in authors_str.split("&") if a.strip()]
-        else:
-            authors_list = []
+        authors_list = [a.strip() for a in authors_str.split("&") if a.strip()] if isinstance(authors_str, str) else []  # noqa: SIM108
 
         # Extract real content from the first available format
         formats = book.get("formats", [])
@@ -533,9 +503,7 @@ def verify(
                 snippet_text = "\n".join(s.text for s in snippets)
                 break
 
-        heuristics = extract_heuristics(
-            [{"text": snippet_text, "source": "first_pages"}] if snippet_text else []
-        )
+        heuristics = extract_heuristics([{"text": snippet_text, "source": "first_pages"}] if snippet_text else [])
 
         declared = DeclaredMetadata(
             title=title,
@@ -603,16 +571,18 @@ def verify(
 
     elapsed = _t.monotonic() - started
     typer.secho("", fg=typer.colors.WHITE)
-    typer.secho(f"Done in {elapsed:.1f}s ({len(books)/elapsed:.1f} books/s)", fg=typer.colors.CYAN)
+    typer.secho(f"Done in {elapsed:.1f}s ({len(books) / elapsed:.1f} books/s)", fg=typer.colors.CYAN)
     for action, count in counts.items():
         typer.echo(f"  {action:14s} {count}")
 
     if format == "json":
-        typer.echo(json_lib.dumps(
-            {"run_id": run_id, "elapsed_seconds": elapsed, "verdicts": verdicts},
-            indent=2,
-            default=str,
-        ))
+        typer.echo(
+            json_lib.dumps(
+                {"run_id": run_id, "elapsed_seconds": elapsed, "verdicts": verdicts},
+                indent=2,
+                default=str,
+            )
+        )
 
 
 @app.command()
@@ -623,6 +593,7 @@ def hosts(
     v1.0: Discover and report homelab inference hosts (Ollama, LM Studio, etc.).
     """
     import asyncio as _aio
+
     from calibre_ai_auditor.verification.host_registry import (
         HostRegistry,
         HostRegistryConfig,

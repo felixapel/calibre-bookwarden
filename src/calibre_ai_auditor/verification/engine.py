@@ -162,11 +162,12 @@ class ContentVerificationEngine:
                 # Distinguish "no signal at all" from "we couldn't decide"
                 decl = fv.declared_value
                 obs = fv.observed_value
-                if decl is None or (isinstance(decl, (list, str)) and not decl):
-                    if obs is None or (isinstance(obs, (list, str)) and not obs):
-                        # nothing declared, nothing observed — skip silently
-                        any_declared_ambiguous = True
-                        continue
+                if (decl is None or (isinstance(decl, (list, str)) and not decl)) and (
+                    obs is None or (isinstance(obs, (list, str)) and not obs)
+                ):  # noqa: E711
+                    # nothing declared, nothing observed — skip silently
+                    any_declared_ambiguous = True
+                    continue
                 any_real_ambiguous = True
             elif fv.verdict in (VerdictKind.confirmed, VerdictKind.mismatch, VerdictKind.missing):
                 confidences.append(fv.confidence)
@@ -236,8 +237,7 @@ class ContentVerificationEngine:
         decided = [
             fv
             for fv in field_verdicts.values()
-            if fv.verdict
-            in (VerdictKind.confirmed, VerdictKind.mismatch, VerdictKind.missing)
+            if fv.verdict in (VerdictKind.confirmed, VerdictKind.mismatch, VerdictKind.missing)
         ]
 
         if not decided:
@@ -270,11 +270,7 @@ class ContentVerificationEngine:
         if risk_flags & HIGH_RISK_FLAGS:
             return False
         # Compute confidence over ONLY the fields being patched.
-        patched = [
-            fv
-            for fv in field_verdicts.values()
-            if fv.verdict in (VerdictKind.mismatch, VerdictKind.missing)
-        ]
+        patched = [fv for fv in field_verdicts.values() if fv.verdict in (VerdictKind.mismatch, VerdictKind.missing)]
         if not patched:
             return False
         patched_confidence = int(sum(fv.confidence for fv in patched) / len(patched))

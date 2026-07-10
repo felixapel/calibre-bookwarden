@@ -81,6 +81,7 @@ class ResumableRunStore:
         if valkey_url:
             try:
                 import redis.asyncio as aioredis
+
                 self._client = aioredis.from_url(valkey_url, decode_responses=True)
             except Exception as e:
                 logger.warning("ResumableRunStore: Valkey unavailable (%s); using memory", e)
@@ -136,10 +137,7 @@ class ResumableRunStore:
 
     def pending_keys(self) -> list[str]:
         """Return all book_keys still pending (or rolled-back in_progress)."""
-        return [
-            k for k, v in self._state.items()
-            if v in (BookStatus.pending, BookStatus.in_progress)
-        ]
+        return [k for k, v in self._state.items() if v in (BookStatus.pending, BookStatus.in_progress)]
 
     def next_pending(self) -> str | None:
         for k, v in self._state.items():
