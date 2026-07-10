@@ -21,7 +21,7 @@ the primary source of truth; LLMs are witnesses, not generators.
 | `v0.9` | **Ecosystem Bridges**: Paperless-ngx & Comic/Manga support | [DONE] |
 | `v1.0` | **Content-Ground Verification**: Per-field BookVerdict + scale | [DONE] |
 | `v1.0.x` | **Hardening**: WebUI Verify page + benchmark baselines + CI | [DONE] |
-| `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [PLANNED] |
+| `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [IN PROGRESS] |
 | `v1.2` | **MCP Server**: Expose audit tools to Hermes | [PLANNED] |
 
 ---
@@ -84,13 +84,19 @@ for what's in/out of v1.0:
 
 ---
 
-## v1.1 — Comics Vision (PLANNED)
+## v1.1 — Comics Vision (IN PROGRESS)
 
-- Cover identification via vision LLM (Qwen2.5-VL-7B / Pixtral-12B)
-- Komf integration for batch manga metadata matching against local Komga/Kavita
-- New fields: `volume`, `chapter`, `series_position` (decimal)
-- v1.0 engine extended with `verify_comic_cover()` rule
-- Comics-specific OCR router profile
+**Partial implementation completed:**
+- New fields added to `Metadata`: `volume`, `chapter` (decimal per Weebarr convention), `series_position`.
+- `VisionVerifier` schema and prompt updated to extract comic fields from covers; added `verify_comic_cover()` helper (comic-aware when manga_mode enabled).
+- `extractors/comics.py` enhanced to parse "Chapter" and handle decimal chapter/volume from ComicInfo.xml.
+
+**Still planned:**
+- Cover identification via vision LLM (Qwen2.5-VL-7B / Pixtral-12B) fully wired into verification engine.
+- Komf integration for batch manga metadata matching against local Komga/Kavita.
+- v1.0 engine extended with `verify_comic_cover()` rule.
+- Comics-specific OCR router profile.
+- Full integration and tests for comic verification workflow (out of scope for this doc update).
 
 ## v1.2 — MCP Server (PLANNED)
 

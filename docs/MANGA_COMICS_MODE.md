@@ -1,6 +1,16 @@
-# Manga and Comics Mode (Future Design)
+# Manga and Comics Mode
 
-While `calibre-ai-auditor` is currently optimized for standard text-based books (EPUB, PDF), the architecture is prepared to support Manga, Comics, Light Novels, and Web Novels. This will be primarily driven by integrations with Komga, Kavita, and Komf.
+`calibre-ai-auditor` supports Manga, Comics, Light Novels, and Web Novels (via `manga_mode` and CBZ/CBR handling). v1.1 work focuses on vision LLM + OCR enhancements for better metadata fixing on comic covers and archives.
+
+## Current Status (v1.1 partial implementation)
+
+- **Fields**: `volume`, `chapter` (as decimal), `series_position` added to core `Metadata` model.
+- **Vision LLM**: `VisionVerifier` now uses comic-aware schema and prompt for extracting series/volume/chapter from covers; `verify_comic_cover()` helper added.
+- **Extractor**: `extractors/comics.py` parses ComicInfo.xml "Chapter" + normalizes volume/chapter.
+- **Extractor support**: CBZ/CBR ingestion and ComicInfo.xml already present; vision/OCR now better aligned for comics.
+- Full engine rule integration, auto-apply (still manual for comics), and Komf are still in progress.
+
+The architecture is prepared to support deeper integrations with Komga, Kavita, and Komf.
 
 ## Normal Books vs Manga/Comics
 

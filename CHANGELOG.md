@@ -4,6 +4,17 @@ All notable changes to `calibre-ai-auditor` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Documentation
+- Updated ROADMAP.md (v1.1 now marked IN PROGRESS with implemented items listed), CHANGELOG.md, and MANGA_COMICS_MODE.md (now describes current partial state) for v1.1 Comics/Manga Vision progress.
+- Related architecture notes refreshed for consistency with observable source (comic fields, vision updates, extractor).
+
+### Added — v1.1 Comics/Manga Vision (partial)
+- New fields in `Metadata` model: `volume`, `chapter` (decimal per Weebarr convention), `series_position`.
+- `VisionVerifier` extended with comic-aware JSON schema, prompt, and `verify_comic_cover()` helper function for cover-based series/volume/chapter extraction via vision LLMs.
+- `extractors/comics.py` updated to parse "Chapter" and normalize decimal chapter/volume from ComicInfo.xml.
+
 ## [1.0.0] - 2026-07-09
 
 ### Added — Content-Ground Verification

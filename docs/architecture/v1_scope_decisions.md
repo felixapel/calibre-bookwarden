@@ -20,15 +20,11 @@ state of the codebase and the homelab environment.
 - Homelab already has vision-capable models (3090) that excel at cover art
   comparison (cover identification is often the only reliable signal for manga)
 
-**Implementation** (deferred to v1.0-beta):
-1. Add `verify_comic.py` workflow: extract cover + first 3 pages of text,
-   use vision LLM to identify series/volume/chapter from cover art, compare
-   to Anilist/MAL candidates.
-2. New field: `volume`, `chapter`, `series_position` (decimal, per Weebarr convention)
-3. New rule: `verify_comic_cover()` — vision LLM identifies the volume/edition
-   from the cover image, then fuzzy-matches against candidates
-4. Comic-specific provider adapter (Komf) for batch matching against local
-   Komga/Kavita library
+**Implementation status** (partial, tracked in v1.1):
+- ✅ Fields: `volume`, `chapter` (decimal), `series_position` added to Metadata model.
+- ✅ Vision: schema/prompt updated for comics; `verify_comic_cover()` helper added in vision.py (extracts series/volume/chapter from cover).
+- ✅ Extractor: comics.py parses Chapter and handles volume/chapter.
+- ⏳ Full `verify_comic_cover()` rule in engine + workflow, Komf adapter, OCR profile still pending (see ROADMAP v1.1).
 
 **Out of scope for v1.0 GA**: auto-apply on comics.  Manual review only
 because cover art can be ambiguous between editions.
@@ -88,7 +84,7 @@ Hermes integration and personal AI workflows.
 
 | Feature | v1.0 GA? | Effort | Why |
 |---|---|---|---|
-| Comics/manga OCR + vision verification | **YES** | Medium | High value, infrastructure already there |
+| Comics/manga OCR + vision verification | **YES (partial)** | Medium | High value, infrastructure already there; core fields + vision helper done in v1.1 |
 | Audiobook verification | NO (v1.1+) | High | Marginal value, expensive transcription |
 | MCP server | **YES** | Small | Big leverage for personal AI workflows |
 | Whisper/audio OCR | NO (v1.1+) | High | Same reasons as audiobooks |
