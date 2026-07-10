@@ -253,6 +253,7 @@ async def test_enrich_comic_pipeline_komf_and_vision_paths(tmp_path: Path) -> No
     """Assert komf path and vision path are exercised in enrich_comic_observations (synthetic)."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
+    import calibre_ai_auditor.ocr.vision  # ensure submodule for patch
     from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
     from calibre_ai_auditor.config.settings import MangaProviders, MangaSettings, Settings
 
@@ -277,7 +278,7 @@ async def test_enrich_comic_pipeline_komf_and_vision_paths(tmp_path: Path) -> No
     mock_komf = MagicMock()
     mock_komf.fetch_candidates = AsyncMock(return_value=[mock_komf_cand])
 
-    with patch("calibre_ai_auditor.comics.pipeline.verify_comic_cover", new_callable=AsyncMock) as mock_verify, \
+    with patch("calibre_ai_auditor.ocr.vision.verify_comic_cover", new_callable=AsyncMock) as mock_verify, \
          patch("calibre_ai_auditor.calibre.cli.CalibreCLI") as mock_cli, \
          patch("calibre_ai_auditor.providers.registry.ProviderRegistry") as mock_reg_cls:
         mock_verify.return_value = mock_vision_res

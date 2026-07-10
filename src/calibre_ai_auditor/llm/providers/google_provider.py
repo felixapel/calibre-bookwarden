@@ -2,8 +2,12 @@ import json
 import logging
 from typing import Any
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None  # type: ignore
+    types = None  # type: ignore
 
 from calibre_ai_auditor.llm.base import LLMProvider
 from calibre_ai_auditor.llm.schemas import LLMRequest, LLMResponse

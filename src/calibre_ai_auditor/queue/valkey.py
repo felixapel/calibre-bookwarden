@@ -113,8 +113,7 @@ class ValkeyQueue(JobQueue):
                     return await self.get_status(job_id)
             except Exception as e:
                 logger.error(f"Valkey dequeue failed: {e}. Falling back to memory queue.")
-        return None  # unreachable but needed for mypy
-
+        # memory fallback
         if self._fallback_queue:
             job_id = self._fallback_queue.pop(0)
             return self._fallback_db.get(job_id)
