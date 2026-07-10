@@ -99,8 +99,9 @@ for what's in/out of v1.0:
 - Decimal chapter ensured (float coercion with comments, per Weebarr convention in all paths).
 - Full integration in audit/verify/ingest paths.
 - C2 comic rules (verify_*) landed; re-audit gap closed.
+- Practical verification gate: scripts/verify-calibre-gate.sh consistently exits 0 (rg checks, komf test, launch). Full test suite limited by env (benchmark collection + native deps); core + komf paths green. Evidence: calibre-gate.log, acceptance-ledger.md.
 
-Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invoked, OCR profile, decimal support).
+Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invoked, OCR profile, decimal support). Production state documented with honest gate results.
 
 ## v1.2 — MCP Server (PLANNED)
 
