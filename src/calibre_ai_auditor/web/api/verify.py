@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.config.settings import load_settings
+from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.verification.engine import (
@@ -110,24 +111,86 @@ async def start_verify(
                     [{"text": snippet_text, "source": "first_pages"}] if snippet_text else []
                 )
 
-                declared = DeclaredMetadata(
-                    title=book.get("title"),
-                    authors=authors_list,
-                    publisher=book.get("publisher"),
-                    published_date=book.get("pubdate"),
-                    language=book.get("languages"),
-                    series=book.get("series"),
-                    isbn=(book.get("identifiers") or {}).get("isbn") if book.get("identifiers") else None,
+                # Use central pipeline to replace all scattered comic_meta / cover_vision / manual merge logic
+                # (ComicInfo + vision for cbz + Komf; comic fills gaps preferring base values)
+                d_title = book.get("title")
+                d_authors = authors_list
+                d_series = book.get("series")
+                d_series_index = book.get("series_index")
+                d_volume = book.get("volume")
+                d_chapter = book.get("chapter")
+                d_series_pos = book.get("series_position")
+                d_publisher = book.get("publisher")
+                d_pubdate = book.get("pubdate")
+                d_isbn = (book.get("identifiers") or {}).get("isbn") if book.get("identifiers") else None
+
+                raw_decl = {
+                    "title": d_title,
+                    "authors": d_authors,
+                    "publisher": d_publisher,
+                    "published_date": d_pubdate,
+                    "language": book.get("languages"),
+                    "series": d_series,
+                    "series_index": d_series_index,
+                    "isbn": d_isbn,
+                    "volume": d_volume,
+                    "chapter": d_chapter,
+                    "series_position": d_series_pos,
+                }
+                raw_obs = {
+                    "title": heuristics.get("title"),
+                    "authors": heuristics.get("authors") or [],
+                    "publisher": heuristics.get("publisher"),
+                    "published_date": heuristics.get("published_date"),
+                    "language": heuristics.get("language"),
+                    "series": heuristics.get("series"),
+                    "series_index": heuristics.get("series_index"),
+                    "isbn": (heuristics.get("identifiers") or {}).get("isbn"),
+                    "volume": heuristics.get("volume"),
+                    "chapter": heuristics.get("chapter"),
+                    "series_position": heuristics.get("series_position"),
+                }
+
+                first_file_path_for_comic = None
+                for fmt in book.get("formats", [])[:1]:
+                    fp = Path(fmt)
+                    if fp.exists():
+                        first_file_path_for_comic = fp
+                        break
+                is_cbz = bool(first_file_path_for_comic and first_file_path_for_comic.suffix.lower() in (".cbz", ".cbr"))
+                enriched_decl, enriched_obs = await enrich_comic_observations(
+                    settings, first_file_path_for_comic if is_cbz else None, None, raw_decl, raw_obs
                 )
+
+                declared = DeclaredMetadata(
+                    title=enriched_decl.get("title") or d_title,
+                    authors=enriched_decl.get("authors") or d_authors,
+                    publisher=enriched_decl.get("publisher") or d_publisher,
+                    published_date=enriched_decl.get("published_date") or d_pubdate,
+                    language=enriched_decl.get("language") or book.get("languages"),
+                    series=enriched_decl.get("series") or d_series,
+                    series_index=enriched_decl.get("series_index") or d_series_index,
+                    volume=enriched_decl.get("volume"),
+                    chapter=enriched_decl.get("chapter"),
+                    series_position=enriched_decl.get("series_position"),
+                    isbn=enriched_decl.get("isbn") or d_isbn,
+                )
+
                 observed = ObservationSet(
                     title_page_text=snippet_text[:5000] if snippet_text else None,
                     body_sample=snippet_text[:10000] if snippet_text else None,
-                    title_extracted=heuristics.get("title"),
-                    authors_extracted=heuristics.get("authors") or [],
-                    isbn_extracted=(heuristics.get("identifiers") or {}).get("isbn"),
-                    publisher_extracted=heuristics.get("publisher"),
-                    date_extracted=heuristics.get("published_date"),
-                    language_detected=heuristics.get("language"),
+                    title_extracted=enriched_obs.get("title") or heuristics.get("title"),
+                    authors_extracted=enriched_obs.get("authors") or heuristics.get("authors") or [],
+                    isbn_extracted=enriched_obs.get("isbn") or (heuristics.get("identifiers") or {}).get("isbn"),
+                    publisher_extracted=enriched_obs.get("publisher") or heuristics.get("publisher"),
+                    date_extracted=enriched_obs.get("published_date") or heuristics.get("published_date"),
+                    language_detected=enriched_obs.get("language") or heuristics.get("language"),
+                    series_extracted=enriched_obs.get("series") or heuristics.get("series"),
+                    series_index_extracted=enriched_obs.get("series_index") or heuristics.get("series_index"),
+                    volume_extracted=enriched_obs.get("volume"),
+                    chapter_extracted=enriched_obs.get("chapter"),
+                    series_position_extracted=enriched_obs.get("series_position"),
+                    cover_vision=enriched_obs.get("cover_vision"),
                     evidence_quality="high" if len(snippet_text) > 500 else "low",
                 )
 

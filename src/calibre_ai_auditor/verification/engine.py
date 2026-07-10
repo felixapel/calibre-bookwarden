@@ -55,6 +55,11 @@ class ObservationSet:
     authors_extracted: list[str] | None = None
     series_extracted: str | None = None
     series_index_extracted: float | None = None
+    # Comic fields (v1.1)
+    volume_extracted: int | None = None
+    chapter_extracted: float | None = None  # decimal per Weebarr convention
+    series_position_extracted: float | None = None
+    cover_vision: dict | None = None  # optional vision-extracted comic metadata
     page_range_title: str = "1-3"
     page_range_copyright: str = "2-5"
     page_range_header: str = "running"
@@ -75,6 +80,10 @@ class DeclaredMetadata:
     language: str | None = None
     series: str | None = None
     series_index: float | None = None
+    # Comic fields (v1.1)
+    volume: int | None = None
+    chapter: float | None = None  # decimal per Weebarr convention
+    series_position: float | None = None
     isbn: str | None = None
 
 
@@ -89,6 +98,10 @@ _FIELD_BINDINGS: list[tuple[str, str, str, str]] = [
     ("language", "language", "language_detected", "page_range_header"),
     ("series", "series", "series_extracted", "page_range_header"),
     ("series_index", "series_index", "series_index_extracted", "page_range_header"),
+    # Comic fields (C1 data model; C2 rules implemented)
+    ("volume", "volume", "volume_extracted", "page_range_header"),
+    ("chapter", "chapter", "chapter_extracted", "page_range_header"),
+    ("series_position", "series_position", "series_position_extracted", "page_range_header"),
 ]
 
 
@@ -299,8 +312,38 @@ def build_observation_from_extraction(
     title_extracted: str | None = None,
     authors_extracted: list[str] | None = None,
     series_extracted: str | None = None,
+    volume_extracted: int | None = None,
+    chapter_extracted: float | None = None,
+    series_position_extracted: float | None = None,
+    cover_vision: dict | None = None,
 ) -> ObservationSet:
-    """Convenience builder."""
+    """Convenience builder. Wires usage of cover_vision: if present and comic fields empty, populate from it (decimal chapter)."""
+    vol = volume_extracted
+    ch = chapter_extracted
+    sp = series_position_extracted
+    ser = series_extracted
+    tit = title_extracted
+    if cover_vision:
+        cv = cover_vision
+        if vol is None and cv.get("volume") is not None:
+            try:
+                vol = int(cv["volume"])
+            except Exception:
+                vol = cv.get("volume")
+        if ch is None and cv.get("chapter") is not None:
+            try:
+                ch = float(cv["chapter"])  # ensure decimal chapter
+            except Exception:
+                ch = cv.get("chapter")
+        if sp is None and cv.get("series_position") is not None:
+            try:
+                sp = float(cv.get("series_position"))
+            except Exception:
+                sp = cv.get("series_position")
+        if not ser and cv.get("series"):
+            ser = cv.get("series")
+        if not tit and cv.get("title"):
+            tit = cv.get("title")
     return ObservationSet(
         title_page_text=title_page_text,
         copyright_page_text=copyright_page_text,
@@ -311,7 +354,11 @@ def build_observation_from_extraction(
         publisher_extracted=publisher_extracted,
         date_extracted=date_extracted,
         language_detected=language_detected,
-        title_extracted=title_extracted,
+        title_extracted=tit,
         authors_extracted=authors_extracted,
-        series_extracted=series_extracted,
+        series_extracted=ser,
+        volume_extracted=vol,
+        chapter_extracted=ch,
+        series_position_extracted=sp,
+        cover_vision=cover_vision,
     )

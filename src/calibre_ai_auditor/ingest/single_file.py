@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from calibre_ai_auditor.audit.engine import run_audit
 from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.storage.db import get_engine
@@ -34,10 +35,37 @@ async def audit_ingested_file(settings: Settings, file_path: Path) -> dict[str, 
 
     snippets = extract_snippets(resolved)
     extracted = extract_heuristics([s.model_dump() for s in snippets])
+    # Use central pipeline (replaces scattered C3 logic; calls vision + Komf if enabled)
+    raw_decl = {
+        "title": extracted.get("title"),
+        "authors": extracted.get("authors") or [],
+        "publisher": extracted.get("publisher"),
+        "published_date": extracted.get("published_date"),
+        "language": extracted.get("language"),
+        "series": extracted.get("series"),
+        "series_index": extracted.get("series_index"),
+        "isbn": extracted.get("isbn"),
+        "volume": extracted.get("volume"),
+        "chapter": extracted.get("chapter"),
+        "series_position": extracted.get("series_position"),
+    }
+    raw_obs = dict(raw_decl)
+    enriched_decl, enriched_obs = await enrich_comic_observations(
+        settings, resolved if resolved.suffix.lower() in (".cbz", ".cbr") else None, None, raw_decl, raw_obs
+    )
+    for k in list(enriched_obs.keys()):
+        if enriched_obs[k] is not None:
+            extracted[k] = enriched_obs[k]
     current_metadata: dict[str, Any] = {
         "title": extracted.get("title") or resolved.stem,
         "authors": extracted.get("authors", []),
         "identifiers": extracted.get("identifiers", {}),
+        # Comic fields (v1.1) — populated here or via ComicInfo in C3 + cover vision; pull for declared
+        "volume": extracted.get("volume"),
+        "chapter": extracted.get("chapter"),
+        "series_position": extracted.get("series_position"),
+        "series": extracted.get("series"),
+        "series_index": extracted.get("series_index"),
     }
 
     engine = get_engine(settings)

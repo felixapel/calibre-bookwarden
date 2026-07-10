@@ -29,6 +29,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.storage.db import get_engine
@@ -43,9 +44,12 @@ from calibre_ai_auditor.verification.metrics import get_metrics
 logger = logging.getLogger(__name__)
 
 
-def _build_observation_set(book: BookRecord) -> ObservationSet:
-    """Extract content from the book's first available file and build an ObservationSet."""
+async def _build_observation_set(book: BookRecord, settings: Settings) -> ObservationSet:
+    """Extract content from the book's first available file and build an ObservationSet.
+    Uses central enrich_comic_observations pipeline for ComicInfo + vision (manga) + Komf.
+    """
     snippet_text = ""
+    file_path = None
     for fmt in (book.files or [])[:1]:
         file_path_data = fmt.get("path") if isinstance(fmt, dict) else None
         if not file_path_data:
@@ -60,7 +64,35 @@ def _build_observation_set(book: BookRecord) -> ObservationSet:
 
     heuristics = extract_heuristics([{"text": snippet_text, "source": "first_pages"}] if snippet_text else [])
 
-    return ObservationSet(
+    # Use pipeline (replaces all scattered comic merge / extract_cbz logic)
+    raw_declared = {
+        "title": heuristics.get("title"),
+        "authors": heuristics.get("authors") or [],
+        "publisher": heuristics.get("publisher"),
+        "published_date": heuristics.get("published_date"),
+        "language": heuristics.get("language"),
+        "series": heuristics.get("series"),
+        "series_index": heuristics.get("series_index"),
+        "isbn": (heuristics.get("identifiers") or {}).get("isbn"),
+        "volume": heuristics.get("volume"),
+        "chapter": heuristics.get("chapter"),
+        "series_position": heuristics.get("series_position"),
+    }
+    raw_observed = dict(raw_declared)
+
+    is_cbz = bool(file_path and file_path.suffix.lower() in (".cbz", ".cbr"))
+    enriched_decl, enriched_obs = await enrich_comic_observations(
+        settings, file_path if is_cbz else None, None, raw_declared, raw_observed
+    )
+
+    # Update heuristics from enriched for ObservationSet
+    for k in ("title", "authors", "publisher", "published_date", "language", "series", "series_index", "isbn", "volume", "chapter", "series_position"):
+        if k in enriched_obs and enriched_obs[k] is not None:
+            heuristics[k] = enriched_obs[k]
+
+    cover_v = enriched_obs.get("cover_vision")
+
+    obs = ObservationSet(
         title_page_text=snippet_text[:5000] if snippet_text else None,
         body_sample=snippet_text[:10000] if snippet_text else None,
         title_extracted=heuristics.get("title"),
@@ -69,22 +101,59 @@ def _build_observation_set(book: BookRecord) -> ObservationSet:
         publisher_extracted=heuristics.get("publisher"),
         date_extracted=heuristics.get("published_date"),
         language_detected=heuristics.get("language"),
+        series_extracted=heuristics.get("series"),
+        series_index_extracted=heuristics.get("series_index"),
+        volume_extracted=heuristics.get("volume"),
+        chapter_extracted=heuristics.get("chapter"),
+        series_position_extracted=heuristics.get("series_position"),
+        cover_vision=cover_v,
         evidence_quality="high" if len(snippet_text) > 500 else "low",
     )
+    return obs
 
 
-def _build_declared(book: BookRecord) -> DeclaredMetadata:
-    """Build DeclaredMetadata from a BookRecord's current_metadata."""
+async def _build_declared(book: BookRecord, settings: Settings) -> DeclaredMetadata:
+    """Build DeclaredMetadata from a BookRecord's current_metadata, using pipeline for comic enrichment (ComicInfo/Komf/vision)."""
     current_meta = book.current_metadata or {}
+    raw_decl = {
+        "title": current_meta.get("title"),
+        "authors": current_meta.get("authors") or [],
+        "publisher": current_meta.get("publisher"),
+        "published_date": current_meta.get("pubdate"),
+        "language": current_meta.get("languages"),
+        "series": current_meta.get("series"),
+        "series_index": current_meta.get("series_index"),
+        "isbn": (current_meta.get("identifiers") or {}).get("isbn") if current_meta.get("identifiers") else None,
+        "volume": current_meta.get("volume"),
+        "chapter": current_meta.get("chapter"),
+        "series_position": current_meta.get("series_position"),
+    }
+    # determine file for pipeline (comic extract + vision/komf)
+    file_path = None
+    for fmt in (book.files or [])[:1]:
+        fp = fmt.get("path") if isinstance(fmt, dict) else None
+        if fp:
+            from pathlib import Path
+            p = Path(fp)
+            if p.exists():
+                file_path = p
+                break
+    is_cbz = bool(file_path and file_path.suffix.lower() in (".cbz", ".cbr"))
+    enriched_decl, _ = await enrich_comic_observations(
+        settings, file_path if is_cbz else None, None, raw_decl, {}
+    )
     return DeclaredMetadata(
-        title=current_meta.get("title"),
-        authors=current_meta.get("authors") or [],
-        publisher=current_meta.get("publisher"),
-        published_date=current_meta.get("pubdate"),
-        language=current_meta.get("languages"),
-        series=current_meta.get("series"),
-        series_index=current_meta.get("series_index"),
-        isbn=(current_meta.get("identifiers") or {}).get("isbn") if current_meta.get("identifiers") else None,
+        title=enriched_decl.get("title"),
+        authors=enriched_decl.get("authors") or [],
+        publisher=enriched_decl.get("publisher"),
+        published_date=enriched_decl.get("published_date"),
+        language=enriched_decl.get("language"),
+        series=enriched_decl.get("series"),
+        series_index=enriched_decl.get("series_index"),
+        volume=enriched_decl.get("volume"),
+        chapter=enriched_decl.get("chapter"),
+        series_position=enriched_decl.get("series_position"),
+        isbn=enriched_decl.get("isbn"),
     )
 
 
@@ -116,11 +185,13 @@ async def run_audit(
                 progress_callback(i + 1, total)
 
             try:
+                declared = await _build_declared(book, settings)
+                observed = await _build_observation_set(book, settings)
                 verdict = verify_engine.verify(
                     book_key=book.book_key,
                     run_id=run_id,
-                    declared=_build_declared(book),
-                    observed=_build_observation_set(book),
+                    declared=declared,
+                    observed=observed,
                 )
 
                 # Optional LLM witness for ambiguous fields (if judge=True and providers exist)

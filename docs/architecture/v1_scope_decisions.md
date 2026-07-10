@@ -24,7 +24,7 @@ state of the codebase and the homelab environment.
 - ✅ Fields: `volume`, `chapter` (decimal), `series_position` added to Metadata model.
 - ✅ Vision: schema/prompt updated for comics; `verify_comic_cover()` helper added in vision.py (extracts series/volume/chapter from cover).
 - ✅ Extractor: comics.py parses Chapter and handles volume/chapter.
-- ⏳ Full `verify_comic_cover()` rule in engine + workflow, Komf adapter, OCR profile still pending (see ROADMAP v1.1).
+- ✅ Full `verify_comic_cover()` + pipeline (enrich_comic_observations) + Komf + OCR profile complete (see ROADMAP v1.1 DONE).
 
 **Out of scope for v1.0 GA**: auto-apply on comics.  Manual review only
 because cover art can be ambiguous between editions.

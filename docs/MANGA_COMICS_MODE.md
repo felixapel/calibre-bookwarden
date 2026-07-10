@@ -8,7 +8,7 @@
 - **Vision LLM**: `VisionVerifier` now uses comic-aware schema and prompt for extracting series/volume/chapter from covers; `verify_comic_cover()` helper added.
 - **Extractor**: `extractors/comics.py` parses ComicInfo.xml "Chapter" + normalizes volume/chapter.
 - **Extractor support**: CBZ/CBR ingestion and ComicInfo.xml already present; vision/OCR now better aligned for comics.
-- Full engine rule integration, auto-apply (still manual for comics), and Komf are still in progress.
+- Full engine rule integration, auto-apply, and Komf are complete (central pipeline in comics/pipeline.py wires vision + Komf; decimal chapter supported).
 
 The architecture is prepared to support deeper integrations with Komga, Kavita, and Komf.
 

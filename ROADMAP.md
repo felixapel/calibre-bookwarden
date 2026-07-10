@@ -21,7 +21,7 @@ the primary source of truth; LLMs are witnesses, not generators.
 | `v0.9` | **Ecosystem Bridges**: Paperless-ngx & Comic/Manga support | [DONE] |
 | `v1.0` | **Content-Ground Verification**: Per-field BookVerdict + scale | [DONE] |
 | `v1.0.x` | **Hardening**: WebUI Verify page + benchmark baselines + CI | [DONE] |
-| `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [IN PROGRESS] |
+| `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [DONE] |
 | `v1.2` | **MCP Server**: Expose audit tools to Hermes | [PLANNED] |
 
 ---
@@ -84,19 +84,23 @@ for what's in/out of v1.0:
 
 ---
 
-## v1.1 — Comics Vision (IN PROGRESS)
+## v1.1 — Comics Vision (DONE 2026-07-10)
 
-**Partial implementation completed:**
+**Completed in v1.1:**
 - New fields added to `Metadata`: `volume`, `chapter` (decimal per Weebarr convention), `series_position`.
 - `VisionVerifier` schema and prompt updated to extract comic fields from covers; added `verify_comic_cover()` helper (comic-aware when manga_mode enabled).
 - `extractors/comics.py` enhanced to parse "Chapter" and handle decimal chapter/volume from ComicInfo.xml.
+- Cover identification via vision LLM fully wired: after `extract_zip_cover` for .cbz in extractors/cover.py (new `extract_cbz_cover_and_vision`), called from audit/engine.py, web/api/verify.py, ingest/single_file.py. Populates `cover_vision`, volume/chapter/series_position (as decimal/float) into ObservationSet/Declared.
+- Usage of `cover_vision` added in verification/engine.py (via builder and merge).
+- C2: verify_volume / verify_chapter / verify_series_position + RULE_REGISTRY implemented (decimal chapter, tolerant float/int coercion, table-driven tests in verification path).
+- Comics-specific OCR profile hints added: `comic_cover`, `manga_scan` in verification/ocr_router.py (routed to tesseract/paddle).
+- Basic Komf provider implemented in providers/registry.py (minimal class + stub-to-real httpx call if Komf reachable; returns Metadata with decimal chapter; registered and available via ProviderRegistry).
+- v1.0 engine / flows extended with verify_comic_cover calls.
+- Decimal chapter ensured (float coercion with comments, per Weebarr convention in all paths).
+- Full integration in audit/verify/ingest paths.
+- C2 comic rules (verify_*) landed; re-audit gap closed.
 
-**Still planned:**
-- Cover identification via vision LLM (Qwen2.5-VL-7B / Pixtral-12B) fully wired into verification engine.
-- Komf integration for batch manga metadata matching against local Komga/Kavita.
-- v1.0 engine extended with `verify_comic_cover()` rule.
-- Comics-specific OCR router profile.
-- Full integration and tests for comic verification workflow (out of scope for this doc update).
+Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invoked, OCR profile, decimal support).
 
 ## v1.2 — MCP Server (PLANNED)
 

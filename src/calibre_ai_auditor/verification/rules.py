@@ -172,6 +172,25 @@ def _fuzzy_ratio(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
+def _coerce_number(v: Any) -> float | None:
+    """Coerce str/int/float to float for tolerant comic numeric rules.
+
+    Supports decimal chapters (e.g. 12.5) per Weebarr convention; volume
+    treated as whole number.
+    """
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        s = str(v).strip()
+        if not s:
+            return None
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Per-field rule functions
 # ---------------------------------------------------------------------------
@@ -1300,6 +1319,196 @@ def verify_series_index(declared: Any, observed: Any, *, page_range: str | None 
     )
 
 
+def verify_volume(declared: Any, observed: Any, *, page_range: str | None = None) -> FieldVerdict:
+    """Volume rule (C2 comics): tolerant int match after numeric coercion."""
+    d = _coerce_number(declared)
+    o = _coerce_number(observed)
+
+    if d is None and o is None:
+        return FieldVerdict(
+            field="volume",
+            declared_value=declared,
+            observed_value=observed,
+            verdict=VerdictKind.confirmed,
+            confidence=90,
+            reason="No volume declared and none observed.",
+        )
+    if d is None and o is not None:
+        return FieldVerdict(
+            field="volume",
+            declared_value=None,
+            observed_value=observed,
+            verdict=VerdictKind.missing,
+            confidence=85,
+            evidence=[
+                EvidenceSpan(
+                    source="header",
+                    text=str(observed),
+                    page_range=page_range,
+                    confidence=85,
+                )
+            ],
+            reason=f"Volume found: {observed!r}.",
+        )
+    if d is not None and o is None:
+        return FieldVerdict(
+            field="volume",
+            declared_value=declared,
+            observed_value=None,
+            verdict=VerdictKind.ambiguous,
+            confidence=50,
+            reason="Volume declared but not found in content sample.",
+        )
+
+    # Tolerant whole-number match (round to handle 2.0 vs 2 etc.)
+    if int(round(d)) == int(round(o)):
+        return FieldVerdict(
+            field="volume",
+            declared_value=declared,
+            observed_value=observed,
+            verdict=VerdictKind.confirmed,
+            confidence=95,
+            reason="Volume matches.",
+        )
+    return FieldVerdict(
+        field="volume",
+        declared_value=declared,
+        observed_value=observed,
+        verdict=VerdictKind.mismatch,
+        confidence=90,
+        reason=f"Volume mismatch: declared {int(round(d))}, observed {int(round(o))}.",
+    )
+
+
+def verify_chapter(declared: Any, observed: Any, *, page_range: str | None = None) -> FieldVerdict:
+    """Chapter rule (C2 comics): decimal/float tolerant match.
+
+    Chapter numbers are always decimal per Weebarr convention (e.g. 1.5).
+    Uses small epsilon tolerance for float representation/OCR variance.
+    """
+    d = _coerce_number(declared)
+    o = _coerce_number(observed)
+
+    if d is None and o is None:
+        return FieldVerdict(
+            field="chapter",
+            declared_value=declared,
+            observed_value=observed,
+            verdict=VerdictKind.confirmed,
+            confidence=90,
+            reason="No chapter declared and none observed.",
+        )
+    if d is None and o is not None:
+        return FieldVerdict(
+            field="chapter",
+            declared_value=None,
+            observed_value=observed,
+            verdict=VerdictKind.missing,
+            confidence=85,
+            evidence=[
+                EvidenceSpan(
+                    source="header",
+                    text=str(observed),
+                    page_range=page_range,
+                    confidence=85,
+                )
+            ],
+            reason=f"Chapter found: {observed!r}.",
+        )
+    if d is not None and o is None:
+        return FieldVerdict(
+            field="chapter",
+            declared_value=declared,
+            observed_value=None,
+            verdict=VerdictKind.ambiguous,
+            confidence=50,
+            reason="Chapter declared but not found in content sample.",
+        )
+
+    # Tolerant decimal match (same epsilon as series_index)
+    if abs(d - o) < 0.01:
+        return FieldVerdict(
+            field="chapter",
+            declared_value=declared,
+            observed_value=observed,
+            verdict=VerdictKind.confirmed,
+            confidence=95,
+            reason="Chapter matches (decimal).",
+        )
+    return FieldVerdict(
+        field="chapter",
+        declared_value=declared,
+        observed_value=observed,
+        verdict=VerdictKind.mismatch,
+        confidence=90,
+        reason=f"Chapter mismatch: declared {d}, observed {o}.",
+    )
+
+
+def verify_series_position(declared: Any, observed: Any, *, page_range: str | None = None) -> FieldVerdict:
+    """Series position rule (C2 comics): decimal tolerant match.
+
+    Often mirrors chapter for one-shots or tracks position in volume.
+    """
+    d = _coerce_number(declared)
+    o = _coerce_number(observed)
+
+    if d is None and o is None:
+        return FieldVerdict(
+            field="series_position",
+            declared_value=declared,
+            observed_value=observed,
+            verdict=VerdictKind.confirmed,
+            confidence=90,
+            reason="No series_position declared and none observed.",
+        )
+    if d is None and o is not None:
+        return FieldVerdict(
+            field="series_position",
+            declared_value=None,
+            observed_value=observed,
+            verdict=VerdictKind.missing,
+            confidence=85,
+            evidence=[
+                EvidenceSpan(
+                    source="header",
+                    text=str(observed),
+                    page_range=page_range,
+                    confidence=85,
+                )
+            ],
+            reason=f"Series position found: {observed!r}.",
+        )
+    if d is not None and o is None:
+        return FieldVerdict(
+            field="series_position",
+            declared_value=declared,
+            observed_value=None,
+            verdict=VerdictKind.ambiguous,
+            confidence=50,
+            reason="Series position declared but not found in content sample.",
+        )
+
+    # Tolerant decimal match
+    if abs(d - o) < 0.01:
+        return FieldVerdict(
+            field="series_position",
+            declared_value=declared,
+            observed_value=observed,
+            verdict=VerdictKind.confirmed,
+            confidence=95,
+            reason="Series position matches.",
+        )
+    return FieldVerdict(
+        field="series_position",
+        declared_value=declared,
+        observed_value=observed,
+        verdict=VerdictKind.mismatch,
+        confidence=90,
+        reason=f"Series position mismatch: declared {d}, observed {o}.",
+    )
+
+
 # Rule registry — the engine looks up by field name
 RULE_REGISTRY = {
     "isbn": verify_isbn,
@@ -1310,6 +1519,10 @@ RULE_REGISTRY = {
     "language": verify_language,
     "series": verify_series,
     "series_index": verify_series_index,
+    # C2 comic rules (decimal chapter, tolerant numeric)
+    "volume": verify_volume,
+    "chapter": verify_chapter,
+    "series_position": verify_series_position,
 }
 
 

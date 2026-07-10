@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from calibre_ai_auditor.config.settings import Settings, load_settings
+from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.storage.models import EvidencePackage
@@ -104,19 +105,55 @@ async def _build_inspection_package(path: Path, settings: Settings, *, no_provid
 
     book_key = f"path:{path}"
 
-    # Build declared metadata from the heuristic-extracted values (best-effort
-    # since inspect may not have Calibre-declared metadata yet)
+    # Use pipeline to replace scattered comic merge + extract_cbz_cover_and_vision (handles ComicInfo + vision + komf)
+    raw = {
+        "title": extracted.get("title"),
+        "authors": extracted.get("authors") or [],
+        "isbn": (extracted.get("identifiers") or {}).get("isbn"),
+        "series": extracted.get("series"),
+        "series_index": extracted.get("series_index"),
+        "volume": extracted.get("volume"),
+        "chapter": extracted.get("chapter"),
+        "series_position": extracted.get("series_position"),
+        "publisher": extracted.get("publisher"),
+        "published_date": extracted.get("published_date"),
+    }
+    is_cbz = path.suffix.lower() in (".cbz", ".cbr")
+    enriched_decl, enriched_obs = await enrich_comic_observations(
+        settings, path if is_cbz else None, None, raw, raw
+    )
+    # apply back to extracted for legacy extra_extracted and declared/obs below
+    for k, v in enriched_obs.items():
+        if v is not None:
+            extracted[k] = v
+
+    # Build declared metadata from the (now pipeline-enriched) extracted
     declared = DeclaredMetadata(
-        title=extracted.get("title"),
-        authors=extracted.get("authors") or [],
-        isbn=(extracted.get("identifiers") or {}).get("isbn"),
+        title=enriched_decl.get("title") or extracted.get("title"),
+        authors=enriched_decl.get("authors") or extracted.get("authors") or [],
+        isbn=enriched_decl.get("isbn") or (extracted.get("identifiers") or {}).get("isbn"),
+        series=enriched_decl.get("series") or extracted.get("series"),
+        series_index=enriched_decl.get("series_index") or extracted.get("series_index"),
+        volume=enriched_decl.get("volume"),
+        chapter=enriched_decl.get("chapter"),
+        series_position=enriched_decl.get("series_position"),
+        publisher=enriched_decl.get("publisher") or extracted.get("publisher"),
+        published_date=enriched_decl.get("published_date") or extracted.get("published_date"),
     )
     observed = ObservationSet(
         title_page_text=snippet_text[:5000] if snippet_text else None,
         body_sample=snippet_text[:10000] if snippet_text else None,
-        title_extracted=extracted.get("title"),
-        authors_extracted=extracted.get("authors") or [],
-        isbn_extracted=(extracted.get("identifiers") or {}).get("isbn"),
+        title_extracted=enriched_obs.get("title") or extracted.get("title"),
+        authors_extracted=enriched_obs.get("authors") or extracted.get("authors") or [],
+        isbn_extracted=enriched_obs.get("isbn") or (extracted.get("identifiers") or {}).get("isbn"),
+        series_extracted=enriched_obs.get("series") or extracted.get("series"),
+        series_index_extracted=enriched_obs.get("series_index") or extracted.get("series_index"),
+        volume_extracted=enriched_obs.get("volume"),
+        chapter_extracted=enriched_obs.get("chapter"),
+        series_position_extracted=enriched_obs.get("series_position"),
+        cover_vision=enriched_obs.get("cover_vision"),
+        publisher_extracted=enriched_obs.get("publisher") or extracted.get("publisher"),
+        date_extracted=enriched_obs.get("published_date") or extracted.get("published_date"),
         evidence_quality="high" if len(snippet_text) > 500 else "low",
     )
 
@@ -129,6 +166,11 @@ async def _build_inspection_package(path: Path, settings: Settings, *, no_provid
     )
 
     # Return as EvidencePackage-shaped dict for back-compat with existing UI
+    # C3: include merged comic fields in extracted (current uses enhanced declared)
+    extra_extracted: dict[str, Any] = {}
+    for comic_key in ("series", "series_index", "volume", "chapter", "series_position", "publisher", "published_date", "tags"):
+        if comic_key in extracted and extracted[comic_key] is not None:
+            extra_extracted[comic_key] = extracted[comic_key]
     package = EvidencePackage(
         evidence_id=f"ev_inspect_path_{path.name}",
         book_key=book_key,
@@ -138,6 +180,7 @@ async def _build_inspection_package(path: Path, settings: Settings, *, no_provid
             "title": extracted.get("title"),
             "authors": extracted.get("authors", []),
             "identifiers": extracted.get("identifiers", {}),
+            **extra_extracted,
         },
         candidates=[],
         snippets=[s.model_dump() for s in snippets],

@@ -38,6 +38,8 @@ class PageHint(StrEnum):
     table_heavy = "table_heavy"
     multilingual = "multilingual"
     unknown = "unknown"
+    comic_cover = "comic_cover"  # added for v1.1 comics vision/OCR profile
+    manga_scan = "manga_scan"  # comics OCR profile hint
 
 
 class OCRQuality(StrEnum):
@@ -83,7 +85,7 @@ class TesseractProvider:
     name = "tesseract"
     requires_gpu = False
     supports_languages = ["en", "de", "fr", "es", "it", "pt", "nl", "ru", "ja", "zh"]
-    best_for = [PageHint.clean_scan, PageHint.unknown]
+    best_for = [PageHint.clean_scan, PageHint.unknown, PageHint.comic_cover, PageHint.manga_scan]
 
     def __init__(self, ocrmypdf_path: str = "ocrmypdf", tesseract_lang: str = "eng"):
         self.ocrmypdf_path = ocrmypdf_path
@@ -209,7 +211,7 @@ class PaddleOCRProvider:
     name = "paddleocr"
     requires_gpu = False  # can run on CPU; faster on GPU
     supports_languages = ["en", "ch", "fr", "de", "ja", "ko", "ru"]
-    best_for = [PageHint.clean_scan, PageHint.table_heavy]
+    best_for = [PageHint.clean_scan, PageHint.table_heavy, PageHint.comic_cover, PageHint.manga_scan]
 
     def __init__(self, lang: str = "en", use_gpu: bool = False):
         self.lang = lang
@@ -431,7 +433,8 @@ class OCRRouter:
     Routing priority:
       noisy_scan / multilingual → Surya (if enabled and GPU available)
       table_heavy               → PaddleOCR (if enabled)
-      clean_scan / unknown      → Tesseract (always available fallback)
+      clean_scan / unknown / comic_cover / manga_scan → Tesseract (always available fallback)
+      (comic_cover/manga_scan also preferred to Paddle for CJK comics)
 
     The router is async and accepts a list of (page_index, page_bytes) tuples.
     """
