@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: calibre-ai-auditor:v0.1
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     env_file:
@@ -43,7 +43,7 @@ services:
       start_period: 10s
 
   writer:
-    image: calibre-ai-auditor:v0.1
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     command: ["writer"]
@@ -75,7 +75,7 @@ services:
         condition: service_started
 
   migrate:
-    image: calibre-ai-auditor:v0.1
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}
     command: ["migrate"]
     profiles: ["maintenance"]
     restart: "no"
@@ -106,8 +106,12 @@ services:
       POSTGRES_USER: bookaudit
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
       POSTGRES_DB: bookaudit
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set app database password in .env}
+      POSTGRES_WRITER_PASSWORD: ${POSTGRES_WRITER_PASSWORD:?set writer database password in .env}
+      POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?set migrator database password in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./scripts/postgres-init-roles.sh:/docker-entrypoint-initdb.d/10-bookaudit-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bookaudit -d bookaudit"]
       interval: 10s

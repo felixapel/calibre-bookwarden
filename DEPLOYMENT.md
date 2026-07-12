@@ -8,7 +8,7 @@ The application uses a two-stage build process:
 1.  **Frontend Builder**: Compiles the React + Vite SPA.
 2.  **Runtime**: A Python-based container that serves the static assets and the FastAPI backend.
 
-**Image**: `calibre-ai-auditor:v0.1`
+**Image**: `${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}`
 
 ---
 
@@ -20,7 +20,7 @@ We use **Docker Compose Profiles** to manage complexity.
 The default production stack starts only the required services. The `optional`
 profile adds specialized sidecars:
 - **`app`**: FastAPI Backend + React WebUI.
-- **`postgres`**: High-availability database.
+- **`postgres`**: Authoritative single-host database.
 - **`valkey`**: Task queue and rate-limit caching.
 - **`tika`**: Advanced document extraction sidecar.
 - **`gotenberg`**: PDF preview/report renderer.
@@ -28,9 +28,20 @@ profile adds specialized sidecars:
 
 ### Deployment commands
 ```bash
+cp .env.example .env
+# Replace every placeholder and synchronize each DSN password with the matching
+# POSTGRES_*_PASSWORD value.
+docker compose build app
+docker compose up -d postgres valkey
 docker compose --profile maintenance run --rm migrate
 docker compose up -d app writer
 ```
+
+On the first empty PostgreSQL volume, `scripts/postgres-init-roles.sh` creates
+the app, writer, and migrator roles. The migrator owns the schema; runtime roles
+receive DML and sequence privileges but cannot create schema objects. Password
+rotation is an explicit operation because PostgreSQL init hooks run only for an
+empty data directory.
 
 ---
 
@@ -68,8 +79,9 @@ Critical variables for deployment:
 *   `BOOKAUDIT_JUDGE_MODEL`: The LLM to use for auditing (e.g., `qwen3.5:9b-q4_K_M`).
 *   `OPENAI_API_KEY`: Required only for remote deep reasoning.
 *   `BOOKAUDIT_APP_POSTGRES_DSN`, `BOOKAUDIT_WRITER_POSTGRES_DSN`, and
-    `BOOKAUDIT_MIGRATOR_POSTGRES_DSN`: distinct database roles. Provision them
-    before the migration window; do not reuse the migrator credential at runtime.
+    `BOOKAUDIT_MIGRATOR_POSTGRES_DSN`: distinct database roles. Their passwords
+    must match `POSTGRES_APP_PASSWORD`, `POSTGRES_WRITER_PASSWORD`, and
+    `POSTGRES_MIGRATOR_PASSWORD`; do not reuse the migrator credential at runtime.
 
 ---
 

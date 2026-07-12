@@ -2,12 +2,16 @@
 
 ## Backup
 
+The commands use the PostgreSQL bootstrap administrator inside the private
+database container. Protect `POSTGRES_PASSWORD` as a backup credential;
+application and writer roles intentionally lack schema-wide backup privileges.
+
 Stop mutation intake and the writer, then capture PostgreSQL and the
 writer-exclusive artifacts in the same maintenance window:
 
 ```bash
 docker compose stop app writer
-docker compose exec -T postgres pg_dump -U bookaudit_migrator -d bookaudit -Fc > bookaudit.dump
+docker compose exec -T postgres pg_dump -U bookaudit -d bookaudit -Fc > bookaudit.dump
 tar -C . -czf writer-artifacts.tar.gz .writer-artifacts
 ```
 
@@ -21,7 +25,7 @@ then restore both halves before starting runtime roles:
 
 ```bash
 docker compose up -d postgres valkey
-docker compose exec -T postgres pg_restore -U bookaudit_migrator -d bookaudit < bookaudit.dump
+docker compose exec -T postgres pg_restore -U bookaudit -d bookaudit < bookaudit.dump
 tar -C . -xzf writer-artifacts.tar.gz
 docker compose up -d app writer
 ```
