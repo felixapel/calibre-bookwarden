@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
@@ -67,6 +67,7 @@ class DatabaseSettings(BaseModel):
 class QueueSettings(BaseModel):
     backend: str = "memory"
     valkey_url: str = "redis://valkey:6379/0"
+    connect_timeout_seconds: float = 1.0
 
 
 class RateLimitSettings(BaseModel):
@@ -177,6 +178,10 @@ class Settings(BaseSettings):
     judge_model: str = "gemma4:e4b-it-q4_K_M"
     vision_model: str = "gemma4:e4b-it-q4_K_M"
     log_level: str = "INFO"
+    api_key: SecretStr | None = Field(
+        None,
+        validation_alias=AliasChoices("BOOKAUDIT_API_KEY", "api_key"),
+    )
 
     # Flat aliases for common Docker env vars
     library_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH"))

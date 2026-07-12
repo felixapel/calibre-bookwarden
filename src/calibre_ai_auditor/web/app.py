@@ -1,4 +1,5 @@
 import contextlib
+import hmac
 import logging
 import os
 from collections.abc import AsyncGenerator
@@ -6,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from calibre_ai_auditor.web.api import (
@@ -118,22 +119,27 @@ async def add_cache_control_headers(request: Request, call_next: Any) -> Respons
     return response
 
 
-# API Key middleware if env var is set
-api_key = os.getenv("BOOKAUDIT_API_KEY")
-if api_key:
-    from fastapi.responses import JSONResponse
-
-    @app.middleware("http")
-    async def enforce_api_key(request: Request, call_next: Any) -> Response:
-        if request.url.path.startswith("/api/") or request.url.path == "/api":
-            header_key = request.headers.get("X-API-Key")
-            if header_key != api_key:
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Invalid or missing API Key"},
-                )
+@app.middleware("http")
+async def enforce_api_key(request: Request, call_next: Any) -> Response:
+    """Require an API key when configured, and always in production."""
+    is_api = request.url.path == "/api" or request.url.path.startswith("/api/")
+    if not is_api or request.url.path == "/api/health/live":
         response: Response = await call_next(request)
         return response
+
+    from calibre_ai_auditor.config.settings import load_settings
+
+    settings = load_settings()
+    expected = settings.api_key.get_secret_value() if settings.api_key else ""
+    if settings.profile == "production" and not expected:
+        return JSONResponse(status_code=503, content={"detail": "API authentication is not configured"})
+    if expected:
+        provided = request.headers.get("X-API-Key", "")
+        if not hmac.compare_digest(provided, expected):
+            return JSONResponse(status_code=401, content={"detail": "Invalid or missing API Key"})
+
+    response = await call_next(request)
+    return response
 
 
 app.include_router(health.router, prefix="/api")
