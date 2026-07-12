@@ -19,7 +19,7 @@ def test_compose_bootstraps_least_privilege_database_roles() -> None:
 def test_compose_uses_current_configurable_image_reference() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 
-    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}") == 3
+    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}") == 4
     assert "calibre-ai-auditor:v0.1" not in compose
 
 
@@ -47,6 +47,15 @@ def test_production_preflight_creates_all_bind_mount_targets() -> None:
         assert directory in script
     assert "docker compose" in script
     assert "config -q" in script
+
+
+def test_retention_maintenance_service_is_explicit_and_fail_closed() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text()
+
+    assert "retention:" in compose
+    assert 'command: ["retention"]' in compose
+    assert "./.writer-artifacts:/writer-artifacts" in compose
+    assert "--backup-reference is required with --execute" in (ROOT / "src/calibre_ai_auditor/cli/main.py").read_text()
 
 
 def test_release_workflow_publishes_only_after_full_gates() -> None:

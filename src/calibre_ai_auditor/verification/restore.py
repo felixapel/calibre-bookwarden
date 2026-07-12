@@ -188,6 +188,12 @@ class RestorePointStore:
                     logger.warning("Bad restore.json at %s: %s", meta_file, e)
         return deleted
 
+    def list_expired(self, now: datetime | None = None) -> list[RestorePoint]:
+        """Return expired restore points without mutating the artifact store."""
+        if now is None:
+            now = datetime.now(UTC)
+        return [restore_point for restore_point in self.list_all() if restore_point.is_expired(now)]
+
     def list_all(self) -> list[RestorePoint]:
         out: list[RestorePoint] = []
         if not self.restore_root.exists():

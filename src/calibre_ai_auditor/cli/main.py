@@ -320,6 +320,54 @@ def undo(
             typer.secho(f"Error: {e}", fg=typer.colors.RED)
 
 
+@app.command("retention")
+def retention(
+    ctx: typer.Context,
+    execute: Annotated[bool, typer.Option("--execute", help="Delete expired restore points")] = False,
+    backup_reference: Annotated[
+        str | None,
+        typer.Option("--backup-reference", help="Identifier of the verified paired DB/artifact backup"),
+    ] = None,
+    confirm_writer_stopped: Annotated[
+        bool,
+        typer.Option("--confirm-writer-stopped", help="Assert that the metadata writer is stopped"),
+    ] = False,
+) -> None:
+    """Preview or explicitly delete restore points past their recorded retention target."""
+    settings: Settings = ctx.obj
+    from calibre_ai_auditor.verification.restore import RestorePointStore
+
+    store = RestorePointStore(settings.storage.artifacts_dir)
+    expired = store.list_expired()
+    typer.echo(f"Expired restore points: {len(expired)}")
+    for restore_point in expired:
+        typer.echo(f"  {restore_point.run_id}/{restore_point.book_key}")
+    if not execute:
+        typer.echo("Dry run only; no restore points were deleted.")
+        return
+    if not backup_reference or not backup_reference.strip():
+        typer.secho("--backup-reference is required with --execute", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not confirm_writer_stopped:
+        typer.secho("--confirm-writer-stopped is required with --execute", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    confirmed_expired = store.list_expired()
+    if {point.path for point in confirmed_expired} != {point.path for point in expired}:
+        typer.secho("Retention set changed after preview; nothing was deleted", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    deleted = store.cleanup_expired()
+    if deleted != len(expired):
+        typer.secho(
+            f"Retention set changed during cleanup: previewed {len(expired)}, deleted {deleted}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    typer.secho(
+        f"Deleted {deleted} expired restore points after backup {backup_reference}.",
+        fg=typer.colors.GREEN,
+    )
+
+
 @app.command()
 def ingest_paperless(
     ctx: typer.Context,

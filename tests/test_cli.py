@@ -1,3 +1,5 @@
+import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,6 +36,53 @@ def test_migrate_runs_explicit_schema_upgrade() -> None:
     assert result.exit_code == 0
     upgrade.assert_called_once()
     assert "Database schema upgraded" in result.stdout
+
+
+def test_retention_is_dry_run_and_requires_backup_and_stopped_writer(tmp_path: Path) -> None:
+    artifacts = tmp_path / "artifacts"
+    restore_point = artifacts / "restore" / "run-old" / "calibre-1"
+    restore_point.mkdir(parents=True)
+    (restore_point / "restore.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-old",
+                "book_key": "calibre:1",
+                "calibre_book_id": 1,
+                "applied_at": (datetime.now(UTC) - timedelta(days=31)).isoformat(),
+                "fields_changed": ["title"],
+                "ttl_seconds": 30 * 24 * 3600,
+            }
+        )
+    )
+    config = tmp_path / "config.yml"
+    config.write_text(f"storage:\n  artifacts_dir: {artifacts}\n")
+
+    preview = runner.invoke(app, ["-c", str(config), "retention"])
+    assert preview.exit_code == 0
+    assert "Expired restore points: 1" in preview.stdout
+    assert "Dry run only" in preview.stdout
+    assert restore_point.is_dir()
+
+    unsafe = runner.invoke(app, ["-c", str(config), "retention", "--execute"])
+    assert unsafe.exit_code == 1
+    assert "--backup-reference is required" in unsafe.stdout
+    assert restore_point.is_dir()
+
+    executed = runner.invoke(
+        app,
+        [
+            "-c",
+            str(config),
+            "retention",
+            "--execute",
+            "--backup-reference",
+            "backup-20260712",
+            "--confirm-writer-stopped",
+        ],
+    )
+    assert executed.exit_code == 0
+    assert "Deleted 1 expired restore points" in executed.stdout
+    assert not restore_point.exists()
 
 
 def test_ingest_paperless_disabled() -> None:

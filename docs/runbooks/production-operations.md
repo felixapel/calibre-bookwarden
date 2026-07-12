@@ -114,6 +114,29 @@ operations.
 - Low disk: stop writer before deleting anything. Restore points have a 30-day
   retention and must be cleaned only through the verified retention workflow.
 
+## Restore-point retention
+
+Retention is dry-run by default and operates only on `.writer-artifacts`:
+
+```bash
+docker compose stop writer
+docker compose --profile maintenance run --rm retention
+```
+
+After taking and verifying a paired PostgreSQL plus `.writer-artifacts` backup,
+execute the exact previewed cleanup with its audit reference:
+
+```bash
+docker compose --profile maintenance run --rm retention \
+  --execute \
+  --backup-reference "<backup-id-or-path>" \
+  --confirm-writer-stopped
+```
+
+The command refuses mutation without both confirmations and fails if the
+expired set changes during cleanup. Start the writer only after recording the
+deleted count and checking artifact disk usage.
+
 ## Monitoring alerts
 
 Load `ops/monitoring/alerts.yml` into Prometheus and replace the API-key
