@@ -7,7 +7,7 @@ library:
 # ─── Storage ────────────────────────────────────────────────────────────────
 database:
   backend: postgres
-  postgres_dsn: "postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit"
+  # Required via BOOKAUDIT_DATABASE__POSTGRES_DSN; never store credentials here.
 
 queue:
   backend: valkey

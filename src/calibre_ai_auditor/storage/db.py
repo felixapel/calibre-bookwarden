@@ -12,6 +12,8 @@ def get_engine(settings: Settings) -> Engine:
         return _engine
 
     if settings.database.backend == "postgres":
+        if not settings.database.postgres_dsn:
+            raise ValueError("BOOKAUDIT_DATABASE__POSTGRES_DSN is required for the postgres backend")
         _engine = create_engine(settings.database.postgres_dsn)
     else:
         # Default to SQLite

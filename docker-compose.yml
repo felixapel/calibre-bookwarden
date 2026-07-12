@@ -11,7 +11,7 @@ services:
       BOOKAUDIT_DB_PATH: /state/bookaudit.db
       BOOKAUDIT_ARTIFACTS_DIR: /artifacts
       BOOKAUDIT_DATABASE__BACKEND: postgres
-      BOOKAUDIT_DATABASE__POSTGRES_DSN: postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_DATABASE__POSTGRES_DSN:?set in .env}
       BOOKAUDIT_READ_ONLY: "true"
     volumes:
       - ./fake_library:/library:ro
@@ -44,7 +44,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: bookaudit
-      POSTGRES_PASSWORD: bookaudit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
       POSTGRES_DB: bookaudit
     volumes:
       - postgres-data:/var/lib/postgresql/data

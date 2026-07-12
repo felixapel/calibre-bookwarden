@@ -349,6 +349,71 @@ Keep `audit/engine.py` as a back-compat shim that wraps the v1.0 engine.
 
 ---
 
+## ADR-013: Hardened single-host production topology (v2)
+
+### Status
+Accepted — implementation is staged behind release gates
+
+### Date
+2026-07-12
+
+### Context
+The v1 topology mixes read and write capabilities in one web process, permits
+development storage fallbacks, and carries run state in process memory. A LAN
+deployment still crosses a trust boundary: browsers, reverse proxies, sidecars,
+and uploaded content cannot be assumed trusted. Metadata writes must also remain
+recoverable if a worker or Calibre process exits partway through an operation.
+
+### Decision
+The v2 production profile uses one Compose host behind a TLS reverse proxy with:
+
+1. Mandatory API-key authentication and fail-closed startup/readiness checks.
+2. PostgreSQL as the authoritative ledger and outbox, plus Valkey for durable
+   queue coordination. SQLite and in-memory queues remain development/test only.
+3. A read-only API service and a dedicated writer service. Only the writer may
+   mount the Calibre library read-write.
+4. Staged activation: the first production gate is read-only with uploads and
+   remote LLM calls disabled; write capability is enabled only after its separate
+   recovery and isolation gates pass.
+5. Explicit immutable operator authorization for any non-auto-eligible verdict.
+   A generic `force` flag is not sufficient authorization.
+6. Hybrid crash recovery: preserve a fully verified target, automatically restore
+   a verified partial write, and require operator action when state is unknown.
+7. Restore-point retention of 30 days and a metadata-only scale gate at 50,000
+   books. Schema upgrades may use a bounded maintenance window.
+
+Configuration follows `environment > secret file > YAML/init > dotenv`. Secrets
+must be injected at runtime and must not have working defaults in version control.
+Successful API responses use the stable `{ "status": "success", "data": ... }`
+envelope; errors use FastAPI's `{ "detail": ... }` response.
+
+### Alternatives considered
+
+- **Single process with a read-write mount**: simpler, but an API compromise would
+  immediately gain write access to the library. Rejected.
+- **SQLite and an in-memory queue in production**: low operational overhead, but
+  insufficient for durable claims, outbox delivery, and crash reconciliation.
+  Retained only for local development and tests.
+- **Automatic force override**: convenient for ambiguous verdicts, but destroys
+  the audit distinction between policy eligibility and human authorization.
+  Rejected.
+- **Immediate distributed deployment**: improves host isolation but adds more
+  operational failure modes than the initial homelab deployment requires.
+  Deferred; the service boundary keeps that migration possible.
+
+### Consequences
+
+- Production cannot start until required database, queue, and authentication
+  secrets are present and dependencies are ready.
+- Writes require more infrastructure and an explicit authorization record, but
+  the API process no longer needs filesystem write capability.
+- Migrations and reconciliation become release gates rather than startup-time
+  best-effort behavior.
+- Optional OCR, vector, upload, and remote-LLM services stay outside the first
+  read-only go-live and can be enabled independently later.
+
+---
+
 ## Historical ADRs (v0.9 era)
 
 The v0.9 release included the following decisions; they are retained here

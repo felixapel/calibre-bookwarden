@@ -1,10 +1,9 @@
-import os
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import AliasChoices, BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 class LibrarySettings(BaseModel):
@@ -62,7 +61,7 @@ class ExtractorSettings(BaseModel):
 class DatabaseSettings(BaseModel):
     backend: str = "sqlite"  # sqlite | postgres
     sqlite_path: Path = Path("/state/bookaudit.db")
-    postgres_dsn: str = "postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit"
+    postgres_dsn: str | None = None
 
 
 class QueueSettings(BaseModel):
@@ -119,6 +118,18 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],  # noqa: ARG003 - required by pydantic-settings
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Make environment and secret-file values override YAML/init data."""
+        return env_settings, file_secret_settings, init_settings, dotenv_settings
 
     profile: str = "default"
     library: LibrarySettings = Field(default_factory=_default_library)
@@ -204,9 +215,5 @@ def load_settings(config_path: Path | None = None) -> Settings:
         settings.storage.artifacts_dir = settings.artifacts_dir_env
     if settings.read_only_env is not None:
         settings.library.read_only = settings.read_only_env
-
-    db_backend = os.environ.get("BOOKAUDIT_DATABASE__BACKEND")
-    if db_backend:
-        settings.database.backend = db_backend
 
     return settings
