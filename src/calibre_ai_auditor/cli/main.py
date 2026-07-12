@@ -324,6 +324,8 @@ def undo(
 def _verify_backup_manifest(manifest_path: Path) -> None:
     """Verify the paired database/artifact files named by a retention backup manifest."""
     try:
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise ValueError("backup manifest must be a regular non-symlink file")
         manifest = json_lib.loads(manifest_path.read_text())
         datetime.fromisoformat(manifest["created_at"])
         root = manifest_path.resolve().parent
@@ -334,8 +336,13 @@ def _verify_backup_manifest(manifest_path: Path) -> None:
             relative = Path(manifest[file_key])
             if relative.is_absolute() or ".." in relative.parts:
                 raise ValueError(f"{file_key} must be relative to the backup manifest")
-            backup_file = (root / relative).resolve()
-            if not backup_file.is_relative_to(root) or not backup_file.is_file() or backup_file.is_symlink():
+            backup_file = root
+            for component in relative.parts:
+                backup_file /= component
+                if backup_file.is_symlink():
+                    raise ValueError(f"unsafe or missing {file_key}")
+            backup_file = backup_file.resolve()
+            if not backup_file.is_relative_to(root) or not backup_file.is_file():
                 raise ValueError(f"unsafe or missing {file_key}")
             digest = hashlib.sha256()
             with backup_file.open("rb") as backup_stream:
@@ -380,23 +387,23 @@ def retention(
     _verify_backup_manifest(backup_reference)
 
     writer_guard = None
-    if settings.profile == "production":
-        from sqlalchemy import text
-
-        from calibre_ai_auditor.apply.guard import acquire_writer_guard, release_writer_guard
-        from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
-
-        engine = get_engine(settings)
-        if engine.dialect.name != "postgresql":
-            typer.secho("Production retention requires PostgreSQL", fg=typer.colors.RED)
-            raise typer.Exit(1)
-        writer_guard = engine.connect()
-        if not acquire_writer_guard(writer_guard):
-            writer_guard.close()
-            typer.secho("Metadata writer is active; retention refused", fg=typer.colors.RED)
-            raise typer.Exit(1)
+    writer_guard_acquired = False
     try:
-        if writer_guard is not None:
+        if settings.profile == "production":
+            from sqlalchemy import text
+
+            from calibre_ai_auditor.apply.guard import acquire_writer_guard
+            from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+
+            engine = get_engine(settings)
+            if engine.dialect.name != "postgresql":
+                typer.secho("Production retention requires PostgreSQL", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            writer_guard = engine.connect()
+            writer_guard_acquired = acquire_writer_guard(writer_guard)
+            if not writer_guard_acquired:
+                typer.secho("Metadata writer is active; retention refused", fg=typer.colors.RED)
+                raise typer.Exit(1)
             nonterminal = writer_guard.execute(
                 text(
                     "SELECT count(*) FROM operationledger "
@@ -424,8 +431,11 @@ def retention(
         if writer_guard is not None:
             from calibre_ai_auditor.apply.guard import release_writer_guard
 
-            release_writer_guard(writer_guard)
-            writer_guard.close()
+            try:
+                if writer_guard_acquired:
+                    release_writer_guard(writer_guard)
+            finally:
+                writer_guard.close()
     typer.secho(f"Deleted {deleted} expired restore points after backup {backup_reference}.", fg=typer.colors.GREEN)
 
 
