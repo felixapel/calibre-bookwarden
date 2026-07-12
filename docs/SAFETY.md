@@ -86,9 +86,12 @@ Every apply creates a **restore point** at
 - `restore.json` — metadata for bulk-undo by `run_id`
 
 **Retention target: 30 days** (configurable). The store exposes bounded cleanup,
-but production does not schedule it automatically. Monitor artifact-disk usage
-and run only the approved retention procedure after confirming the paired
-database/artifact backup is no longer needed.
+but production does not schedule it automatically. Production cleanup requires
+a checksum-verified paired PostgreSQL/artifact backup and the same advisory lock
+used by the sole writer. It refuses fresh writer heartbeats, non-terminal ledger
+operations, unsafe backup paths, and changed restore manifests before mutation.
+Monitor artifact-disk usage and use only the approved procedure in the
+[production operations runbook](runbooks/production-operations.md).
 
 ---
 

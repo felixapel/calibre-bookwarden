@@ -23,6 +23,7 @@ the primary source of truth; LLMs are witnesses, not generators.
 | `v1.0.x` | **Hardening**: WebUI Verify page + benchmark baselines + CI | [DONE] |
 | `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [DONE] |
 | `v1.2` | **MCP Server**: Expose audit tools to Hermes | [DONE] |
+| `v1.2.x` | **Production hardening**: release integrity, writer recovery, retention, operations | [DONE] |
 
 ---
 
@@ -119,6 +120,26 @@ Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invok
 - Evidence: verify-calibre-gate.sh still exits 0 (core + komf paths); no pending markers; `bookaudit --help` shows mcp subcommand when extra present
 - Hermes usage: `hermes mcp add calibre_auditor --command python3 --args /path/to/hermes-agent/mcp_servers/calibre_auditor_mcp.py` (FastMCP stdio wrapper over /api + direct surfaces; see agentic-workflows/hermes-agent/mcp_servers/calibre_auditor_mcp.py and config.example.yaml)
 - Cross-project: combined with gemma_translator_mcp.py for audit → context-aware translate flows (WS3)
+
+## v1.2.x — Production hardening (DONE 2026-07-12)
+
+- PostgreSQL runtime roles and explicit Alembic migration service are enforced.
+- The sole Calibre writer uses a durable operation ledger, advisory lock,
+  heartbeat, and crash reconciliation.
+- A real SIGKILL drill verified restoration of a partially written Calibre book
+  and reconciliation of PostgreSQL state.
+- Restore-point retention is fail-closed: it requires a checksum-verified paired
+  database/artifact backup, holds the writer advisory lock, rejects live or
+  non-terminal work, revalidates immutable inode/digest identities, and moves
+  only that set into same-filesystem quarantine before deletion.
+- Release publication is digest-first with vulnerability gates, SBOM,
+  provenance, signing, and tag publication only after verification.
+- The final local gate at `32d3525` passed 203 selected tests plus the Komf
+  integration. Six environment-dependent tests were skipped locally; the real
+  PostgreSQL/Calibre crash path was also executed separately and passed.
+- Independent adversarial review approved supervised and unattended internal
+  production use. Operator-owned credential revocation and deployment-secret
+  rotation remain deployment prerequisites, not repository-controlled gates.
 
 ---
 

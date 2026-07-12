@@ -10,6 +10,9 @@ ground truth and LLMs are witnesses, not generators.
 - **Interface**: Full-stack WebUI (React 19 / FastAPI) + CLI
 - **Default Mode**: Read-Only
 - **Runtime**: Docker (Linux/macOS recommended); native works with `uv`
+- **Production profile**: Internally approved for supervised and unattended
+  operation; complete the operator credential checklist before exposure. See
+  [docs/production-readiness.md](docs/production-readiness.md).
 
 ## What's new in v1.0
 
@@ -127,6 +130,8 @@ bookaudit audit --run latest
 - **[docs/DATABASE.md](docs/DATABASE.md)** — SQLite / PostgreSQL setup
 - **[docs/API.md](docs/API.md)** — REST endpoints reference
 - **[docs/SAFETY.md](docs/SAFETY.md)** — Read-only mode + restore points
+- **[docs/production-readiness.md](docs/production-readiness.md)** — Current
+  production gate evidence, trust boundaries, and operator prerequisites
 
 ### Quality & calibration
 - **[TESTING.md](TESTING.md)** — Unit / integration / E2E / benchmark strategy

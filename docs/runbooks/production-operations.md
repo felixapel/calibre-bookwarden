@@ -125,7 +125,6 @@ operations.
 Retention is dry-run by default and operates only on `.writer-artifacts`:
 
 ```bash
-docker compose stop writer
 docker compose --profile maintenance run --rm retention
 ```
 
@@ -140,8 +139,17 @@ docker compose --profile maintenance run --rm retention retention \
 
 The command verifies both backup checksums, acquires the writer advisory lock,
 rejects a fresh heartbeat or any non-terminal operation, and atomically
-quarantines only the exact inode+manifest-digest set from its preview. Start the
-writer only after recording the deleted count and checking artifact disk usage.
+quarantines only the exact inode+manifest-digest set from its preview. It is safe
+to invoke while the writer service exists: if the writer owns the lock, the
+command exits non-zero before mutation. Stopping the writer remains a convenient
+maintenance-window practice, but it is not a human-supplied safety assertion.
+
+The backup manifest and every referenced path component must be regular files
+or directories, never symlinks. Retention holds the advisory lock through all
+ledger, heartbeat, revalidation, quarantine, and deletion work. Record the exit
+status and deleted count, then check artifact disk usage. An interrupted process
+can leave data in the owned hidden quarantine; preserve it for incident review
+rather than deleting it manually.
 
 ## Monitoring alerts
 
