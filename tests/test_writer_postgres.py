@@ -3,6 +3,7 @@
 import os
 
 import pytest
+from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine
 
 from calibre_ai_auditor.apply.writer import claim_next_operation
@@ -12,7 +13,11 @@ from calibre_ai_auditor.storage.operations import create_operation
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN is not configured")
 def test_postgres_allows_only_one_active_operation_per_book() -> None:
-    engine = create_engine(os.environ["TEST_POSTGRES_DSN"])
+    dsn = os.environ["TEST_POSTGRES_DSN"]
+    database = make_url(dsn).database or ""
+    if "test" not in database.lower():
+        pytest.fail("TEST_POSTGRES_DSN must name an unmistakably disposable test database")
+    engine = create_engine(dsn)
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     try:
