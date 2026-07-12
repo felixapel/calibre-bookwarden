@@ -105,12 +105,14 @@ class Metrics:
         self.inc("bookaudit_ocr_pages_total", value=count, labels={"provider": provider})
 
     def record_restore_point(self, run_id: str, age_seconds: float = 0.0) -> None:
-        self.inc("bookaudit_restore_points_total", labels={"run_id": run_id})
-        self.gauge("bookaudit_restore_point_age_seconds", age_seconds, labels={"run_id": run_id})
+        del run_id
+        self.inc("bookaudit_restore_points_total")
+        self.gauge("bookaudit_restore_point_age_seconds", age_seconds)
 
     def set_run_progress(self, run_id: str, total: int, completed: int) -> None:
-        self.gauge("bookaudit_run_total_books", float(total), labels={"run_id": run_id})
-        self.gauge("bookaudit_run_completed_books", float(completed), labels={"run_id": run_id})
+        del run_id
+        self.gauge("bookaudit_run_total_books", float(total))
+        self.gauge("bookaudit_run_completed_books", float(completed))
 
     # ---- export ----
 
