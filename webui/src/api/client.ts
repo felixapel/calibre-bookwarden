@@ -1,4 +1,4 @@
-import { getApiKey } from './auth'
+import { getApiKey, markUnauthorized } from './auth'
 
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   const apiKey = getApiKey()
@@ -12,8 +12,8 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     headers,
   })
 
-  if (response.status === 401) {
-    window.dispatchEvent(new Event('bookaudit-unauthorized'))
+  if (response.status === 401 && getApiKey() === apiKey) {
+    markUnauthorized()
   }
 
   return response
@@ -42,8 +42,14 @@ export const fetchDoctor = async () => {
 }
 
 export const fetchHealth = async () => {
-  const res = await fetchWithAuth('/api/health')
+  const res = await fetchWithAuth('/api/health/ready')
   if (!res.ok) throw new Error('Failed to fetch health')
+  return res.json()
+}
+
+export const fetchBookVerdict = async (bookKey: string) => {
+  const res = await fetchWithAuth(`/api/books/${encodeURIComponent(bookKey)}/verdict`)
+  if (!res.ok) throw new Error('Failed to fetch verdict')
   return res.json()
 }
 

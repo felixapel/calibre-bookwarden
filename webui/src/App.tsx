@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
-import { setApiKey } from './api/auth'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { getAuthRevision, getUnauthorized, setApiKey, subscribeAuth } from './api/auth'
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileSearch, Search, Settings, ShieldAlert, History, BookOpen, KeyRound, ShieldCheck, X, Copy, Sparkles } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { LayoutDashboard, FileSearch, Search, Settings, ShieldAlert, History, BookOpen, KeyRound, ShieldCheck, Copy, Sparkles } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchHealth } from './api/client'
 import clsx from 'clsx'
 
@@ -40,7 +40,7 @@ function NavItem({ to, icon: Icon, children }: { to: string, icon: any, children
 
 function Sidebar() {
   const { data: health } = useQuery({ queryKey: ['health'], queryFn: fetchHealth, refetchInterval: 10000 })
-  const isOk = health?.status === 'ok'
+  const isOk = health?.status === 'ready'
 
   return (
     <div className="w-64 bg-[#070b13]/90 border-r border-slate-800/40 flex flex-col h-full backdrop-blur-xl relative z-10">
@@ -94,23 +94,29 @@ function Sidebar() {
 }
 
 export default function App() {
-  const [showAuthModal, setShowAuthModal] = useState(false)
   const [apiKeyInput, setApiKeyInput] = useState('')
+  const showAuthModal = useSyncExternalStore(subscribeAuth, getUnauthorized, getUnauthorized)
+  const authRevision = useSyncExternalStore(subscribeAuth, getAuthRevision, getAuthRevision)
+  const apiKeyInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
-    const handleUnauthorized = () => {
-      setShowAuthModal(true)
+    const handleAuthenticated = () => {
+      void queryClient.resetQueries()
     }
-    window.addEventListener('bookaudit-unauthorized', handleUnauthorized)
+    window.addEventListener('bookaudit-authenticated', handleAuthenticated)
     return () => {
-      window.removeEventListener('bookaudit-unauthorized', handleUnauthorized)
+      window.removeEventListener('bookaudit-authenticated', handleAuthenticated)
     }
-  }, [])
+  }, [queryClient])
+
+  useEffect(() => {
+    if (showAuthModal) apiKeyInputRef.current?.focus()
+  }, [showAuthModal])
 
   const handleSaveApiKey = () => {
     setApiKey(apiKeyInput)
-    setShowAuthModal(false)
-    window.dispatchEvent(new Event('bookaudit-authenticated'))
+    setApiKeyInput('')
   }
 
   return (
@@ -124,7 +130,7 @@ export default function App() {
         
         <main className="flex-1 overflow-y-auto relative z-0 flex flex-col">
           <div className="flex-1">
-            <Routes>
+            <Routes key={authRevision}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/verify" element={<Verify />} />
               <Route path="/scan" element={<Scan />} />
@@ -141,24 +147,25 @@ export default function App() {
 
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#0b0f19] border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="api-key-dialog-title"
+            className="bg-[#0b0f19] border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4"
+          >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-200 flex items-center gap-2">
+              <h3 id="api-key-dialog-title" className="text-lg font-bold text-slate-200 flex items-center gap-2">
                 <KeyRound className="w-5 h-5 text-purple-400" />
                 API Key Authentication
               </h3>
-              <button 
-                onClick={() => setShowAuthModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
             <p className="text-xs text-slate-400">
               The server returned an authentication failure (401 Unauthorized). Please provide the valid `BOOKAUDIT_API_KEY` below to resume requests.
             </p>
             <div className="space-y-2">
               <input
+                ref={apiKeyInputRef}
+                aria-label="API key"
                 type="password"
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
@@ -168,17 +175,12 @@ export default function App() {
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => setShowAuthModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
                 onClick={handleSaveApiKey}
+                disabled={!apiKeyInput.trim()}
                 className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold rounded-xl transition-all duration-300 shadow-[0_0_10px_rgba(139,92,246,0.2)] cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4" />
-                Save & Reload
+                Save and retry
               </button>
             </div>
           </div>

@@ -31,7 +31,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ showToast }}>
       {children}
       {/* Toast container */}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+      <div
+        aria-live="polite"
+        aria-atomic="false"
+        className="fixed bottom-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none"
+      >
         {toasts.map((toast) => {
           let Icon = Info
           let colorClass = 'border-blue-500/20 bg-slate-900/90 text-blue-300'
@@ -87,6 +91,7 @@ function ToastItem({
       <div className="mt-0.5">{icon}</div>
       <div className="flex-1 text-sm font-medium leading-5 select-none">{toast.message}</div>
       <button
+        aria-label="Dismiss notification"
         onClick={() => onClose(toast.id)}
         className="text-slate-400 hover:text-slate-200 transition-colors p-0.5 rounded cursor-pointer"
       >

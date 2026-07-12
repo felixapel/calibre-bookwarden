@@ -10,7 +10,7 @@ import {
   AlertTriangle,
   Eye,
 } from 'lucide-react'
-import { fetchBooks, fetchEvidence, approvePatch, rejectPatch, applyPatches } from '../api/client'
+import { fetchBooks, fetchEvidence, fetchBookVerdict, approvePatch, rejectPatch, applyPatches } from '../api/client'
 import { useToast } from '../context/ToastContext'
 import clsx from 'clsx'
 import CoverImage from '../components/CoverImage'
@@ -138,11 +138,8 @@ export default function Review() {
       setEvidence(data.data)
       // BookVerdict is exposed via a separate endpoint in v1.0; fall back to legacy if absent.
       try {
-        const verdictRes = await fetch(`/api/books/${encodeURIComponent(book.book_key)}/verdict`)
-        if (verdictRes.ok) {
-          const v = await verdictRes.json()
-          setBookVerdict(v.data)
-        }
+        const verdictRes = await fetchBookVerdict(book.book_key)
+        setBookVerdict(verdictRes.data)
       } catch {
         // legacy evidence-only mode
       }
