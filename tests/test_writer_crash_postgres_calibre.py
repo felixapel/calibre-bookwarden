@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.apply.engine import ApplyEngine
@@ -24,6 +25,9 @@ from calibre_ai_auditor.storage.models import BookRecord, Change, OperationLedge
     reason="TEST_POSTGRES_DSN and calibredb are required",
 )
 def test_sigkill_after_partial_calibre_write_is_restored_on_restart(tmp_path: Path, monkeypatch) -> None:
+    dsn = os.environ["TEST_POSTGRES_DSN"]
+    if "test" not in (make_url(dsn).database or "").lower():
+        pytest.fail("TEST_POSTGRES_DSN must name an unmistakably disposable test database")
     # Debian's Calibre must use its system Python modules, not the app venv.
     monkeypatch.delenv("PYTHONPATH", raising=False)
     library = tmp_path / "library"
@@ -53,7 +57,7 @@ def test_sigkill_after_partial_calibre_write_is_restored_on_restart(tmp_path: Pa
     suffix = uuid4().hex
     operation_id = f"crash-{suffix}"
     book_key = f"calibre-crash:{suffix}"
-    engine = create_engine(os.environ["TEST_POSTGRES_DSN"])
+    engine = create_engine(dsn)
     with Session(engine) as session:
         session.add(
             BookRecord(
