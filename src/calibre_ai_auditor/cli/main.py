@@ -337,7 +337,11 @@ def _verify_backup_manifest(manifest_path: Path) -> None:
             backup_file = (root / relative).resolve()
             if not backup_file.is_relative_to(root) or not backup_file.is_file() or backup_file.is_symlink():
                 raise ValueError(f"unsafe or missing {file_key}")
-            actual = hashlib.sha256(backup_file.read_bytes()).hexdigest()
+            digest = hashlib.sha256()
+            with backup_file.open("rb") as backup_stream:
+                for chunk in iter(lambda: backup_stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            actual = digest.hexdigest()
             if actual != manifest[digest_key]:
                 raise ValueError(f"checksum mismatch for {file_key}")
     except (OSError, KeyError, TypeError, ValueError, json_lib.JSONDecodeError) as exc:
@@ -391,26 +395,27 @@ def retention(
             writer_guard.close()
             typer.secho("Metadata writer is active; retention refused", fg=typer.colors.RED)
             raise typer.Exit(1)
-        nonterminal = writer_guard.execute(
-            text(
-                "SELECT count(*) FROM operationledger "
-                "WHERE state IN ('requested','claimed','writing','verifying','restoring')"
-            )
-        ).scalar_one()
-        heartbeat = read_writer_heartbeat(
-            settings.queue.valkey_url,
-            timeout=settings.queue.connect_timeout_seconds,
-        )
-        if nonterminal or heartbeat_is_fresh(
-            heartbeat,
-            max_age_seconds=settings.writer_heartbeat_max_age_seconds,
-        ):
-            release_writer_guard(writer_guard)
-            writer_guard.close()
-            typer.secho("Writer heartbeat or non-terminal operations remain; retention refused", fg=typer.colors.RED)
-            raise typer.Exit(1)
-
     try:
+        if writer_guard is not None:
+            nonterminal = writer_guard.execute(
+                text(
+                    "SELECT count(*) FROM operationledger "
+                    "WHERE state IN ('requested','claimed','writing','verifying','restoring')"
+                )
+            ).scalar_one()
+            heartbeat = read_writer_heartbeat(
+                settings.queue.valkey_url,
+                timeout=settings.queue.connect_timeout_seconds,
+            )
+            if nonterminal or heartbeat_is_fresh(
+                heartbeat,
+                max_age_seconds=settings.writer_heartbeat_max_age_seconds,
+            ):
+                typer.secho(
+                    "Writer heartbeat or non-terminal operations remain; retention refused",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(1)
         deleted = store.quarantine_and_delete(manifest)
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
