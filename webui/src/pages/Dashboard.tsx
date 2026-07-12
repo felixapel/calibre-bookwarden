@@ -68,7 +68,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-8 page-transition">
+    <div className="w-full p-4 md:p-8 max-w-6xl mx-auto space-y-8 page-transition">
       {/* Header section with profile name */}
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>

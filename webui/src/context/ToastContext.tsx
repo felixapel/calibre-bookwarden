@@ -34,7 +34,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="fixed bottom-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none"
+        className="fixed bottom-5 left-4 right-4 z-50 flex flex-col gap-3 pointer-events-none sm:left-auto sm:right-5 sm:max-w-sm sm:w-full"
       >
         {toasts.map((toast) => {
           let Icon = Info

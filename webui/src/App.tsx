@@ -43,7 +43,7 @@ function Sidebar() {
   const isOk = health?.status === 'ready'
 
   return (
-    <div className="w-64 bg-[#070b13]/90 border-r border-slate-800/40 flex flex-col h-full backdrop-blur-xl relative z-10">
+    <div className="hidden md:flex w-64 shrink-0 bg-[#070b13]/90 border-r border-slate-800/40 flex-col h-full backdrop-blur-xl relative z-10">
       {/* Glow Effects */}
       <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-purple-500/5 to-transparent pointer-events-none" />
       
@@ -83,13 +83,46 @@ function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-slate-300">System Status</p>
-            <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
               {isOk ? 'Auditor Online' : 'Connecting...'}
             </p>
           </div>
         </div>
       </div>
     </div>
+  )
+}
+
+const mobileNavigation = [
+  ['/', LayoutDashboard, 'Dashboard'],
+  ['/verify', Sparkles, 'Verify'],
+  ['/scan', Search, 'Scan'],
+  ['/inspect', FileSearch, 'Inspect'],
+  ['/duplicates', Copy, 'Duplicates'],
+  ['/review', ShieldAlert, 'Review'],
+  ['/undo', History, 'Undo'],
+  ['/settings', Settings, 'Settings'],
+] as const
+
+function MobileNavigation() {
+  const location = useLocation()
+  return (
+    <nav aria-label="Primary navigation" className="md:hidden fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-slate-800 bg-[#070b13]/95 px-2 py-2 backdrop-blur-xl">
+      {mobileNavigation.map(([to, Icon, label]) => (
+        <Link
+          key={to}
+          to={to}
+          aria-label={label}
+          title={label}
+          className={clsx(
+            'flex min-w-12 flex-1 items-center justify-center rounded-lg p-3',
+            location.pathname === to ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400',
+          )}
+        >
+          <Icon aria-hidden="true" className="h-5 w-5" />
+        </Link>
+      ))}
+    </nav>
   )
 }
 
@@ -124,11 +157,11 @@ export default function App() {
       <div className="flex h-screen bg-[#090d16] overflow-hidden text-slate-100">
         {/* Background Ambient Glows */}
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-purple-900/10 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-900/10 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[40%] h-[40%] rounded-full bg-cyan-900/10 blur-[120px] pointer-events-none" />
         
         <Sidebar />
         
-        <main className="flex-1 overflow-y-auto relative z-0 flex flex-col">
+        <main className="min-w-0 flex-1 overflow-y-auto relative z-0 flex flex-col pb-16 md:pb-0">
           <div className="flex-1">
             <Routes key={authRevision}>
               <Route path="/" element={<Dashboard />} />
@@ -143,6 +176,7 @@ export default function App() {
             </Routes>
           </div>
         </main>
+        <MobileNavigation />
       </div>
 
       {showAuthModal && (
