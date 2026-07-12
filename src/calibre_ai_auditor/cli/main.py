@@ -1,6 +1,7 @@
 import asyncio
 import json as json_lib
 import logging
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -693,6 +694,7 @@ def writer(
 
     from sqlmodel import Session
 
+    from calibre_ai_auditor.apply.guard import acquire_writer_guard, release_writer_guard, writer_guard_is_held
     from calibre_ai_auditor.apply.writer import (
         MetadataWriter,
         claim_next_operation,
@@ -704,34 +706,58 @@ def writer(
     if not settings.library.path:
         typer.secho("Writer requires BOOKAUDIT_LIBRARY_PATH", fg=typer.colors.RED)
         raise typer.Exit(1)
+    if not settings.library.path.is_dir() or not os.access(settings.library.path, os.R_OK | os.W_OK):
+        typer.secho("Writer requires a readable and writable Calibre library directory", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not settings.storage.artifacts_dir.is_dir() or not os.access(settings.storage.artifacts_dir, os.R_OK | os.W_OK):
+        typer.secho("Writer requires a readable and writable artifacts directory", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if shutil.which("calibredb") is None:
+        typer.secho("Writer requires calibredb on PATH", fg=typer.colors.RED)
+        raise typer.Exit(1)
     engine = get_engine(settings)
     writer_guard = None
     if engine.dialect.name == "postgresql":
         writer_guard = engine.connect()
-        acquired = writer_guard.execute(text("SELECT pg_try_advisory_lock(1129270868)")).scalar_one()
+        acquired = acquire_writer_guard(writer_guard)
         if not acquired:
             writer_guard.close()
             typer.secho("Another metadata writer owns the production writer lock", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        current_user, revision = writer_guard.execute(
+            text("SELECT current_user, (SELECT version_num FROM alembic_version)")
+        ).one()
+        from calibre_ai_auditor.storage.db import expected_schema_revision
+
+        if current_user != "bookaudit_writer" or revision != expected_schema_revision():
+            writer_guard.close()
+            typer.secho("Writer database role or schema revision is invalid", fg=typer.colors.RED)
             raise typer.Exit(1)
     cli = CalibreCLI(settings.library.path)
     metadata_writer = MetadataWriter(cli, ApplyEngine(cli, settings.storage.artifacts_dir))
     heartbeat_owner = str(uuid4())
 
-    with Session(engine) as recovery_session:
-        reconciled = reconcile_incomplete_operations(recovery_session, cli)
+    # All claims and external writes use the same PostgreSQL connection that
+    # owns the session advisory lock. If that connection dies, the next query
+    # fails and the process exits instead of continuing unfenced on a new pool
+    # connection while another writer takes ownership.
+    session = Session(bind=writer_guard if writer_guard is not None else engine)
+    try:
+        reconciled = reconcile_incomplete_operations(session, cli)
         if reconciled:
             typer.echo(f"Reconciled {len(reconciled)} interrupted operations")
 
-    while True:
-        if settings.queue.backend == "valkey":
-            from calibre_ai_auditor.apply.heartbeat import publish_writer_heartbeat
+        while True:
+            if writer_guard is not None and not writer_guard_is_held(writer_guard):
+                raise RuntimeError("Metadata writer lost its PostgreSQL advisory lock")
+            if settings.queue.backend == "valkey":
+                from calibre_ai_auditor.apply.heartbeat import publish_writer_heartbeat
 
-            publish_writer_heartbeat(
-                settings.queue.valkey_url,
-                heartbeat_owner,
-                timeout=settings.queue.connect_timeout_seconds,
-            )
-        with Session(engine) as session:
+                publish_writer_heartbeat(
+                    settings.queue.valkey_url,
+                    heartbeat_owner,
+                    timeout=settings.queue.connect_timeout_seconds,
+                )
             operation_id = claim_next_operation(session)
             if operation_id:
                 try:
@@ -740,10 +766,16 @@ def writer(
                     logger.exception("Writer operation %s failed", operation_id)
                     session.rollback()
                     fail_operation(session, operation_id, str(exc))
-        if once:
-            return
-        if operation_id is None:
-            time.sleep(poll_seconds)
+            if once:
+                return
+            if operation_id is None:
+                time.sleep(poll_seconds)
+    finally:
+        session.close()
+        if writer_guard is not None:
+            if not writer_guard.invalidated and writer_guard_is_held(writer_guard):
+                release_writer_guard(writer_guard)
+            writer_guard.close()
 
 
 if __name__ == "__main__":

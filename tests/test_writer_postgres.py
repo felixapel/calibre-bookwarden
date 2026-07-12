@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine
 
+from calibre_ai_auditor.apply.guard import acquire_writer_guard, writer_guard_is_held
 from calibre_ai_auditor.apply.writer import claim_next_operation
 from calibre_ai_auditor.storage.models import BookRecord
 from calibre_ai_auditor.storage.operations import create_operation
@@ -50,3 +51,21 @@ def test_postgres_allows_only_one_active_operation_per_book() -> None:
         assert second_id != first_id
     finally:
         SQLModel.metadata.drop_all(engine)
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN is not configured")
+def test_postgres_writer_guard_fails_closed_when_owner_connection_closes() -> None:
+    engine = create_engine(os.environ["TEST_POSTGRES_DSN"])
+    owner = engine.connect()
+    contender = engine.connect()
+    try:
+        assert acquire_writer_guard(owner)
+        assert writer_guard_is_held(owner)
+        assert not acquire_writer_guard(contender)
+        owner.invalidate()
+        owner.close()
+        assert acquire_writer_guard(contender)
+        assert writer_guard_is_held(contender)
+    finally:
+        owner.close()
+        contender.close()

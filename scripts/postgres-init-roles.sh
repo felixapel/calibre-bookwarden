@@ -28,7 +28,5 @@ ALTER SCHEMA public OWNER TO bookaudit_migrator;
 GRANT USAGE ON SCHEMA public TO bookaudit_app, bookaudit_writer;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE bookaudit_migrator IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bookaudit_app, bookaudit_writer;
-ALTER DEFAULT PRIVILEGES FOR ROLE bookaudit_migrator IN SCHEMA public
-  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO bookaudit_app, bookaudit_writer;
+  GRANT SELECT ON TABLES TO bookaudit_app, bookaudit_writer;
 SQL

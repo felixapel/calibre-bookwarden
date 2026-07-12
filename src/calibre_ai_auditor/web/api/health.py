@@ -9,7 +9,7 @@ from sqlalchemy import text
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.extractors.tika_client import TikaClient
 from calibre_ai_auditor.llm.router import LLMRouter
-from calibre_ai_auditor.storage.db import get_engine
+from calibre_ai_auditor.storage.db import expected_schema_revision, get_engine
 from calibre_ai_auditor.vectors.client import VectorClient
 from calibre_ai_auditor.verification.metrics import get_metrics
 from calibre_ai_auditor.web.schemas import APIResponse
@@ -55,7 +55,9 @@ async def readiness_check(settings: Settings = Depends(get_settings)) -> dict[st
     try:
         with get_engine(settings).connect() as connection:
             connection.execute(text("SELECT 1"))
-        checks["database"] = {"ok": True}
+            revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        schema_ok = revision == expected_schema_revision()
+        checks["database"] = {"ok": schema_ok, "schema_revision": revision}
     except Exception as exc:
         checks["database"] = {"ok": False, "error": type(exc).__name__}
 

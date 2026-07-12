@@ -3,6 +3,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy.engine import Engine
 from sqlmodel import create_engine
 
@@ -37,3 +38,13 @@ def init_db(settings: Settings) -> None:
     config.set_main_option("script_location", str(repository_root / "migrations"))
     config.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False).replace("%", "%%"))
     command.upgrade(config, "head")
+
+
+def expected_schema_revision() -> str:
+    repository_root = Path(os.environ.get("BOOKAUDIT_REPOSITORY_ROOT", Path(__file__).resolve().parents[3]))
+    config = Config(repository_root / "alembic.ini")
+    config.set_main_option("script_location", str(repository_root / "migrations"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    if head is None:
+        raise RuntimeError("Alembic repository has no schema head")
+    return head
