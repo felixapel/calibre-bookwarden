@@ -96,7 +96,9 @@ class Change(SQLModel, table=True):
     before_metadata: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     after_metadata: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     backup_opf_path: str
-    status: str = "applied"  # applied, undone
+    # pending_apply is committed before the external write. Failure states keep
+    # enough audit evidence to reconcile or restore after a process crash.
+    status: str = "applied"  # pending_apply, applied, failed_rolled_back, failed_rollback_failed, undone
 
 
 class CoverVisionCache(SQLModel, table=True):

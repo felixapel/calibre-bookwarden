@@ -1,8 +1,9 @@
 import logging
 from collections.abc import Generator
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.apply.engine import ApplyEngine
@@ -10,6 +11,8 @@ from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.config.settings import load_settings
 from calibre_ai_auditor.storage.db import get_engine
 from calibre_ai_auditor.storage.models import BookRecord, Change, EvidencePackage
+from calibre_ai_auditor.verification.restore import ConservativeAutoApply, RestorePointStore
+from calibre_ai_auditor.verification.verdict import BookVerdict
 from calibre_ai_auditor.web.safety import require_write_confirmation
 from calibre_ai_auditor.web.schemas import APIResponse, ApplyRequest, LockFieldRequest, UndoRequest
 
@@ -23,6 +26,19 @@ def get_session() -> Generator[Session, None, None]:
     engine = get_engine(settings)
     with Session(engine) as session:
         yield session
+
+
+def claim_book_for_apply(session: Session, book_id: int) -> bool:
+    """Atomically claim an approved book before starting external writes."""
+    table = cast(Any, BookRecord).__table__
+    result = session.execute(
+        update(BookRecord)
+        .where(table.c.id == book_id)
+        .where(table.c.status == "suggest_fix")
+        .values(status="applying")
+    )
+    session.commit()
+    return bool(getattr(result, "rowcount", 0) == 1)
 
 
 @router.post("/review/{book_key}/approve", response_model=APIResponse)
@@ -96,6 +112,10 @@ async def apply_patches(
 
     cli = CalibreCLI(settings.library.path)
     apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
+    gate = ConservativeAutoApply(
+        RestorePointStore(settings.storage.artifacts_dir),
+        dry_run=False,
+    )
     applied_count = 0
 
     for book in books:
@@ -109,7 +129,22 @@ async def apply_patches(
         if not pkg or not pkg.decision:
             continue
 
-        patch = pkg.decision.get("proposed_patch")
+        try:
+            verdict = BookVerdict.model_validate(pkg.decision)
+        except ValueError as exc:
+            logger.warning("Invalid persisted verdict for %s: %s", book.book_key, exc)
+            continue
+
+        if verdict.book_key != book.book_key or verdict.run_id != book.run_id:
+            logger.warning("Persisted verdict identity mismatch for %s", book.book_key)
+            continue
+
+        eligible, reason = gate.is_eligible(verdict)
+        if not eligible:
+            logger.info("Skipping ineligible patch for %s: %s", book.book_key, reason)
+            continue
+
+        patch = dict(verdict.proposed_patch)
         if not patch:
             continue
 
@@ -119,17 +154,24 @@ async def apply_patches(
         if not patch:
             continue
 
+        if book.id is None or not claim_book_for_apply(session, book.id):
+            logger.info("Skipping already-claimed patch for %s", book.book_key)
+            continue
+
         try:
             change = apply_engine.apply_patch(session, book, patch)
             session.add(change)
             book.status = "applied"
             session.add(book)
             applied_count += 1
+            session.commit()
         except Exception as e:
             # Log failure but continue with other books
             logger.error(f"Failed to apply patch for book {book.book_key}: {e}")
+            book.status = "error"
+            session.add(book)
+            session.commit()
 
-    session.commit()
     return {
         "status": "success",
         "data": {"message": f"Applied {applied_count} patches", "applied_count": applied_count},

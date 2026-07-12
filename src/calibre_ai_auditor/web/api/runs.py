@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session, desc, select
+from sqlmodel import Session, col, desc, select
 
 from calibre_ai_auditor.apply.engine import ApplyEngine
 from calibre_ai_auditor.calibre.cli import CalibreCLI
@@ -158,7 +158,11 @@ async def revert_run(
         raise HTTPException(status_code=400, detail="Library path not set")
 
     # Find all changes for this run
-    changes_stmt = select(Change).where(Change.run_id == run_id).where(Change.status != "undone")
+    changes_stmt = (
+        select(Change)
+        .where(Change.run_id == run_id)
+        .where(col(Change.status).in_(("pending_apply", "applied", "failed_rollback_failed")))
+    )
     changes = session.exec(changes_stmt).all()
 
     if not changes:

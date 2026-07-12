@@ -1,12 +1,14 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from sqlmodel import Session
 
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.storage.models import BookRecord, Change
+from calibre_ai_auditor.verification.restore import RestorePointStore
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +28,24 @@ class ApplyEngine:
         backup_dir = self.artifacts_dir / "backups" / str(book.calibre_book_id)
         backup_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_opf = backup_dir / f"before_{timestamp}.opf"
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+        backup_opf = backup_dir / f"before_{timestamp}_{uuid4().hex}.opf"
 
         # 1. Backup
         logger.info(f"Backing up metadata for book {book.calibre_book_id} to {backup_opf}")
         self.cli.export_opf(book.calibre_book_id, backup_opf)
+
+        restore_point = RestorePointStore(self.artifacts_dir).create(
+            run_id=book.run_id,
+            book_key=book.book_key,
+            calibre_book_id=book.calibre_book_id,
+            before_metadata=book.current_metadata,
+            after_metadata=patch,
+            fields_changed=list(patch),
+            original_opf=backup_opf,
+        )
+        if not (restore_point.path / "original.opf").is_file():
+            raise RuntimeError(f"Restore point could not be created for {book.book_key}")
 
         # 2. Record the change
         change = Change(
@@ -40,12 +54,30 @@ class ApplyEngine:
             before_metadata=book.current_metadata,
             after_metadata=patch,
             backup_opf_path=str(backup_opf),
+            status="pending_apply",
         )
+        _session.add(change)
+        _session.commit()
+        _session.refresh(change)
 
         # 3. Apply changes via Calibre CLI
         logger.info(f"Applying metadata patch to book {book.calibre_book_id}...")
-        self._apply_metadata_fields(book.calibre_book_id, patch)
+        try:
+            self._apply_metadata_fields(book.calibre_book_id, patch)
+        except Exception:
+            try:
+                self.cli.set_metadata(book.calibre_book_id, backup_opf)
+                change.status = "failed_rolled_back"
+            except Exception:
+                change.status = "failed_rollback_failed"
+                logger.exception("Rollback failed for book %s", book.book_key)
+            _session.add(change)
+            _session.commit()
+            raise
 
+        change.status = "applied"
+        _session.add(change)
+        _session.commit()
         return change
 
     def _apply_metadata_fields(self, book_id: int, patch: dict[str, Any]) -> None:
