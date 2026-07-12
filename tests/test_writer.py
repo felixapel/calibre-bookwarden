@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from calibre_ai_auditor.apply.coordinator import queue_approved_operations
+from calibre_ai_auditor.apply.coordinator import queue_approved_operations, queue_undo_operation
 from calibre_ai_auditor.apply.writer import MetadataWriter, claim_next_operation, reconcile_incomplete_operations
 from calibre_ai_auditor.storage.models import BookRecord, Change, EvidencePackage, OperationLedger, OutboxEvent, utc_now
 from calibre_ai_auditor.storage.operations import create_operation, transition_operation
@@ -202,3 +202,88 @@ def test_writer_refuses_patch_tampered_after_queueing() -> None:
         assert result.state == "failed"
         assert "seal changed" in (result.error or "")
         cli.show_metadata.assert_not_called()
+
+
+def test_writer_undo_verifies_target_and_updates_linked_change(tmp_path: Path) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    original = tmp_path / "original.opf"
+    original.write_text("original")
+    with Session(engine) as session:
+        book = BookRecord(
+            book_key="calibre:7",
+            run_id="run-7",
+            calibre_book_id=7,
+            current_metadata={"title": "Original"},
+            status="applied",
+        )
+        change = Change(
+            book_key=book.book_key,
+            run_id=book.run_id,
+            before_metadata={"title": "Original"},
+            after_metadata={"title": "Applied"},
+            backup_opf_path=str(original),
+            backup_opf_sha256=hashlib.sha256(original.read_bytes()).hexdigest(),
+            status="applied",
+        )
+        session.add(book)
+        session.add(change)
+        session.commit()
+        operation_id = queue_undo_operation(session, change)
+        assert claim_next_operation(session) == operation_id
+        cli = MagicMock()
+        cli.show_metadata.side_effect = [{"title": "Applied"}, {"title": "Original"}]
+        cli.export_opf.side_effect = lambda _book_id, path: path.write_text("applied")
+        apply_engine = MagicMock()
+        apply_engine.artifacts_dir = tmp_path
+
+        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+
+        session.refresh(change)
+        assert operation.state == "succeeded"
+        assert change.status == "undone"
+        cli.set_metadata.assert_called_once_with(7, original)
+
+
+def test_undo_reconciliation_restores_pre_undo_state_after_partial_write(tmp_path: Path) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    original = tmp_path / "original.opf"
+    original.write_text("original")
+    current = tmp_path / "current.opf"
+    current.write_text("applied")
+    with Session(engine) as session:
+        book = BookRecord(book_key="calibre:8", run_id="run-8", calibre_book_id=8, status="applied")
+        change = Change(
+            book_key=book.book_key,
+            run_id=book.run_id,
+            before_metadata={"title": "Original"},
+            after_metadata={"title": "Applied"},
+            backup_opf_path=str(original),
+            backup_opf_sha256=hashlib.sha256(original.read_bytes()).hexdigest(),
+            status="applied",
+        )
+        session.add(book)
+        session.add(change)
+        session.commit()
+        operation_id = queue_undo_operation(session, change)
+        assert claim_next_operation(session) == operation_id
+        operation = session.exec(select(OperationLedger).where(OperationLedger.operation_id == operation_id)).one()
+        operation.before_metadata = {"title": "Applied"}
+        operation.target_metadata = {"title": "Original"}
+        operation.change_id = change.id
+        operation.rollback_opf_path = str(current)
+        operation.rollback_opf_sha256 = hashlib.sha256(current.read_bytes()).hexdigest()
+        transition_operation(operation, "writing")
+        session.add(operation)
+        session.commit()
+        cli = MagicMock()
+        cli.show_metadata.side_effect = [{"title": "Partial"}, {"title": "Applied"}]
+
+        reconcile_incomplete_operations(session, cli)
+
+        session.refresh(operation)
+        session.refresh(change)
+        assert operation.state == "restored"
+        assert change.status == "applied"
+        cli.set_metadata.assert_called_once_with(8, current)
