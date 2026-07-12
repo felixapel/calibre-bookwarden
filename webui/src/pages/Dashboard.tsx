@@ -45,16 +45,17 @@ export default function Dashboard() {
     {},
   )
 
-  const isOk = health?.status === 'ok'
+  const isOk = health?.status === 'ready'
 
   // Extract counts for stats cards
   const booksList = Array.isArray(booksData?.data) ? booksData.data : []
+  const runsList = Array.isArray(runsData?.data) ? runsData.data : []
   const reviewQueueCount = booksList.filter((b: any) => b.status === 'needs_review').length
   const auditedCount = booksList.filter((b: any) => b.status === 'audited').length
   const appliedCount = booksList.filter((b: any) => b.status === 'applied').length
   
   const duplicateCount = Array.isArray(duplicatesData?.data) ? duplicatesData.data.length : 0
-  const runsCount = Array.isArray(runsData) ? runsData.length : 0
+  const runsCount = runsData?.meta?.total ?? runsList.length
 
   const formatDate = (dateStr: any) => {
     if (!dateStr) return 'N/A'
@@ -80,7 +81,9 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/40 border border-slate-800/40 backdrop-blur-md">
           <span className="text-xs text-slate-500 font-mono">PROFILE:</span>
-          <span className="text-xs font-semibold text-purple-400 font-mono">{config?.profile || 'DEFAULT'}</span>
+          <span className="text-xs font-semibold text-purple-400 font-mono">
+            {config?.data?.config?.profile || 'DEFAULT'}
+          </span>
         </div>
       </header>
 
@@ -347,8 +350,8 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-3.5">
-            {runsData && Array.isArray(runsData) ? (
-              runsData.slice(0, 3).map((run: any) => (
+            {runsList.length > 0 ? (
+              runsList.slice(0, 3).map((run: any) => (
                 <div key={run.run_id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/30 border border-slate-900">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold font-mono text-purple-400 truncate">{run.run_id}</p>
@@ -365,7 +368,7 @@ export default function Dashboard() {
             ) : (
               <div className="py-8 text-center text-xs text-slate-500 animate-pulse">Loading runs...</div>
             )}
-            {runsData && runsData.length === 0 && (
+            {runsList.length === 0 && (
               <div className="py-8 text-center text-xs text-slate-500 italic">No runs recorded yet</div>
             )}
           </div>

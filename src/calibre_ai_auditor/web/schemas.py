@@ -39,3 +39,4 @@ class RevertRequest(BaseModel):
 class APIResponse(BaseModel):
     status: str
     data: Any | None = None
+    meta: dict[str, int] | None = None

@@ -14,7 +14,7 @@ from calibre_ai_auditor.verification.engine import (
     DeclaredMetadata,
     ObservationSet,
 )
-from calibre_ai_auditor.web.schemas import InspectRequest
+from calibre_ai_auditor.web.schemas import APIResponse, InspectRequest
 
 router = APIRouter()
 
@@ -51,7 +51,7 @@ def check_sandbox(path: Path, settings: Settings) -> Path:
     return resolved_path
 
 
-@router.get("/inspect/fs")
+@router.get("/inspect/fs", response_model=APIResponse)
 async def list_fs(
     dir_path: str = "/library",
     settings: Settings = Depends(get_settings),
@@ -86,10 +86,13 @@ async def list_fs(
     parent_dir = str(target.parent) if (resolved_library_path and target != resolved_library_path) else None
 
     return {
-        "current_dir": str(target),
-        "parent_dir": parent_dir,
-        "directories": sorted(directories, key=lambda x: x["name"].lower()),
-        "files": sorted(files, key=lambda x: x["name"].lower()),
+        "status": "success",
+        "data": {
+            "current_dir": str(target),
+            "parent_dir": parent_dir,
+            "directories": sorted(directories, key=lambda x: x["name"].lower()),
+            "files": sorted(files, key=lambda x: x["name"].lower()),
+        },
     }
 
 
@@ -197,7 +200,7 @@ async def _build_inspection_package(path: Path, settings: Settings, *, no_provid
     return package.model_dump()
 
 
-@router.post("/inspect/path")
+@router.post("/inspect/path", response_model=APIResponse)
 async def inspect_path(req: InspectRequest, settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Any]:
     path = Path(req.path)
     try:
@@ -210,10 +213,11 @@ async def inspect_path(req: InspectRequest, settings: Annotated[Settings, Depend
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
 
-    return await _build_inspection_package(path, settings, no_providers=req.no_providers)
+    package = await _build_inspection_package(path, settings, no_providers=req.no_providers)
+    return {"status": "success", "data": package}
 
 
-@router.post("/inspect/upload")
+@router.post("/inspect/upload", response_model=APIResponse)
 async def inspect_upload(
     settings: Annotated[Settings, Depends(get_settings)],
     file: UploadFile = File(...),
@@ -248,4 +252,5 @@ async def inspect_upload(
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {exc}") from exc
 
-    return await _build_inspection_package(dest, settings, no_providers=no_providers)
+    package = await _build_inspection_package(dest, settings, no_providers=no_providers)
+    return {"status": "success", "data": package}

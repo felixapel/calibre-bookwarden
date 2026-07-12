@@ -3,8 +3,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import Session, col, desc, select
 
 from calibre_ai_auditor.apply.coordinator import queue_undo_operation
@@ -13,7 +14,7 @@ from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.storage.db import get_engine
 from calibre_ai_auditor.storage.models import BookRecord, Change, Run
 from calibre_ai_auditor.web.jobs import get_job_status, start_job
-from calibre_ai_auditor.web.schemas import RevertRequest
+from calibre_ai_auditor.web.schemas import APIResponse, RevertRequest
 
 router = APIRouter()
 
@@ -124,24 +125,33 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
     return {"run_id": run_id, "books_found": len(books)}
 
 
-@router.get("/runs")
-async def list_runs(session: Annotated[Session, Depends(get_session)]) -> Any:
-    runs = session.exec(select(Run).order_by(desc(Run.created_at))).all()
-    return runs
+@router.get("/runs", response_model=APIResponse)
+async def list_runs(
+    session: Annotated[Session, Depends(get_session)],
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> Any:
+    runs = session.exec(select(Run).order_by(desc(Run.created_at)).offset(offset).limit(limit)).all()
+    total = session.exec(select(func.count()).select_from(Run)).one()
+    return {
+        "status": "success",
+        "data": [run.model_dump() for run in runs],
+        "meta": {"total": total, "limit": limit, "offset": offset},
+    }
 
 
-@router.post("/runs/scan")
-async def scan(req: ScanRequest, settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
+@router.post("/runs/scan", response_model=APIResponse)
+async def scan(req: ScanRequest, settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Any]:
     job_id = await start_job("scan", do_scan, settings, req)
-    return {"job_id": job_id}
+    return {"status": "success", "data": {"job_id": job_id}}
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", response_model=APIResponse)
 async def get_job(job_id: str) -> dict[str, Any]:
     job = await get_job_status(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job.model_dump()
+    return {"status": "success", "data": job.model_dump()}
 
 
 @router.post("/runs/{run_id}/revert")

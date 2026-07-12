@@ -38,6 +38,7 @@ def test_upload_enabled(tmp_path: Any) -> None:
                 files={"file": ("book.epub", io.BytesIO(b"fake"), "application/epub+zip")},
             )
         assert response.status_code == 200
-        assert response.json()["evidence_id"] == "ev_test"
+        assert response.json()["status"] == "success"
+        assert response.json()["data"]["evidence_id"] == "ev_test"
     finally:
         app.dependency_overrides.clear()

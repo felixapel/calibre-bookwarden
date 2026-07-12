@@ -12,6 +12,7 @@ from calibre_ai_auditor.llm.router import LLMRouter
 from calibre_ai_auditor.storage.db import get_engine
 from calibre_ai_auditor.vectors.client import VectorClient
 from calibre_ai_auditor.verification.metrics import get_metrics
+from calibre_ai_auditor.web.schemas import APIResponse
 
 router = APIRouter()
 
@@ -116,7 +117,7 @@ async def prometheus_metrics() -> Response:
     return Response(content=body, media_type="text/plain; version=0.0.4")
 
 
-@router.get("/doctor")
+@router.get("/doctor", response_model=APIResponse)
 async def doctor_check(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
     results: dict[str, Any] = {
         "dependencies": {},
@@ -178,4 +179,4 @@ async def doctor_check(settings: Settings = Depends(get_settings)) -> dict[str, 
     finally:
         await host_reg.__aexit__(None, None, None)
 
-    return results
+    return {"status": "success", "data": results}

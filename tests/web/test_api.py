@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.config.settings import Settings
-from calibre_ai_auditor.storage.models import BookRecord
+from calibre_ai_auditor.storage.models import BookRecord, Run
 from calibre_ai_auditor.web.api.apply import get_session as apply_get_session
 from calibre_ai_auditor.web.api.books import get_session as books_get_session
 from calibre_ai_auditor.web.api.config import save_config
@@ -80,6 +80,25 @@ def test_duplicates(test_db: Any) -> None:
     data = response.json()
     assert data["status"] == "success"
     assert isinstance(data["data"], list)
+
+
+def test_books_and_runs_are_paginated_envelopes(test_db: Any) -> None:
+    with Session(test_db) as session:
+        for index in range(2, 152):
+            session.add(BookRecord(book_key=f"calibre:{index}", run_id="test_run", calibre_book_id=index))
+        for index in range(5):
+            session.add(Run(run_id=f"run-{index}"))
+        session.commit()
+
+    books = client.get("/api/books?limit=20&offset=20").json()
+    runs = client.get("/api/runs?limit=2&offset=1").json()
+
+    assert books["status"] == "success"
+    assert len(books["data"]) == 20
+    assert books["meta"] == {"total": 151, "limit": 20, "offset": 20}
+    assert runs["status"] == "success"
+    assert len(runs["data"]) == 2
+    assert runs["meta"] == {"total": 5, "limit": 2, "offset": 1}
 
 
 def test_approve_patch(test_db: Any) -> None:

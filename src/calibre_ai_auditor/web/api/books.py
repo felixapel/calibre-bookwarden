@@ -2,7 +2,8 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.config.settings import Settings, load_settings
@@ -30,10 +31,19 @@ def get_settings() -> Settings:
 
 
 @router.get("", response_model=APIResponse)
-async def list_books(session: Session = Depends(get_session)) -> Any:
-    statement = select(BookRecord).limit(100)
+async def list_books(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+) -> Any:
+    statement = select(BookRecord).order_by(BookRecord.book_key).offset(offset).limit(limit)
     books = session.exec(statement).all()
-    return {"status": "success", "data": [b.model_dump() for b in books]}
+    total = session.exec(select(func.count()).select_from(BookRecord)).one()
+    return {
+        "status": "success",
+        "data": [b.model_dump() for b in books],
+        "meta": {"total": total, "limit": limit, "offset": offset},
+    }
 
 
 @router.get("/all/duplicates", response_model=APIResponse)

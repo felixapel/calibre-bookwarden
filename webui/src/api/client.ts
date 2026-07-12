@@ -38,7 +38,8 @@ export const updateConfig = async (config: any) => {
 export const fetchDoctor = async () => {
   const res = await fetchWithAuth('/api/doctor')
   if (!res.ok) throw new Error('Failed to fetch doctor')
-  return res.json()
+  const envelope = await res.json()
+  return envelope.data
 }
 
 export const fetchHealth = async () => {
@@ -69,13 +70,15 @@ export const inspectPath = async (path: string, noProviders: boolean = false) =>
     }
     throw new Error(errorMessage)
   }
-  return res.json()
+  const envelope = await res.json()
+  return envelope.data
 }
 
 export const fetchFs = async (dirPath: string) => {
   const res = await fetchWithAuth(`/api/inspect/fs?dir_path=${encodeURIComponent(dirPath)}`)
   if (!res.ok) throw new Error('Failed to list directory')
-  return res.json()
+  const envelope = await res.json()
+  return envelope.data
 }
 
 export const scanLibrary = async (req: { library?: string, search?: string, limit?: number }) => {
@@ -85,13 +88,15 @@ export const scanLibrary = async (req: { library?: string, search?: string, limi
     body: JSON.stringify(req),
   })
   if (!res.ok) throw new Error('Failed to start scan')
-  return res.json() // returns { job_id }
+  const envelope = await res.json()
+  return envelope.data
 }
 
 export const fetchJobStatus = async (jobId: string) => {
   const res = await fetchWithAuth(`/api/jobs/${jobId}`)
   if (!res.ok) throw new Error('Failed to fetch job')
-  return res.json()
+  const envelope = await res.json()
+  return envelope.data
 }
 
 export const fetchBooks = async () => {

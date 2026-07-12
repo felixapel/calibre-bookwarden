@@ -16,8 +16,8 @@ export default function Undo() {
     setLoading(true)
     try {
       const data = await fetchRuns()
-      if (Array.isArray(data)) {
-        setRuns(data)
+      if (Array.isArray(data?.data)) {
+        setRuns(data.data)
       } else {
         console.error('Invalid runs data format:', data)
         setRuns([])
