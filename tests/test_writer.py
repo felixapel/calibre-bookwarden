@@ -7,7 +7,15 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.apply.coordinator import queue_approved_operations, queue_undo_operation
 from calibre_ai_auditor.apply.writer import MetadataWriter, claim_next_operation, reconcile_incomplete_operations
-from calibre_ai_auditor.storage.models import BookRecord, Change, EvidencePackage, OperationLedger, OutboxEvent, utc_now
+from calibre_ai_auditor.storage.models import (
+    BookRecord,
+    BookWriteLock,
+    Change,
+    EvidencePackage,
+    OperationLedger,
+    OutboxEvent,
+    utc_now,
+)
 from calibre_ai_auditor.storage.operations import create_operation, transition_operation
 
 
@@ -310,3 +318,37 @@ def test_undo_reconciliation_restores_pre_undo_state_after_partial_write(tmp_pat
         assert operation.state == "restored"
         assert change.status == "applied"
         cli.set_metadata.assert_called_once_with(8, current)
+
+
+def test_undo_reconciliation_terminalizes_missing_recovery_evidence() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        book = BookRecord(book_key="calibre:9", run_id="run-9", calibre_book_id=9, status="applied")
+        change = Change(
+            book_key=book.book_key,
+            run_id=book.run_id,
+            before_metadata={"title": "Original"},
+            after_metadata={"title": "Applied"},
+            backup_opf_path="/missing/original.opf",
+            status="applied",
+        )
+        session.add(book)
+        session.add(change)
+        session.commit()
+        operation_id = queue_undo_operation(session, change)
+        assert claim_next_operation(session) == operation_id
+        operation = session.exec(select(OperationLedger).where(OperationLedger.operation_id == operation_id)).one()
+        transition_operation(operation, "writing")
+        session.add(operation)
+        session.commit()
+
+        reconcile_incomplete_operations(session, MagicMock())
+
+        session.refresh(operation)
+        session.refresh(book)
+        event = session.exec(select(OutboxEvent).where(OutboxEvent.aggregate_id == operation_id)).one()
+        assert operation.state == "unknown"
+        assert book.status == "error"
+        assert event.status == "failed"
+        assert session.get(BookWriteLock, book.book_key) is None

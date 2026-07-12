@@ -411,6 +411,10 @@ def _reconcile_undo(session: Session, cli: CalibreCLI, operation: OperationLedge
         or operation.target_metadata is None
     ):
         _mark_unknown(operation, "insufficient undo recovery evidence")
+        if book is not None:
+            book.status = "error"
+            session.add(book)
+        _finish_outbox(session, operation.operation_id, "failed", operation.error)
         session.add(operation)
         return
     try:
