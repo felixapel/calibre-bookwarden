@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from calibre_ai_auditor.storage.models import BookRecord, Change, EvidencePackage, ManualAuthorization, OperationLedger
 from calibre_ai_auditor.storage.operations import create_operation
@@ -132,10 +132,15 @@ def queue_undo_operation(session: Session, change: Change) -> str:
 def queue_approved_operations(
     session: Session,
     *,
+    book_keys: list[str],
     authorization_ids: dict[str, str],
 ) -> CoordinationResult:
     """Validate verdicts and atomically enqueue idempotent writer operations."""
-    books = session.exec(select(BookRecord).where(BookRecord.status == "suggest_fix")).all()
+    books = session.exec(
+        select(BookRecord)
+        .where(BookRecord.status == "suggest_fix")
+        .where(col(BookRecord.book_key).in_(book_keys))
+    ).all()
     gate = ConservativeAutoApply(dry_run=False)
     queued: list[str] = []
     skipped: list[str] = []

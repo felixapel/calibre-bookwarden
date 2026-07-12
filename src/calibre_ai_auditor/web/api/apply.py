@@ -97,8 +97,12 @@ async def apply_patches(
 ) -> Any:
     if not req.force:
         raise HTTPException(status_code=400, detail="Apply requires explicit confirmation with force=true")
+    book_keys = list(dict.fromkeys(key.strip() for key in req.book_keys if key.strip()))
+    if not book_keys:
+        raise HTTPException(status_code=400, detail="Apply requires at least one explicit book key")
     result = queue_approved_operations(
         session,
+        book_keys=book_keys,
         authorization_ids=req.authorization_ids,
     )
 

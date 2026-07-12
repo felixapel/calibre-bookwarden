@@ -42,7 +42,7 @@ async def test_apply_skips_approved_book_without_eligible_persisted_verdict() ->
         )
         session.commit()
 
-        result = await apply_module.apply_patches(ApplyRequest(force=True), session)
+        result = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=["calibre:1"]), session)
 
     assert result["data"]["queued_count"] == 0
 
@@ -55,6 +55,17 @@ async def test_apply_requires_explicit_durable_write_confirmation() -> None:
         await apply_module.apply_patches(ApplyRequest(force=False), session)
 
     assert getattr(exc_info.value, "status_code", None) == 400
+
+
+@pytest.mark.asyncio
+async def test_apply_requires_an_explicit_book_selection() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session, pytest.raises(HTTPException) as exc_info:
+        await apply_module.apply_patches(ApplyRequest(force=True), session)
+
+    assert getattr(exc_info.value, "status_code", None) == 400
+    assert "book" in str(getattr(exc_info.value, "detail", "")).lower()
 
 
 @pytest.mark.asyncio
@@ -92,7 +103,7 @@ async def test_apply_uses_eligible_persisted_verdict_and_honors_field_locks() ->
         )
         session.commit()
 
-        result = await apply_module.apply_patches(ApplyRequest(force=True), session)
+        result = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=["calibre:1"]), session)
         operation = session.exec(select(OperationLedger)).one()
 
     assert result["data"]["queued_count"] == 1
@@ -161,7 +172,11 @@ async def test_exact_manual_authorization_allows_ineligible_verdict() -> None:
         )
         session.commit()
         result = await apply_module.apply_patches(
-            ApplyRequest(force=True, authorization_ids={book.book_key: authorization.authorization_id}),
+            ApplyRequest(
+                force=True,
+                book_keys=[book.book_key],
+                authorization_ids={book.book_key: authorization.authorization_id},
+            ),
             session,
         )
 
@@ -226,7 +241,7 @@ async def test_idempotent_retry_does_not_regress_completed_book_status() -> None
         session.add(book)
         session.add(EvidencePackage(evidence_id="evidence-4", book_key="calibre:4", run_id="run-4", decision=decision))
         session.commit()
-        first = await apply_module.apply_patches(ApplyRequest(force=True), session)
+        first = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=[book.book_key]), session)
         operation = session.exec(select(OperationLedger)).one()
         operation.state = "succeeded"
         book.status = "suggest_fix"
@@ -234,7 +249,7 @@ async def test_idempotent_retry_does_not_regress_completed_book_status() -> None
         session.add(book)
         session.commit()
 
-        second = await apply_module.apply_patches(ApplyRequest(force=True), session)
+        second = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=[book.book_key]), session)
         session.refresh(book)
 
     assert first["data"]["queued_count"] == 1

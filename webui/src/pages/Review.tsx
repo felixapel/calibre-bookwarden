@@ -119,7 +119,7 @@ export default function Review() {
 
     setApplying(true)
     try {
-      const res = await applyPatches(true)
+      const res = await applyPatches(approved.map((book) => book.book_key), true)
       showToast(res.data?.message || 'Approved patches queued successfully', 'success')
       loadBooks()
     } catch (e: any) {

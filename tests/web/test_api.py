@@ -97,7 +97,7 @@ def test_lock_field_persists(test_db: Any) -> None:
 
 
 def test_apply_only_queues_operations(test_db: Any) -> None:
-    response = client.post("/api/apply", json={"force": True})
+    response = client.post("/api/apply", json={"force": True, "book_keys": ["calibre:1"]})
 
     assert response.status_code == 200
     assert response.json()["data"]["queued_count"] == 0

@@ -112,11 +112,11 @@ export const rejectPatch = async (bookKey: string) => {
   return res.json()
 }
 
-export const applyPatches = async (force = true) => {
+export const applyPatches = async (bookKeys: string[], force = true) => {
   const res = await fetchWithAuth('/api/apply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ force }),
+    body: JSON.stringify({ force, book_keys: bookKeys }),
   })
   if (!res.ok) {
     let errorMessage = 'Failed to apply patches'

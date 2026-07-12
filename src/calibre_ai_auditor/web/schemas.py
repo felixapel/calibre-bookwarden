@@ -24,6 +24,7 @@ class LockFieldRequest(BaseModel):
 
 class ApplyRequest(BaseModel):
     force: bool = False
+    book_keys: list[str] = Field(default_factory=list)
     authorization_ids: dict[str, str] = Field(default_factory=dict)
 
 

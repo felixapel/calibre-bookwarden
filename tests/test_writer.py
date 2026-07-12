@@ -45,7 +45,7 @@ def _setup_operation(session: Session) -> str:
         )
     )
     session.commit()
-    result = queue_approved_operations(session, authorization_ids={})
+    result = queue_approved_operations(session, book_keys=["calibre:1"], authorization_ids={})
     return result.queued_operation_ids[0]
 
 
