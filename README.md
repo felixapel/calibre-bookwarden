@@ -198,6 +198,8 @@ responsive navigation and browser performance budgets.
 - **GitHub Actions**: `.github/workflows/ci.yml` plus signed release publication in `.github/workflows/release.yml`.
 - **Gitea Actions**: `.gitea/workflows/v1-tests.yml` runs backend/PostgreSQL,
   benchmarks, browser and production-image gates on the self-hosted runner.
+  GitHub is the canonical production release authority; Gitea never publishes
+  or signs release images.
 
 ## License
 

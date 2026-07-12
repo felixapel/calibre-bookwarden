@@ -6,6 +6,21 @@ layer of safety through **per-book restore points** and a **conservative
 auto-apply gate** — but the principle is the same: nothing changes
 your library unless you explicitly opt in.
 
+## Production Trust Boundary
+
+The authenticated API is the trusted control plane. Its database role may
+create evidence, authorization, ledger, and outbox records so approved work can
+reach the writer. Database ACL separation prevents accidental cross-role DML
+and keeps the writer from minting approvals, but it is not containment against
+arbitrary code execution in the API: an API compromise can forge a consistent
+approval set. Deploy the API behind the documented loopback/TLS boundary,
+protect its key, and treat API-host compromise as authority compromise.
+
+The first rollout is supervised and requires the PostgreSQL plus writer-artifact
+backup procedure. Automated tests cover state reconciliation and a real Calibre
+apply/undo round trip; they do not yet claim exhaustive SIGKILL, ENOSPC, or
+filesystem-tamper fault injection across every external-write window.
+
 ## What is Read-Only?
 
 By default, the application operates in a completely read-only mode:

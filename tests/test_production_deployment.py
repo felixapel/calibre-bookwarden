@@ -63,6 +63,8 @@ def test_release_workflow_publishes_only_after_full_gates() -> None:
     assert "UPDATE operationledger SET state = state WHERE false" in release
     assert "grep -F '42501'" in release
     assert "permission denied for table operationledger" in release
+    assert release.index("cosign sign --yes") < release.index("docker buildx imagetools create")
+    assert "Vendor-unfixed vulnerability exception expired" in release
     assert "benchmark_50k_metadata.py" in release
     assert "TEST_POSTGRES_DSN" in ci
     assert "benchmark_50k_metadata.py" in ci

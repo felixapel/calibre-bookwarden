@@ -153,16 +153,21 @@ async def prometheus_metrics(settings: Settings = Depends(get_settings)) -> Resp
 
     try:
         outbox_depths = {"pending": 0, "processing": 0, "failed": 0, "published": 0}
-        operation_depths = {"failed_rollback_failed": 0, "unknown": 0, "restore_failed": 0}
+        operation_depths = {"unknown": 0, "restore_failed": 0}
+        change_depths = {"failed_rollback_failed": 0}
         with get_engine(settings).connect() as connection:
             for status, count in connection.execute(text("SELECT status, count(*) FROM outboxevent GROUP BY status")):
                 outbox_depths[str(status)] = int(count)
             for state, count in connection.execute(text("SELECT state, count(*) FROM operationledger GROUP BY state")):
                 operation_depths[str(state)] = int(count)
+            for status, count in connection.execute(text('SELECT status, count(*) FROM "change" GROUP BY status')):
+                change_depths[str(status)] = int(count)
         for status, count in outbox_depths.items():
             metrics.set_outbox_depth(status, count)
         for state, count in operation_depths.items():
             metrics.set_operation_depth(state, count)
+        for status, count in change_depths.items():
+            metrics.set_change_depth(status, count)
     except Exception:
         collection_ok = False
 

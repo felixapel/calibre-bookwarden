@@ -36,7 +36,7 @@ def test_histogram() -> None:
     out = m.render()
     assert 'latency_ms_count{op="ocr"} 3' in out
     assert 'latency_ms_sum{op="ocr"} 60.0' in out
-    assert 'latency_ms_avg{op="ocr"} 20.0' in out
+    assert "latency_ms_avg" not in out
 
 
 def test_histogram_storage_is_constant_size() -> None:
@@ -132,8 +132,10 @@ async def test_metrics_endpoint_collects_writer_and_durable_state(monkeypatch) -
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE outboxevent (status TEXT NOT NULL)"))
         connection.execute(text("CREATE TABLE operationledger (state TEXT NOT NULL)"))
+        connection.execute(text('CREATE TABLE "change" (status TEXT NOT NULL)'))
         connection.execute(text("INSERT INTO outboxevent VALUES ('pending'), ('pending')"))
-        connection.execute(text("INSERT INTO operationledger VALUES ('failed_rollback_failed')"))
+        connection.execute(text("INSERT INTO operationledger VALUES ('restore_failed')"))
+        connection.execute(text("INSERT INTO \"change\" VALUES ('failed_rollback_failed')"))
 
     monkeypatch.setattr(health_api, "get_engine", lambda _settings: engine)
     monkeypatch.setattr(heartbeat_module, "read_writer_heartbeat", lambda *_args, **_kwargs: {"owner": "writer"})
@@ -144,5 +146,6 @@ async def test_metrics_endpoint_collects_writer_and_durable_state(monkeypatch) -
     body = response.body.decode()
     assert "bookaudit_writer_heartbeat_fresh 1.0" in body
     assert 'bookaudit_outbox_events{status="pending"} 2.0' in body
-    assert 'bookaudit_operations{state="failed_rollback_failed"} 1.0' in body
+    assert 'bookaudit_operations{state="restore_failed"} 1.0' in body
+    assert 'bookaudit_changes{status="failed_rollback_failed"} 1.0' in body
     assert "bookaudit_operational_metrics_collection_success 1.0" in body

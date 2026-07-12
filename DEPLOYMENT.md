@@ -15,6 +15,17 @@ provenance and SPDX SBOM. For production, set `BOOKAUDIT_IMAGE` to the immutable
 `ghcr.io/<owner>/<repo>@sha256:<digest>` printed by the release workflow. The
 local version tag is intended for build-and-test deployments only.
 
+GitHub Actions is the canonical release authority and the only workflow that
+publishes production images. Gitea Actions gates homelab branches and pull
+requests but does not publish or sign releases.
+
+The runtime layer installs Debian's Calibre package, so rebuilding the same
+commit can resolve different OS package versions. The release contract is the
+single digest that is scanned, boot-tested, attested, signed, and only then
+tagged—not bit-for-bit reproducibility across later rebuilds. Vendor-unfixed
+HIGH/CRITICAL findings have a fail-closed review expiry in the release workflow;
+fixed findings always block publication.
+
 ---
 
 ## 2. Service Stack (Docker Compose)
@@ -44,8 +55,9 @@ docker compose up -d app writer
 ```
 
 On the first empty PostgreSQL volume, `scripts/postgres-init-roles.sh` creates
-the app, writer, and migrator roles. The migrator owns the schema; runtime roles
-receive DML and sequence privileges but cannot create schema objects. Password
+the app, writer, and migrator roles. The migrator owns the schema; each runtime
+role receives only the table-specific DML needed by its API or writer duties and
+cannot create schema objects. Password
 rotation is an explicit operation because PostgreSQL init hooks run only for an
 empty data directory.
 

@@ -86,6 +86,9 @@ class Metrics:
     def set_operation_depth(self, state: str, count: int) -> None:
         self.gauge("bookaudit_operations", float(count), labels={"state": state})
 
+    def set_change_depth(self, status: str, count: int) -> None:
+        self.gauge("bookaudit_changes", float(count), labels={"status": status})
+
     def record_llm_call(
         self,
         *,
@@ -139,7 +142,7 @@ class Metrics:
                     seen_gauges.add(gauge_name)
                 lines.append(f"{metric_name_with_type} {gauge_value}")
 
-            # Histograms (basic: count + sum + average)
+            # Summaries expose only the standard count and sum series.
             seen_hist: set[str] = set()
             for (name, labels), aggregate in sorted(self._histograms.items()):
                 if name not in seen_hist:
@@ -150,7 +153,6 @@ class Metrics:
                 if count:
                     lines.append(f"{name}_count{label_str} {count}")
                     lines.append(f"{name}_sum{label_str} {total}")
-                    lines.append(f"{name}_avg{label_str} {total / count}")
 
         return "\n".join(lines) + "\n"
 
