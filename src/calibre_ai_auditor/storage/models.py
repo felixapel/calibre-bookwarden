@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
+from sqlalchemy import UniqueConstraint
 from sqlmodel import JSON, Column, Field, SQLModel
 
 
@@ -99,6 +100,45 @@ class Change(SQLModel, table=True):
     # pending_apply is committed before the external write. Failure states keep
     # enough audit evidence to reconcile or restore after a process crash.
     status: str = "applied"  # pending_apply, applied, failed_rolled_back, failed_rollback_failed, undone
+
+
+class OperationLedger(SQLModel, table=True):
+    """Durable state machine for an externally visible metadata operation."""
+
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_operationledger_idempotency_key"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    operation_id: str = Field(index=True, unique=True)
+    idempotency_key: str
+    operation_type: str = Field(index=True)
+    book_key: str = Field(index=True)
+    run_id: str | None = Field(default=None, index=True)
+    state: str = Field(default="requested", index=True)
+    requested_patch: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    before_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    target_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    observed_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    authorization_id: str | None = Field(default=None, index=True)
+    error: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    completed_at: datetime | None = None
+
+
+class OutboxEvent(SQLModel, table=True):
+    """Transactionally persisted event awaiting delivery to a worker."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    event_id: str = Field(index=True, unique=True)
+    aggregate_id: str = Field(index=True)
+    event_type: str = Field(index=True)
+    payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    status: str = Field(default="pending", index=True)
+    attempts: int = 0
+    available_at: datetime = Field(default_factory=utc_now, index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    published_at: datetime | None = None
+    last_error: str | None = None
 
 
 class CoverVisionCache(SQLModel, table=True):

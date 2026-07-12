@@ -1,5 +1,9 @@
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
 from sqlalchemy.engine import Engine
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import create_engine
 
 from calibre_ai_auditor.config.settings import Settings
 
@@ -25,18 +29,10 @@ def get_engine(settings: Settings) -> Engine:
 
 
 def init_db(settings: Settings) -> None:
+    """Upgrade the configured database to the repository's Alembic head."""
     engine = get_engine(settings)
-    SQLModel.metadata.create_all(engine)
-
-    # Perform runtime migrations for added columns
-    from sqlalchemy import inspect, text
-
-    inspector = inspect(engine)
-    if "bookrecord" in inspector.get_table_names():
-        columns = [c["name"] for c in inspector.get_columns("bookrecord")]
-        if "paperless_document_id" not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE bookrecord ADD COLUMN paperless_document_id INTEGER"))
-        if "field_locks" not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE bookrecord ADD COLUMN field_locks JSON"))
+    repository_root = Path(__file__).resolve().parents[3]
+    config = Config(repository_root / "alembic.ini")
+    config.set_main_option("script_location", str(repository_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False).replace("%", "%%"))
+    command.upgrade(config, "head")
