@@ -127,7 +127,7 @@ After taking and verifying a paired PostgreSQL plus `.writer-artifacts` backup,
 execute the exact previewed cleanup with its audit reference:
 
 ```bash
-docker compose --profile maintenance run --rm retention \
+docker compose --profile maintenance run --rm retention retention \
   --execute \
   --backup-reference "<backup-id-or-path>" \
   --confirm-writer-stopped

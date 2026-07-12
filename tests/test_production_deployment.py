@@ -56,6 +56,8 @@ def test_retention_maintenance_service_is_explicit_and_fail_closed() -> None:
     assert 'command: ["retention"]' in compose
     assert "./.writer-artifacts:/writer-artifacts" in compose
     assert "--backup-reference is required with --execute" in (ROOT / "src/calibre_ai_auditor/cli/main.py").read_text()
+    runbook = (ROOT / "docs/runbooks/production-operations.md").read_text()
+    assert "run --rm retention retention" in runbook
 
 
 def test_release_workflow_publishes_only_after_full_gates() -> None:
