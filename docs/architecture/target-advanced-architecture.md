@@ -14,7 +14,7 @@ root: [../../ARCHITECTURE.md](../../ARCHITECTURE.md).
     fields correctly. The LLM witness handles the remaining ~5% ambiguities.
 3.  **Safety & Non-Destructive Mutations.** Every apply creates a per-book
     restore point (OPF + cover + hardlinked file + JSON snapshot) with a
-    7-day TTL. Bulk undo by run_id is supported.
+    30-day TTL. Bulk undo by run_id is supported.
 4.  **Local-First Hybrid Inference.** Core processes default to local
     utilities (Ollama, native parsers, Tesseract). High-cost cloud APIs
     (OpenAI, Gemini) are used strictly as fallback models for complex
@@ -253,7 +253,7 @@ Every apply creates:
 └── restore.json                  # {run_id, book_key, applied_at, fields_changed}
 ```
 
-TTL: 7 days (configurable). Bulk undo by `run_id` walks every entry.
+TTL: 30 days (configurable). Bulk undo by `run_id` walks every entry.
 
 ---
 

@@ -110,8 +110,8 @@ If `BOOKAUDIT_API_KEY` is set, send header `X-API-Key` on all `/api/*` requests.
 | `POST /api/review/{book_key}/approve` | Mark book as ready to apply (`suggest_fix`). |
 | `POST /api/review/{book_key}/reject` | Reject proposed changes; book is removed from queue. |
 | `POST /api/review/{book_key}/lock-field` | Lock a field. Body: `{ "field": "title", "value": "..." }`. Locked fields win in resolution. |
-| `POST /api/apply` | Apply all auto-eligible books (v1.0 conservative gate). Body: `{ "force": true }` required; library must not be read-only. |
-| `POST /api/undo/{change_id}` | Revert one change via restore point. Body: `{ "force": true }` required. |
+| `POST /api/apply` | Queue explicit approved books for the sole writer. Body: `{ "force": true, "book_keys": ["calibre:123"] }`; an empty selection is rejected. |
+| `POST /api/undo/{change_id}` | Queue one explicit undo for the sole writer. Body: `{ "force": true }` required. |
 
 ---
 

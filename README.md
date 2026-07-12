@@ -22,8 +22,8 @@ the actual book content.
 | Decision unit | Single `MetadataResolution` aggregate | **Per-field `FieldVerdict`** with cited `EvidenceSpan`s |
 | Adjudication | One LLM call decides everything | **8 deterministic rules** per field; **LLM witness** called only for ambiguous cases |
 | Auto-apply | Manual review queue | **Conservative auto-apply gate** (≥80% confidence, no high-risk flags, per-book restore point) |
-| Undo | OPF backup only | **RestorePointStore**: OPF + cover + hardlinked file + JSON snapshot, 7-day TTL |
-| Resume | None | **Valkey Streams** per-book state with `in_progress` rollback on worker crash |
+| Undo | OPF backup only | **RestorePointStore**: OPF + cover + hardlinked file + JSON snapshot, 30-day retention |
+| Resume | None | **PostgreSQL ledger/outbox** with single-writer crash reconciliation |
 | OCR | None | **Multi-provider OCR router** (Tesseract / PaddleOCR / Surya) by page hint |
 | Inference | Single Ollama | **Multi-host discovery** (3090 + 5060 Ti + 1660 SUPER + remote) |
 | Observability | Logs | **Prometheus `/metrics`** with counters, gauges, histograms |
@@ -44,9 +44,9 @@ the actual book content.
     declared field has a deterministic verdict, (b) overall confidence ≥80,
     (c) no high-risk flag is present, (d) per-field confidence ≥75.
 5.  **Every apply creates a restore point.** Per-book snapshot of OPF, cover,
-    file hardlink, and JSON metadata diff. 7-day TTL, bulk undo by run_id.
-6.  **Resumable on crash.** Worker crash mid-run rolls `in_progress` books back
-    to `pending`. Survives restarts via Valkey Streams.
+    file hardlink, and JSON metadata diff. 30-day retention, bulk undo by run_id.
+6.  **Resumable on crash.** A durable PostgreSQL operation ledger/outbox and
+    per-book locks reconcile interrupted external writes before new work begins.
 
 ## Key Features
 
@@ -72,7 +72,12 @@ the actual book content.
 git clone git@github.com:felixapel/calibre-ai-auditor.git
 cd calibre-ai-auditor
 cp .env.example .env
-docker compose up -d
+# Replace placeholders, use distinct secrets and an immutable image digest.
+chmod 600 .env
+./scripts/prepare-production.sh
+docker compose up -d --wait postgres valkey
+docker compose --profile maintenance run --rm migrate
+docker compose up -d writer app
 ```
 
 WebUI at <http://localhost:8080>. For full OCR providers:
@@ -143,14 +148,10 @@ bookaudit audit --run latest
 
 ## Testing & Benchmarks
 
-**197 tests passing** across 4 suites:
-
-| Suite | Count | Time |
-|---|---|---|
-| Backend pytest (unit + integration + 38 benchmarks) | 133 | ~60s |
-| Backend web tests | 23 | ~2s |
-| WebUI Playwright E2E | 37 | ~10s |
-| Calibration smoke | 4 | <1s |
+The fail-closed verification script runs locked formatting, lint, typing,
+backend/integration tests, Komf integration and CLI smoke checks. CI adds real
+PostgreSQL concurrency/ACL tests, the 50k metadata gate, dependency audits,
+desktop/mobile browser tests, image scanning and the Compose contract.
 
 ### Backend (pytest)
 
@@ -177,24 +178,26 @@ Baseline numbers are tracked in [tests/benchmarks/BASELINE.md](tests/benchmarks/
 cd webui
 
 # Install Playwright browser (one-time)
-pnpm exec playwright install --with-deps chromium
+npx playwright install --with-deps chromium
 
 # Run all E2E tests
-pnpm e2e
+npm run e2e
 
 # Run with UI inspector
-pnpm e2e:ui
+npm run e2e:ui
 
 # Run specific spec
-pnpm exec playwright test review.spec.ts
+npx playwright test review.spec.ts
 ```
 
-37 E2E tests across 8 spec files cover every page and the v1.0 verdict rendering.
+The E2E suite covers every page, authentication recovery, accessibility,
+responsive navigation and browser performance budgets.
 
 ### CI integration
 
-- **GitHub Actions**: `.github/workflows/v1-tests.yml` (4 jobs: backend, benchmarks, webui-lint-build, webui-e2e)
-- **Gitea Actions**: `.gitea/workflows/v1-tests.yml` (same jobs, Gitea syntax, self-hosted on Unraid)
+- **GitHub Actions**: `.github/workflows/ci.yml` plus signed release publication in `.github/workflows/release.yml`.
+- **Gitea Actions**: `.gitea/workflows/v1-tests.yml` runs backend/PostgreSQL,
+  benchmarks, browser and production-image gates on the self-hosted runner.
 
 ## License
 

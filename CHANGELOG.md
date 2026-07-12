@@ -4,7 +4,7 @@ All notable changes to `calibre-ai-auditor` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] - 2026-07-12
 
 ### Added — v1.2 MCP Server (read-only, STDIO)
 - New `src/calibre_ai_auditor/mcp_server.py` using FastMCP (with native-mcp stdio pattern compatibility).
@@ -84,7 +84,7 @@ field against the actual book content.
 
 - **`RestorePointStore`** (`restore.py`) — per-book restore points at
   `<artifacts_dir>/restore/<run_id>/<book_key>/` (OPF + cover + hardlinked
-  file + JSON snapshots) with 7-day TTL cleanup
+  file + JSON snapshots) with 30-day retention cleanup
 - **`ResumableRunStore`** (`resumable.py`) — Valkey Streams-backed per-book
   state; `in_progress` rollback on worker crash; handles 50k books in ~8ms
 - **Prometheus `/metrics`** (`metrics.py`) — counters, gauges, histograms

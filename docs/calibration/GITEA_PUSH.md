@@ -41,7 +41,7 @@ git push -u gitea feat/v1-content-verification
 2. **`.gitea/workflows/v1-tests.yml`** runs the 4 jobs:
    - `backend` — ruff + mypy + pytest (no benchmarks)
    - `benchmarks` — pytest --benchmark-only on push
-   - `webui-lint-build` — pnpm install + lint + build
+   - `webui-lint-build` — npm install + lint + build
    - `webui-e2e` — Playwright E2E suite
 
 3. **Workflow artifacts** uploaded:

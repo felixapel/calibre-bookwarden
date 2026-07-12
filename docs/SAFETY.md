@@ -70,7 +70,7 @@ Every apply creates a **restore point** at
 - `after.json` — full metadata snapshot after the apply
 - `restore.json` — metadata for bulk-undo by `run_id`
 
-**TTL: 7 days** (configurable). After TTL the restore points are
+**TTL: 30 days** (configurable). After TTL the restore points are
 automatically cleaned up.
 
 ---

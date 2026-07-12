@@ -47,13 +47,26 @@ then restore both halves before starting runtime roles:
 docker compose up -d --wait postgres valkey
 docker compose exec -T postgres pg_restore -U bookaudit -d bookaudit < bookaudit.dump
 tar -C . -xzf writer-artifacts.tar.gz
-docker compose up -d app writer
+BOOKAUDIT_REQUIRE_WRITER_READY=false docker compose up -d app
 ```
 
-Confirm `/api/health/ready`, inspect any ledger rows in `unknown` or
-`restore_failed`, and do not enable writes until every non-terminal operation is
-reconciled. A clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12
-restored Alembic head `6a3f83d9e621` successfully.
+Do **not** start the writer yet. Confirm the restored Alembic revision and ACLs,
+inspect every non-terminal ledger/outbox row, and verify the referenced restore
+artifact hashes against the Calibre library. Resolve `unknown`, `restore_failed`,
+`claimed`, `writing`, `verifying`, and `restoring` cases under the incident
+procedure before allowing any consumer to run. The app is read-only and starts
+with writer-readiness temporarily disabled solely to support inspection.
+
+Only after the ledger and artifacts are accepted:
+
+```bash
+docker compose up -d writer
+BOOKAUDIT_REQUIRE_WRITER_READY=true docker compose up -d --force-recreate app
+```
+
+Confirm authenticated `/api/health/ready` after re-enabling the writer gate. A
+clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12 restored Alembic
+head `b18f4c2d7a90` and the runtime ACLs successfully.
 
 ## Upgrade
 

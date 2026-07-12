@@ -155,7 +155,7 @@ before every apply, at `<artifacts_dir>/restore/<run_id>/<book_key>/`:
 - `before.json` / `after.json` — full metadata snapshots
 - `restore.json` — bulk-undo metadata
 
-7-day TTL; bulk undo by `run_id` walks every entry.
+30-day TTL; bulk undo by `run_id` walks every entry.
 
 ### Consequences
 - **Recoverability**: any apply can be undone to the exact pre-apply state
