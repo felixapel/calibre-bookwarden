@@ -114,3 +114,11 @@ mechanism. The metrics endpoint is intentionally authenticated in production.
   structured logs using `X-Request-ID`; pause new apply requests if writes fail.
 - `BookAuditSlowApi`: inspect database and Valkey latency before scaling API
   replicas. Never scale the writer beyond one instance.
+- `BookAuditWriterHeartbeatStale`: stop new apply intake and inspect the sole
+  writer before restarting it; never start a second writer as a workaround.
+- `BookAuditOperationalMetricsCollectionFailed`: check app-role database access
+  and Valkey connectivity; treat writer/outbox graphs as unknown until restored.
+- `BookAuditOutboxBacklog`: inspect pending/processing ledger operations and
+  Valkey connectivity. Preserve the database before manual reconciliation.
+- `BookAuditRollbackFailure`: stop the writer immediately and follow the
+  `restore_failed` incident procedure above.

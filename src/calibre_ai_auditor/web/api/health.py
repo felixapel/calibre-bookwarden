@@ -127,9 +127,45 @@ async def readiness_check(settings: Settings = Depends(get_settings)) -> dict[st
 
 
 @router.get("/metrics")
-async def prometheus_metrics() -> Response:
-    """Prometheus text exposition format for v1.0 worker pool + LLM + OCR metrics."""
-    body = get_metrics().render()
+async def prometheus_metrics(settings: Settings = Depends(get_settings)) -> Response:
+    """Prometheus metrics, including durable queue and writer liveness state."""
+    metrics = get_metrics()
+    collection_ok = True
+
+    try:
+        from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+
+        heartbeat = read_writer_heartbeat(
+            settings.queue.valkey_url,
+            timeout=settings.queue.connect_timeout_seconds,
+        )
+        metrics.set_writer_health(
+            fresh=heartbeat_is_fresh(
+                heartbeat,
+                max_age_seconds=settings.writer_heartbeat_max_age_seconds,
+            )
+        )
+    except Exception:
+        collection_ok = False
+        metrics.set_writer_health(fresh=False)
+
+    try:
+        outbox_depths = {"pending": 0, "processing": 0, "failed": 0, "published": 0}
+        operation_depths = {"failed_rollback_failed": 0, "unknown": 0, "restore_failed": 0}
+        with get_engine(settings).connect() as connection:
+            for status, count in connection.execute(text("SELECT status, count(*) FROM outboxevent GROUP BY status")):
+                outbox_depths[str(status)] = int(count)
+            for state, count in connection.execute(text("SELECT state, count(*) FROM operationledger GROUP BY state")):
+                operation_depths[str(state)] = int(count)
+        for status, count in outbox_depths.items():
+            metrics.set_outbox_depth(status, count)
+        for state, count in operation_depths.items():
+            metrics.set_operation_depth(state, count)
+    except Exception:
+        collection_ok = False
+
+    metrics.gauge("bookaudit_operational_metrics_collection_success", float(collection_ok))
+    body = metrics.render()
     return Response(content=body, media_type="text/plain; version=0.0.4")
 
 

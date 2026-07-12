@@ -30,3 +30,35 @@ groups:
         annotations:
           summary: Mean BookAudit API response time is above two seconds
           runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditWriterHeartbeatStale
+        expr: bookaudit_writer_heartbeat_fresh == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: The single metadata writer heartbeat is stale
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditOperationalMetricsCollectionFailed
+        expr: bookaudit_operational_metrics_collection_success == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: Writer or durable queue metrics cannot be collected
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditOutboxBacklog
+        expr: bookaudit_outbox_events{status=~"pending|processing"} > 100
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Durable writer outbox backlog exceeds 100 operations
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditRollbackFailure
+        expr: bookaudit_operations{state="failed_rollback_failed"} > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: At least one metadata rollback failed
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts

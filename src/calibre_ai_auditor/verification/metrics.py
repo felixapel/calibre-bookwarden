@@ -77,6 +77,15 @@ class Metrics:
         self.inc("bookaudit_http_requests_total", labels=labels)
         self.observe("bookaudit_http_request_duration_seconds", duration_seconds, labels=labels)
 
+    def set_writer_health(self, *, fresh: bool) -> None:
+        self.gauge("bookaudit_writer_heartbeat_fresh", float(fresh))
+
+    def set_outbox_depth(self, status: str, count: int) -> None:
+        self.gauge("bookaudit_outbox_events", float(count), labels={"status": status})
+
+    def set_operation_depth(self, state: str, count: int) -> None:
+        self.gauge("bookaudit_operations", float(count), labels={"state": state})
+
     def record_llm_call(
         self,
         *,

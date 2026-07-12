@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from sqlalchemy import create_engine, text
+
+from calibre_ai_auditor.apply import heartbeat as heartbeat_module
+from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.verification.metrics import Metrics, get_metrics, reset_metrics
+from calibre_ai_auditor.web.api import health as health_api
 
 
 def test_counter_and_labels() -> None:
@@ -63,6 +68,17 @@ def test_record_http_request_uses_bounded_labels() -> None:
     assert f"bookaudit_http_request_duration_seconds_sum{{{labels}}} 0.125" in out
 
 
+def test_operational_health_helpers_expose_writer_and_durable_queue() -> None:
+    m = Metrics()
+    m.set_writer_health(fresh=True)
+    m.set_outbox_depth("pending", 7)
+    m.set_operation_depth("failed_rollback_failed", 2)
+    out = m.render()
+    assert "bookaudit_writer_heartbeat_fresh 1.0" in out
+    assert 'bookaudit_outbox_events{status="pending"} 7.0' in out
+    assert 'bookaudit_operations{state="failed_rollback_failed"} 2.0' in out
+
+
 def test_record_llm_call_helper() -> None:
     m = Metrics()
     m.record_llm_call(
@@ -109,3 +125,24 @@ def test_empty_metrics_renders_cleanly() -> None:
     assert out  # at least a trailing newline
     # No metric lines, but no errors either
     assert "# TYPE" not in out  # no histogram types
+
+
+async def test_metrics_endpoint_collects_writer_and_durable_state(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE outboxevent (status TEXT NOT NULL)"))
+        connection.execute(text("CREATE TABLE operationledger (state TEXT NOT NULL)"))
+        connection.execute(text("INSERT INTO outboxevent VALUES ('pending'), ('pending')"))
+        connection.execute(text("INSERT INTO operationledger VALUES ('failed_rollback_failed')"))
+
+    monkeypatch.setattr(health_api, "get_engine", lambda _settings: engine)
+    monkeypatch.setattr(heartbeat_module, "read_writer_heartbeat", lambda *_args, **_kwargs: {"owner": "writer"})
+    monkeypatch.setattr(heartbeat_module, "heartbeat_is_fresh", lambda *_args, **_kwargs: True)
+    reset_metrics()
+
+    response = await health_api.prometheus_metrics(Settings())
+    body = response.body.decode()
+    assert "bookaudit_writer_heartbeat_fresh 1.0" in body
+    assert 'bookaudit_outbox_events{status="pending"} 2.0' in body
+    assert 'bookaudit_operations{state="failed_rollback_failed"} 1.0' in body
+    assert "bookaudit_operational_metrics_collection_success 1.0" in body
