@@ -5,10 +5,10 @@ from fastapi import HTTPException
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.apply.coordinator import create_manual_authorization
-from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, OperationLedger
+from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, ManualAuthorization, OperationLedger
 from calibre_ai_auditor.verification.verdict import BookVerdict
 from calibre_ai_auditor.web.api import apply as apply_module
-from calibre_ai_auditor.web.schemas import ApplyRequest
+from calibre_ai_auditor.web.schemas import ApplyRequest, ManualAuthorizationRequest
 
 
 @pytest.mark.asyncio
@@ -166,6 +166,47 @@ async def test_exact_manual_authorization_allows_ineligible_verdict() -> None:
         )
 
     assert result["data"]["queued_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_authorization_actor_is_derived_from_server_principal() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    decision = {
+        "book_key": "calibre:5",
+        "run_id": "run-5",
+        "action": "needs_review",
+        "auto_apply_eligible": False,
+        "overall_confidence": 70,
+        "proposed_patch": {"title": "Operator Approved"},
+    }
+    with Session(engine) as session:
+        session.add(
+            BookRecord(
+                book_key="calibre:5",
+                run_id="run-5",
+                calibre_book_id=5,
+                status="suggest_fix",
+            )
+        )
+        session.add(
+            EvidencePackage(
+                evidence_id="evidence-5",
+                book_key="calibre:5",
+                run_id="run-5",
+                decision=decision,
+            )
+        )
+        session.commit()
+
+        await apply_module.authorize_patch(
+            "calibre:5",
+            ManualAuthorizationRequest(reason="Verified against the title page"),
+            session,
+        )
+        authorization = session.exec(select(ManualAuthorization)).one()
+
+    assert authorization.actor == "api-key"
 
 
 @pytest.mark.asyncio

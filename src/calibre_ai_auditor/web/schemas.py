@@ -28,7 +28,6 @@ class ApplyRequest(BaseModel):
 
 
 class ManualAuthorizationRequest(BaseModel):
-    actor: str
     reason: str
 
 

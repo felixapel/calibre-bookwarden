@@ -135,7 +135,9 @@ async def authorize_patch(
             session,
             book=book,
             verdict=verdict,
-            actor=req.actor,
+            # The production authentication boundary currently has one API-key
+            # principal. Never accept an audit identity asserted by the client.
+            actor="api-key",
             reason=req.reason,
         )
         session.commit()
