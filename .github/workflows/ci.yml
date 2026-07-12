@@ -55,7 +55,7 @@ jobs:
       - name: Audit locked Python dependencies
         run: |
           uv export --frozen --no-hashes --no-emit-project --output-file requirements-audit.txt
-          uvx pip-audit --requirement requirements-audit.txt
+          uvx pip-audit==2.10.1 --requirement requirements-audit.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -123,6 +123,9 @@ jobs:
           test "$(docker image inspect calibre-ai-auditor:ci --format '{{.Config.User}}')" = "10001:10001"
           docker run --rm --entrypoint sh calibre-ai-auditor:ci -c '! python -c "import pytest" && bookaudit --help >/dev/null'
           docker compose --profile maintenance --profile optional config -q
+          docker run --rm --entrypoint promtool -v "$PWD/ops/monitoring:/etc/prometheus:ro" \
+            prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 \
+            check config /etc/prometheus/prometheus.yml
       - name: Scan image for high vulnerabilities
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:

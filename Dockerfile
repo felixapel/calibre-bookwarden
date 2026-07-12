@@ -28,7 +28,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BOOKAUDIT_STATIC_DIR=/app/static \
     BOOKAUDIT_LIBRARY_PATH=/library \
     BOOKAUDIT_DB_PATH=/state/bookaudit.db \
-    BOOKAUDIT_ARTIFACTS_DIR=/artifacts
+    BOOKAUDIT_ARTIFACTS_DIR=/artifacts \
+    HOME=/tmp/bookaudit-home \
+    XDG_CACHE_HOME=/tmp/bookaudit-home/.cache \
+    XDG_CONFIG_HOME=/tmp/bookaudit-home/.config
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

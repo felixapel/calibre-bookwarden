@@ -23,6 +23,14 @@ def test_compose_uses_current_configurable_image_reference() -> None:
     assert "calibre-ai-auditor:v0.1" not in compose
 
 
+def test_runtime_image_has_writable_non_root_home() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+
+    assert "HOME=/tmp/bookaudit-home" in dockerfile
+    assert "XDG_CACHE_HOME=/tmp/bookaudit-home/.cache" in dockerfile
+    assert "XDG_CONFIG_HOME=/tmp/bookaudit-home/.config" in dockerfile
+
+
 def test_compose_requires_and_health_checks_the_single_writer() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 
@@ -50,6 +58,8 @@ def test_release_workflow_publishes_only_after_full_gates() -> None:
     assert "cosign sign --yes" in release
     assert "attest-build-provenance@" in release
     assert "attest-sbom@" in release
+    assert "push-by-digest=true" in release
+    assert "docker buildx imagetools create" in release
     assert "benchmark_50k_metadata.py" in release
     assert "TEST_POSTGRES_DSN" in ci
     assert "benchmark_50k_metadata.py" in ci

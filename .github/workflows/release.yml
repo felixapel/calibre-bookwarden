@@ -45,6 +45,8 @@ jobs:
         run: |
           version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "$GITHUB_REF_NAME" = "v$version"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - name: Backend release gates
         run: |
           uv sync --frozen --extra dev
@@ -54,7 +56,10 @@ jobs:
           uv run pytest -m "not benchmark and not ocr_live and not network"
           uv run python scripts/benchmark_50k_metadata.py
           uv export --frozen --no-hashes --no-emit-project --output-file requirements-audit.txt
-          uvx pip-audit --requirement requirements-audit.txt
+          uvx pip-audit==2.10.1 --requirement requirements-audit.txt
+          docker run --rm --entrypoint promtool -v "$PWD/ops/monitoring:/etc/prometheus:ro" \
+            prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 \
+            check config /etc/prometheus/prometheus.yml
       - name: Frontend release gates
         working-directory: webui
         run: |
@@ -71,20 +76,6 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Build local release candidate
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          load: true
-          tags: calibre-ai-auditor:release-candidate
-      - name: Reject high or critical release vulnerabilities
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
-        with:
-          image-ref: calibre-ai-auditor:release-candidate
-          format: table
-          exit-code: "1"
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -101,11 +92,65 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          push: true
-          tags: ${{ steps.metadata.outputs.tags }}
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.metadata.outputs.labels }}
           provenance: mode=max
           sbom: true
+      - name: Reject high or critical vulnerabilities in the exact release digest
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+      - name: Boot the exact digest with empty production state
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          export COMPOSE_PROJECT_NAME=bookaudit_release_gate
+          export BOOKAUDIT_IMAGE="$IMAGE@$DIGEST"
+          export BOOKAUDIT_LIBRARY_HOST_PATH=/tmp/bookaudit-release-library
+          export BOOKAUDIT_PORT=18080
+          export POSTGRES_PASSWORD=release-admin-password-unique-2026
+          export POSTGRES_APP_PASSWORD=release-app-password-unique-2026
+          export POSTGRES_WRITER_PASSWORD=release-writer-password-unique-2026
+          export POSTGRES_MIGRATOR_PASSWORD=release-migrator-password-unique-2026
+          export BOOKAUDIT_APP_POSTGRES_DSN=postgresql+psycopg://bookaudit_app:release-app-password-unique-2026@postgres:5432/bookaudit
+          export BOOKAUDIT_WRITER_POSTGRES_DSN=postgresql+psycopg://bookaudit_writer:release-writer-password-unique-2026@postgres:5432/bookaudit
+          export BOOKAUDIT_MIGRATOR_POSTGRES_DSN=postgresql+psycopg://bookaudit_migrator:release-migrator-password-unique-2026@postgres:5432/bookaudit
+          export BOOKAUDIT_API_KEY=release-api-key-with-at-least-32-characters-9Z
+          export BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1
+          cleanup() { docker compose down -v --remove-orphans; }
+          trap cleanup EXIT
+          touch .env
+          install -d -m 0750 /tmp/bookaudit-release-library .state .artifacts .writer-artifacts user_library
+          docker pull "$BOOKAUDIT_IMAGE"
+          docker compose up -d --wait postgres valkey
+          docker compose --profile maintenance run --rm migrate
+          docker compose up -d --wait writer app
+          curl -fsS -H "X-API-Key: $BOOKAUDIT_API_KEY" -H 'Host: localhost' \
+            http://127.0.0.1:18080/api/health/ready
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: localhost' \
+            http://127.0.0.1:18080/api/health/ready)" = 401
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: invalid.example' \
+            -H "X-API-Key: $BOOKAUDIT_API_KEY" http://127.0.0.1:18080/api/health/ready)" = 400
+          if docker compose exec -T postgres sh -lc \
+            "PGPASSWORD='$POSTGRES_APP_PASSWORD' psql -v ON_ERROR_STOP=1 -U bookaudit_app -d bookaudit -c 'UPDATE operationledger SET state = state WHERE false'"; then
+            echo 'app role unexpectedly updated the writer ledger' >&2
+            exit 1
+          fi
+      - name: Promote the scanned digest to release tags
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          while IFS= read -r tag; do
+            test -n "$tag" && docker buildx imagetools create --tag "$tag" "$IMAGE@$DIGEST"
+          done <<< "$TAGS"
       - name: Generate downloadable SPDX SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:

@@ -8,10 +8,7 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-if grep -Eq '(^|=)(replace-|/absolute/path)' .env; then
-  echo ".env still contains production placeholders." >&2
-  exit 1
-fi
+python scripts/validate-production-env.py .env
 
 runtime_uid="$(sed -n 's/^UID=//p' .env | tail -n 1)"
 runtime_gid="$(sed -n 's/^GID=//p' .env | tail -n 1)"
