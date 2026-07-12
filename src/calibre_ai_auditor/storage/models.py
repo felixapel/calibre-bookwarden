@@ -89,7 +89,10 @@ class EvidencePackage(SQLModel, table=True):
 
 
 class Change(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("operation_id", name="uq_change_operation_id"),)
+
     id: int | None = Field(default=None, primary_key=True)
+    operation_id: str | None = Field(default=None, index=True)
     book_key: str = Field(index=True)
     run_id: str = Field(index=True)
     applied_at: datetime = Field(default_factory=utc_now)
@@ -97,6 +100,7 @@ class Change(SQLModel, table=True):
     before_metadata: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     after_metadata: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     backup_opf_path: str
+    backup_opf_sha256: str | None = None
     # pending_apply is committed before the external write. Failure states keep
     # enough audit evidence to reconcile or restore after a process crash.
     status: str = "applied"  # pending_apply, applied, failed_rolled_back, failed_rollback_failed, undone
@@ -113,16 +117,35 @@ class OperationLedger(SQLModel, table=True):
     operation_type: str = Field(index=True)
     book_key: str = Field(index=True)
     run_id: str | None = Field(default=None, index=True)
+    calibre_book_id: int | None = Field(default=None, index=True)
     state: str = Field(default="requested", index=True)
     requested_patch: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     before_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     target_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     observed_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     authorization_id: str | None = Field(default=None, index=True)
+    verdict_hash: str | None = None
+    patch_hash: str | None = None
+    field_locks_hash: str | None = None
+    policy_version: str = "v1"
+    change_id: int | None = Field(default=None, index=True)
+    rollback_opf_path: str | None = None
+    rollback_opf_sha256: str | None = None
+    lease_owner: str | None = Field(default=None, index=True)
+    lease_expires_at: datetime | None = Field(default=None, index=True)
     error: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     completed_at: datetime | None = None
+
+
+class BookWriteLock(SQLModel, table=True):
+    """One durable active writer lease per immutable Calibre book identity."""
+
+    book_key: str = Field(primary_key=True)
+    operation_id: str = Field(index=True, unique=True)
+    lease_owner: str = Field(index=True)
+    lease_expires_at: datetime = Field(index=True)
 
 
 class OutboxEvent(SQLModel, table=True):

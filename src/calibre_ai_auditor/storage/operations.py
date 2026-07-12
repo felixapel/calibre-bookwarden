@@ -9,7 +9,9 @@ from calibre_ai_auditor.storage.models import OperationLedger, OutboxEvent, utc_
 
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "requested": frozenset({"claimed", "cancelled"}),
-    "claimed": frozenset({"writing", "failed", "cancelled"}),
+    # A claim is safe to release until the durable before/target evidence has
+    # been recorded and the operation enters ``writing``.
+    "claimed": frozenset({"requested", "writing", "failed", "cancelled"}),
     "writing": frozenset({"verifying", "restoring", "unknown"}),
     "verifying": frozenset({"succeeded", "restoring", "unknown"}),
     "restoring": frozenset({"restored", "restore_failed"}),
@@ -31,6 +33,10 @@ def create_operation(
     requested_patch: dict[str, Any],
     run_id: str | None = None,
     authorization_id: str | None = None,
+    calibre_book_id: int | None = None,
+    verdict_hash: str | None = None,
+    patch_hash: str | None = None,
+    field_locks_hash: str | None = None,
 ) -> OperationLedger:
     """Create one operation and outbox event, or return its prior retry."""
     existing = session.exec(select(OperationLedger).where(OperationLedger.idempotency_key == idempotency_key)).first()
@@ -45,6 +51,10 @@ def create_operation(
         run_id=run_id,
         requested_patch=requested_patch,
         authorization_id=authorization_id,
+        calibre_book_id=calibre_book_id,
+        verdict_hash=verdict_hash,
+        patch_hash=patch_hash,
+        field_locks_hash=field_locks_hash,
     )
     session.add(operation)
     session.add(

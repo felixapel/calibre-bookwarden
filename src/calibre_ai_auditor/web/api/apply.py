@@ -95,6 +95,8 @@ async def apply_patches(
     req: ApplyRequest = Body(default_factory=ApplyRequest),
     session: Session = Depends(get_session),
 ) -> Any:
+    if not req.force:
+        raise HTTPException(status_code=400, detail="Apply requires explicit confirmation with force=true")
     result = queue_approved_operations(
         session,
         authorization_ids=req.authorization_ids,

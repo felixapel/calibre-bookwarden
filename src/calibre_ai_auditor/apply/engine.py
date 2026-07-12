@@ -1,4 +1,7 @@
+import hashlib
 import logging
+import shutil
+import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,13 +15,24 @@ from calibre_ai_auditor.verification.restore import RestorePointStore
 
 logger = logging.getLogger(__name__)
 
+DC = "http://purl.org/dc/elements/1.1/"
+OPF = "http://www.idpf.org/2007/opf"
+
 
 class ApplyEngine:
     def __init__(self, cli: CalibreCLI, artifacts_dir: Path):
         self.cli = cli
         self.artifacts_dir = artifacts_dir
 
-    def apply_patch(self, _session: Session, book: BookRecord, patch: dict[str, Any]) -> Change:
+    def apply_patch(
+        self,
+        _session: Session,
+        book: BookRecord,
+        patch: dict[str, Any],
+        *,
+        operation_id: str | None = None,
+        live_before: dict[str, Any] | None = None,
+    ) -> Change:
         """
         Applies a metadata patch and records the change.
         """
@@ -34,6 +48,7 @@ class ApplyEngine:
         # 1. Backup
         logger.info(f"Backing up metadata for book {book.calibre_book_id} to {backup_opf}")
         self.cli.export_opf(book.calibre_book_id, backup_opf)
+        backup_sha256 = hashlib.sha256(backup_opf.read_bytes()).hexdigest()
 
         restore_point = RestorePointStore(self.artifacts_dir).create(
             run_id=book.run_id,
@@ -49,11 +64,13 @@ class ApplyEngine:
 
         # 2. Record the change
         change = Change(
+            operation_id=operation_id,
             book_key=book.book_key,
             run_id=book.run_id,
-            before_metadata=book.current_metadata,
+            before_metadata=live_before if live_before is not None else book.current_metadata,
             after_metadata=patch,
             backup_opf_path=str(backup_opf),
+            backup_opf_sha256=backup_sha256,
             status="pending_apply",
         )
         _session.add(change)
@@ -62,12 +79,20 @@ class ApplyEngine:
 
         # 3. Apply changes via Calibre CLI
         logger.info(f"Applying metadata patch to book {book.calibre_book_id}...")
+        target_opf = backup_opf.with_name(backup_opf.name.replace("before_", "target_"))
+        self._build_target_opf(backup_opf, target_opf, patch)
         try:
-            self._apply_metadata_fields(book.calibre_book_id, patch)
+            self.cli.set_metadata(book.calibre_book_id, target_opf)
         except Exception:
             try:
                 self.cli.set_metadata(book.calibre_book_id, backup_opf)
-                change.status = "failed_rolled_back"
+                restored = self.cli.show_metadata(book.calibre_book_id)
+                expected = live_before if live_before is not None else book.current_metadata
+                change.status = (
+                    "failed_rolled_back"
+                    if all(restored.get(field) == value for field, value in expected.items())
+                    else "failed_rollback_failed"
+                )
             except Exception:
                 change.status = "failed_rollback_failed"
                 logger.exception("Rollback failed for book %s", book.book_key)
@@ -80,49 +105,51 @@ class ApplyEngine:
         _session.commit()
         return change
 
-    def _apply_metadata_fields(self, book_id: int, patch: dict[str, Any]) -> None:
-        """
-        Calls calibredb set_metadata for each field in the patch.
-        """
-        # Mapping our internal Metadata fields to calibredb field names
-        field_map = {
+    def _build_target_opf(self, source: Path, target: Path, patch: dict[str, Any]) -> None:
+        """Create one complete target OPF so Calibre receives one atomic metadata command."""
+        shutil.copyfile(source, target)
+        tree = ET.parse(target)
+        root = tree.getroot()
+        metadata = root.find(f"{{{OPF}}}metadata")
+        if metadata is None:
+            raise ValueError("backup OPF has no metadata element")
+
+        scalar_fields = {
             "title": "title",
-            "authors": "authors",
             "publisher": "publisher",
-            "published_date": "pubdate",
-            "language": "languages",
-            "series": "series",
-            "series_index": "series_index",
+            "published_date": "date",
+            "language": "language",
         }
+        for field, tag in scalar_fields.items():
+            if field in patch:
+                self._replace_dc(metadata, tag, [str(patch[field])])
+        if "authors" in patch:
+            authors = patch["authors"] if isinstance(patch["authors"], list) else [patch["authors"]]
+            self._replace_dc(metadata, "creator", [str(author) for author in authors])
+        if "identifiers" in patch and isinstance(patch["identifiers"], dict):
+            for element in list(metadata.findall(f"{{{DC}}}identifier")):
+                metadata.remove(element)
+            for scheme, value in sorted(patch["identifiers"].items()):
+                element = ET.SubElement(metadata, f"{{{DC}}}identifier")
+                element.set(f"{{{OPF}}}scheme", str(scheme).upper())
+                element.text = str(value)
+        for field, name in (("series", "calibre:series"), ("series_index", "calibre:series_index")):
+            if field in patch:
+                for element in list(metadata.findall(f"{{{OPF}}}meta")):
+                    if element.get("name") == name:
+                        metadata.remove(element)
+                element = ET.SubElement(metadata, f"{{{OPF}}}meta")
+                element.set("name", name)
+                element.set("content", str(patch[field]))
+        tree.write(target, encoding="utf-8", xml_declaration=True)
 
-        for key, value in patch.items():
-            if key == "identifiers" and isinstance(value, dict):
-                ident_str = ",".join([f"{k}:{v}" for k, v in value.items()])
-                cmd = [
-                    "calibredb",
-                    "set_metadata",
-                    str(book_id),
-                    "--identifiers",
-                    ident_str,
-                ]
-                if self.cli.library_path:
-                    cmd.extend(["--with-library", str(self.cli.library_path)])
-                self.cli._run_command(cmd)
-                continue
-
-            calibre_field = field_map.get(key)
-            if calibre_field and value:
-                val_str = ",".join(value) if isinstance(value, list) else str(value)
-                cmd = [
-                    "calibredb",
-                    "set_metadata",
-                    str(book_id),
-                    "--field",
-                    f"{calibre_field}:{val_str}",
-                ]
-                if self.cli.library_path:
-                    cmd.extend(["--with-library", str(self.cli.library_path)])
-                self.cli._run_command(cmd)
+    @staticmethod
+    def _replace_dc(metadata: ET.Element, tag: str, values: list[str]) -> None:
+        for element in list(metadata.findall(f"{{{DC}}}{tag}")):
+            metadata.remove(element)
+        for value in values:
+            element = ET.SubElement(metadata, f"{{{DC}}}{tag}")
+            element.text = value
 
     def undo_change(self, session: Session, change: Change) -> None:
         """

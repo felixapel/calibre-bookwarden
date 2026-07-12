@@ -1,5 +1,6 @@
 import asyncio
 import json as json_lib
+import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,7 @@ from calibre_ai_auditor.storage.models import (
 )
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
+logger = logging.getLogger(__name__)
 
 
 async def _audit_run(
@@ -649,7 +651,12 @@ def writer(
 
     from sqlmodel import Session
 
-    from calibre_ai_auditor.apply.writer import MetadataWriter, claim_next_operation, reconcile_incomplete_operations
+    from calibre_ai_auditor.apply.writer import (
+        MetadataWriter,
+        claim_next_operation,
+        fail_operation,
+        reconcile_incomplete_operations,
+    )
 
     settings: Settings = ctx.obj
     if not settings.library.path:
@@ -668,7 +675,12 @@ def writer(
         with Session(engine) as session:
             operation_id = claim_next_operation(session)
             if operation_id:
-                metadata_writer.process(session, operation_id)
+                try:
+                    metadata_writer.process(session, operation_id)
+                except Exception as exc:
+                    logger.exception("Writer operation %s failed", operation_id)
+                    session.rollback()
+                    fail_operation(session, operation_id, str(exc))
         if once:
             return
         if operation_id is None:

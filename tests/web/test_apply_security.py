@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.apply.coordinator import create_manual_authorization
@@ -44,6 +45,16 @@ async def test_apply_skips_approved_book_without_eligible_persisted_verdict() ->
         result = await apply_module.apply_patches(ApplyRequest(force=True), session)
 
     assert result["data"]["queued_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_requires_explicit_durable_write_confirmation() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session, pytest.raises(HTTPException) as exc_info:
+        await apply_module.apply_patches(ApplyRequest(force=False), session)
+
+    assert getattr(exc_info.value, "status_code", None) == 400
 
 
 @pytest.mark.asyncio
@@ -150,8 +161,41 @@ async def test_exact_manual_authorization_allows_ineligible_verdict() -> None:
         )
         session.commit()
         result = await apply_module.apply_patches(
-            ApplyRequest(authorization_ids={book.book_key: authorization.authorization_id}),
+            ApplyRequest(force=True, authorization_ids={book.book_key: authorization.authorization_id}),
             session,
         )
 
     assert result["data"]["queued_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_idempotent_retry_does_not_regress_completed_book_status() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    decision = {
+        "book_key": "calibre:4",
+        "run_id": "run-4",
+        "action": "suggest_fix",
+        "auto_apply_eligible": True,
+        "overall_confidence": 99,
+        "proposed_patch": {"title": "Verified"},
+    }
+    with Session(engine) as session:
+        book = BookRecord(book_key="calibre:4", run_id="run-4", calibre_book_id=4, status="suggest_fix")
+        session.add(book)
+        session.add(EvidencePackage(evidence_id="evidence-4", book_key="calibre:4", run_id="run-4", decision=decision))
+        session.commit()
+        first = await apply_module.apply_patches(ApplyRequest(force=True), session)
+        operation = session.exec(select(OperationLedger)).one()
+        operation.state = "succeeded"
+        book.status = "suggest_fix"
+        session.add(operation)
+        session.add(book)
+        session.commit()
+
+        second = await apply_module.apply_patches(ApplyRequest(force=True), session)
+        session.refresh(book)
+
+    assert first["data"]["queued_count"] == 1
+    assert second["data"]["queued_count"] == 0
+    assert book.status == "suggest_fix"
