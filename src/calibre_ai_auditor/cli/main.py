@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json as json_lib
 import logging
 import os
@@ -320,52 +321,107 @@ def undo(
             typer.secho(f"Error: {e}", fg=typer.colors.RED)
 
 
+def _verify_backup_manifest(manifest_path: Path) -> None:
+    """Verify the paired database/artifact files named by a retention backup manifest."""
+    try:
+        manifest = json_lib.loads(manifest_path.read_text())
+        datetime.fromisoformat(manifest["created_at"])
+        root = manifest_path.resolve().parent
+        for file_key, digest_key in (
+            ("database_dump", "database_sha256"),
+            ("artifacts_archive", "artifacts_sha256"),
+        ):
+            relative = Path(manifest[file_key])
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"{file_key} must be relative to the backup manifest")
+            backup_file = (root / relative).resolve()
+            if not backup_file.is_relative_to(root) or not backup_file.is_file() or backup_file.is_symlink():
+                raise ValueError(f"unsafe or missing {file_key}")
+            actual = hashlib.sha256(backup_file.read_bytes()).hexdigest()
+            if actual != manifest[digest_key]:
+                raise ValueError(f"checksum mismatch for {file_key}")
+    except (OSError, KeyError, TypeError, ValueError, json_lib.JSONDecodeError) as exc:
+        typer.secho(f"Backup manifest verification failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+
 @app.command("retention")
 def retention(
     ctx: typer.Context,
     execute: Annotated[bool, typer.Option("--execute", help="Delete expired restore points")] = False,
     backup_reference: Annotated[
-        str | None,
-        typer.Option("--backup-reference", help="Identifier of the verified paired DB/artifact backup"),
+        Path | None,
+        typer.Option("--backup-reference", help="JSON manifest for the paired DB/artifact backup"),
     ] = None,
-    confirm_writer_stopped: Annotated[
-        bool,
-        typer.Option("--confirm-writer-stopped", help="Assert that the metadata writer is stopped"),
-    ] = False,
 ) -> None:
     """Preview or explicitly delete restore points past their recorded retention target."""
     settings: Settings = ctx.obj
     from calibre_ai_auditor.verification.restore import RestorePointStore
 
     store = RestorePointStore(settings.storage.artifacts_dir)
-    expired = store.list_expired()
-    typer.echo(f"Expired restore points: {len(expired)}")
-    for restore_point in expired:
-        typer.echo(f"  {restore_point.run_id}/{restore_point.book_key}")
+    try:
+        manifest = store.build_deletion_manifest()
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    typer.echo(f"Expired restore points: {len(manifest)}")
+    for candidate in manifest:
+        typer.echo(f"  {candidate.path.relative_to(store.restore_root)}")
     if not execute:
         typer.echo("Dry run only; no restore points were deleted.")
         return
-    if not backup_reference or not backup_reference.strip():
+    if backup_reference is None:
         typer.secho("--backup-reference is required with --execute", fg=typer.colors.RED)
         raise typer.Exit(1)
-    if not confirm_writer_stopped:
-        typer.secho("--confirm-writer-stopped is required with --execute", fg=typer.colors.RED)
-        raise typer.Exit(1)
-    confirmed_expired = store.list_expired()
-    if {point.path for point in confirmed_expired} != {point.path for point in expired}:
-        typer.secho("Retention set changed after preview; nothing was deleted", fg=typer.colors.RED)
-        raise typer.Exit(1)
-    deleted = store.cleanup_expired()
-    if deleted != len(expired):
-        typer.secho(
-            f"Retention set changed during cleanup: previewed {len(expired)}, deleted {deleted}",
-            fg=typer.colors.RED,
+    _verify_backup_manifest(backup_reference)
+
+    writer_guard = None
+    if settings.profile == "production":
+        from sqlalchemy import text
+
+        from calibre_ai_auditor.apply.guard import acquire_writer_guard, release_writer_guard
+        from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+
+        engine = get_engine(settings)
+        if engine.dialect.name != "postgresql":
+            typer.secho("Production retention requires PostgreSQL", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        writer_guard = engine.connect()
+        if not acquire_writer_guard(writer_guard):
+            writer_guard.close()
+            typer.secho("Metadata writer is active; retention refused", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        nonterminal = writer_guard.execute(
+            text(
+                "SELECT count(*) FROM operationledger "
+                "WHERE state IN ('requested','claimed','writing','verifying','restoring')"
+            )
+        ).scalar_one()
+        heartbeat = read_writer_heartbeat(
+            settings.queue.valkey_url,
+            timeout=settings.queue.connect_timeout_seconds,
         )
-        raise typer.Exit(1)
-    typer.secho(
-        f"Deleted {deleted} expired restore points after backup {backup_reference}.",
-        fg=typer.colors.GREEN,
-    )
+        if nonterminal or heartbeat_is_fresh(
+            heartbeat,
+            max_age_seconds=settings.writer_heartbeat_max_age_seconds,
+        ):
+            release_writer_guard(writer_guard)
+            writer_guard.close()
+            typer.secho("Writer heartbeat or non-terminal operations remain; retention refused", fg=typer.colors.RED)
+            raise typer.Exit(1)
+
+    try:
+        deleted = store.quarantine_and_delete(manifest)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    finally:
+        if writer_guard is not None:
+            from calibre_ai_auditor.apply.guard import release_writer_guard
+
+            release_writer_guard(writer_guard)
+            writer_guard.close()
+    typer.secho(f"Deleted {deleted} expired restore points after backup {backup_reference}.", fg=typer.colors.GREEN)
 
 
 @app.command()

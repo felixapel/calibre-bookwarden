@@ -24,13 +24,16 @@ contain:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from calibre_ai_auditor.verification.verdict import HIGH_RISK_FLAGS, BookVerdict
 
@@ -65,6 +68,16 @@ class RestorePoint:
             "ttl_seconds": int(self.restore_point_ttl.total_seconds()),
             "expired": self.is_expired(),
         }
+
+
+@dataclass(frozen=True)
+class RestoreDeletionCandidate:
+    """Immutable identity for one restore directory approved for deletion."""
+
+    path: Path
+    manifest_sha256: str
+    device: int
+    inode: int
 
 
 class RestorePointStore:
@@ -194,6 +207,80 @@ class RestorePointStore:
             now = datetime.now(UTC)
         return [restore_point for restore_point in self.list_all() if restore_point.is_expired(now)]
 
+    def build_deletion_manifest(self, now: datetime | None = None) -> list[RestoreDeletionCandidate]:
+        """Build a fail-closed manifest of every expired, managed restore directory."""
+        if now is None:
+            now = datetime.now(UTC)
+        candidates: list[RestoreDeletionCandidate] = []
+        if not self.restore_root.exists():
+            return candidates
+        for run_dir in sorted(self.restore_root.iterdir()):
+            if run_dir.name.startswith("."):
+                continue
+            if run_dir.is_symlink() or not run_dir.is_dir():
+                raise RuntimeError(f"Unmanaged restore entry: {run_dir}")
+            for book_dir in sorted(run_dir.iterdir()):
+                if book_dir.is_symlink() or not book_dir.is_dir():
+                    raise RuntimeError(f"Unmanaged restore entry: {book_dir}")
+                meta_file = book_dir / "restore.json"
+                if meta_file.is_symlink() or not meta_file.is_file():
+                    raise RuntimeError(f"Missing or unsafe restore manifest: {meta_file}")
+                try:
+                    payload = meta_file.read_bytes()
+                    meta = json.loads(payload)
+                    applied_at = datetime.fromisoformat(meta["applied_at"])
+                    ttl = timedelta(seconds=meta.get("ttl_seconds", int(self.default_ttl.total_seconds())))
+                except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                    raise RuntimeError(f"Invalid restore manifest: {meta_file}") from exc
+                if (now - applied_at) <= ttl:
+                    continue
+                stat = os.lstat(book_dir)
+                candidates.append(
+                    RestoreDeletionCandidate(
+                        path=book_dir,
+                        manifest_sha256=hashlib.sha256(payload).hexdigest(),
+                        device=stat.st_dev,
+                        inode=stat.st_ino,
+                    )
+                )
+        return candidates
+
+    def quarantine_and_delete(self, candidates: list[RestoreDeletionCandidate]) -> int:
+        """Revalidate and atomically quarantine exactly the supplied candidates before deletion."""
+        for candidate in candidates:
+            if candidate.path.is_symlink() or not candidate.path.is_dir():
+                raise RuntimeError(f"Restore point changed after preview: {candidate.path}")
+            stat = os.lstat(candidate.path)
+            manifest = candidate.path / "restore.json"
+            if (
+                stat.st_dev != candidate.device
+                or stat.st_ino != candidate.inode
+                or manifest.is_symlink()
+                or not manifest.is_file()
+                or hashlib.sha256(manifest.read_bytes()).hexdigest() != candidate.manifest_sha256
+            ):
+                raise RuntimeError(f"Restore point changed after preview: {candidate.path}")
+
+        if not candidates:
+            return 0
+        quarantine = self.restore_root / ".retention-quarantine" / uuid4().hex
+        moved: list[Path] = []
+        try:
+            for candidate in candidates:
+                relative = candidate.path.relative_to(self.restore_root)
+                target = quarantine / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                os.rename(candidate.path, target)
+                moved.append(target)
+        except Exception:
+            for target in reversed(moved):
+                original = self.restore_root / target.relative_to(quarantine)
+                original.parent.mkdir(parents=True, exist_ok=True)
+                os.rename(target, original)
+            raise
+        shutil.rmtree(quarantine)
+        return len(candidates)
+
     def list_all(self) -> list[RestorePoint]:
         out: list[RestorePoint] = []
         if not self.restore_root.exists():
@@ -265,5 +352,6 @@ class ConservativeAutoApply:
 __all__ = [
     "RestorePoint",
     "RestorePointStore",
+    "RestoreDeletionCandidate",
     "ConservativeAutoApply",
 ]

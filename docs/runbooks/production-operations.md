@@ -31,8 +31,14 @@ writer-exclusive artifacts in the same maintenance window:
 
 ```bash
 docker compose stop app writer
-docker compose exec -T postgres pg_dump -U bookaudit -d bookaudit -Fc > bookaudit.dump
-tar -C . -czf writer-artifacts.tar.gz .writer-artifacts
+backup_dir="${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}/$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -m 0700 "$backup_dir"
+docker compose exec -T postgres pg_dump -U bookaudit -d bookaudit -Fc > "$backup_dir/bookaudit.dump"
+tar -C . -czf "$backup_dir/writer-artifacts.tar.gz" .writer-artifacts
+python scripts/create-backup-manifest.py \
+  "$backup_dir/bookaudit.dump" \
+  "$backup_dir/writer-artifacts.tar.gz" \
+  "$backup_dir/manifest.json"
 ```
 
 Store the two files together. Valkey is transport/cache state; the durable DB
@@ -129,13 +135,13 @@ execute the exact previewed cleanup with its audit reference:
 ```bash
 docker compose --profile maintenance run --rm retention retention \
   --execute \
-  --backup-reference "<backup-id-or-path>" \
-  --confirm-writer-stopped
+  --backup-reference "/backups/<backup-directory>/manifest.json"
 ```
 
-The command refuses mutation without both confirmations and fails if the
-expired set changes during cleanup. Start the writer only after recording the
-deleted count and checking artifact disk usage.
+The command verifies both backup checksums, acquires the writer advisory lock,
+rejects a fresh heartbeat or any non-terminal operation, and atomically
+quarantines only the exact inode+manifest-digest set from its preview. Start the
+writer only after recording the deleted count and checking artifact disk usage.
 
 ## Monitoring alerts
 

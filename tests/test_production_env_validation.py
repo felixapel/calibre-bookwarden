@@ -9,9 +9,10 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
-def _valid_env(library: Path) -> str:
+def _valid_env(library: Path, backups: Path) -> str:
     return f"""\
 BOOKAUDIT_LIBRARY_HOST_PATH={library}
+BOOKAUDIT_BACKUP_HOST_PATH={backups}
 POSTGRES_PASSWORD=admin-password-abcdefghijklmnopqrstuvwxyz
 POSTGRES_APP_PASSWORD=app-password-abcdefghijklmnopqrstuvwxyz
 POSTGRES_WRITER_PASSWORD=writer-password-abcdefghijklmnopqrstuvwxyz
@@ -28,8 +29,10 @@ BOOKAUDIT_IMAGE=registry.example.test/bookaudit@sha256:{"a" * 64}
 def test_valid_production_environment_passes(tmp_path: Path) -> None:
     library = tmp_path / "library"
     library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
     env = tmp_path / ".env"
-    env.write_text(_valid_env(library))
+    env.write_text(_valid_env(library, backups))
     env.chmod(0o600)
 
     assert MODULE.validate(env) == []
@@ -38,8 +41,10 @@ def test_valid_production_environment_passes(tmp_path: Path) -> None:
 def test_placeholders_shared_secrets_and_mutable_image_fail(tmp_path: Path) -> None:
     library = tmp_path / "library"
     library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
     env = tmp_path / ".env"
-    content = _valid_env(library)
+    content = _valid_env(library, backups)
     content = content.replace("registry.example.test/bookaudit@sha256:" + "a" * 64, "bookaudit:latest")
     content = content.replace("app-password-abcdefghijklmnopqrstuvwxyz", "replace-shared-password")
     content = content.replace("writer-password-abcdefghijklmnopqrstuvwxyz", "replace-shared-password")

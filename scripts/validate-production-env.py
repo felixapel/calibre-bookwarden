@@ -41,6 +41,13 @@ def validate(path: Path, *, allow_local_image: bool = False) -> list[str]:
     elif not os.access(library, os.R_OK | os.W_OK):
         errors.append("the library must be readable and writable by the deployment user")
 
+    backup_value = values.get("BOOKAUDIT_BACKUP_HOST_PATH", "./backups")
+    backup_path = Path(backup_value)
+    if not backup_path.is_absolute():
+        backup_path = path.resolve().parent / backup_path
+    if not backup_path.is_dir() or not os.access(backup_path, os.R_OK):
+        errors.append("BOOKAUDIT_BACKUP_HOST_PATH must be an existing readable directory")
+
     secrets = [
         values.get("POSTGRES_PASSWORD", ""),
         values.get("POSTGRES_APP_PASSWORD", ""),

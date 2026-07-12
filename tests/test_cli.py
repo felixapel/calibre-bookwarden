@@ -1,7 +1,8 @@
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -38,7 +39,7 @@ def test_migrate_runs_explicit_schema_upgrade() -> None:
     assert "Database schema upgraded" in result.stdout
 
 
-def test_retention_is_dry_run_and_requires_backup_and_stopped_writer(tmp_path: Path) -> None:
+def test_retention_is_dry_run_and_requires_verified_backup(tmp_path: Path) -> None:
     artifacts = tmp_path / "artifacts"
     restore_point = artifacts / "restore" / "run-old" / "calibre-1"
     restore_point.mkdir(parents=True)
@@ -56,6 +57,22 @@ def test_retention_is_dry_run_and_requires_backup_and_stopped_writer(tmp_path: P
     )
     config = tmp_path / "config.yml"
     config.write_text(f"storage:\n  artifacts_dir: {artifacts}\n")
+    database_dump = tmp_path / "database.dump"
+    artifacts_archive = tmp_path / "artifacts.tar"
+    database_dump.write_bytes(b"database backup")
+    artifacts_archive.write_bytes(b"artifact backup")
+    backup_manifest = tmp_path / "backup.json"
+    backup_manifest.write_text(
+        json.dumps(
+            {
+                "created_at": datetime.now(UTC).isoformat(),
+                "database_dump": database_dump.name,
+                "database_sha256": hashlib.sha256(database_dump.read_bytes()).hexdigest(),
+                "artifacts_archive": artifacts_archive.name,
+                "artifacts_sha256": hashlib.sha256(artifacts_archive.read_bytes()).hexdigest(),
+            }
+        )
+    )
 
     preview = runner.invoke(app, ["-c", str(config), "retention"])
     assert preview.exit_code == 0
@@ -76,13 +93,68 @@ def test_retention_is_dry_run_and_requires_backup_and_stopped_writer(tmp_path: P
             "retention",
             "--execute",
             "--backup-reference",
-            "backup-20260712",
-            "--confirm-writer-stopped",
+            str(backup_manifest),
         ],
     )
     assert executed.exit_code == 0
     assert "Deleted 1 expired restore points" in executed.stdout
     assert not restore_point.exists()
+
+
+def test_production_retention_refuses_when_writer_owns_guard(tmp_path: Path) -> None:
+    artifacts = tmp_path / "artifacts"
+    restore_point = artifacts / "restore" / "run-old" / "calibre-1"
+    restore_point.mkdir(parents=True)
+    (restore_point / "restore.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-old",
+                "book_key": "calibre:1",
+                "applied_at": (datetime.now(UTC) - timedelta(days=31)).isoformat(),
+                "ttl_seconds": 30 * 24 * 3600,
+            }
+        )
+    )
+    database_dump = tmp_path / "database.dump"
+    artifacts_archive = tmp_path / "artifacts.tar"
+    database_dump.write_bytes(b"database backup")
+    artifacts_archive.write_bytes(b"artifact backup")
+    backup_manifest = tmp_path / "backup.json"
+    backup_manifest.write_text(
+        json.dumps(
+            {
+                "created_at": datetime.now(UTC).isoformat(),
+                "database_dump": database_dump.name,
+                "database_sha256": hashlib.sha256(database_dump.read_bytes()).hexdigest(),
+                "artifacts_archive": artifacts_archive.name,
+                "artifacts_sha256": hashlib.sha256(artifacts_archive.read_bytes()).hexdigest(),
+            }
+        )
+    )
+    config = tmp_path / "config.yml"
+    config.write_text(f"profile: production\nstorage:\n  artifacts_dir: {artifacts}\ndatabase:\n  backend: postgres\n")
+    engine = MagicMock()
+    engine.dialect.name = "postgresql"
+
+    with (
+        patch("calibre_ai_auditor.cli.main.get_engine", return_value=engine),
+        patch("calibre_ai_auditor.apply.guard.acquire_writer_guard", return_value=False),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "-c",
+                str(config),
+                "retention",
+                "--execute",
+                "--backup-reference",
+                str(backup_manifest),
+            ],
+        )
+
+    assert result.exit_code == 1
+    assert "Metadata writer is active" in result.stdout
+    assert restore_point.is_dir()
 
 
 def test_ingest_paperless_disabled() -> None:

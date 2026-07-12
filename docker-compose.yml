@@ -114,14 +114,24 @@ services:
     environment:
       BOOKAUDIT_PROFILE: production
       BOOKAUDIT_ARTIFACTS_DIR: /writer-artifacts
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_WRITER_POSTGRES_DSN:?set writer role DSN in .env}
+      BOOKAUDIT_QUEUE__BACKEND: valkey
+      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
     volumes:
       - ./.writer-artifacts:/writer-artifacts
+      - ${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}:/backups:ro
       - ./config:/app/config:ro
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_started
 
   tika:
     image: apache/tika@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973

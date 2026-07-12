@@ -19,7 +19,7 @@ if [[ ! "$runtime_uid" =~ ^[0-9]+$ || ! "$runtime_gid" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 install -d -m 0750 -o "$runtime_uid" -g "$runtime_gid" \
-  .state .artifacts .writer-artifacts user_library
+  .state .artifacts .writer-artifacts user_library backups
 
 docker compose --profile maintenance config -q
 echo "Production bind mounts and Compose configuration are ready."

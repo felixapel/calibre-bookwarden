@@ -43,7 +43,7 @@ def test_production_preflight_creates_all_bind_mount_targets() -> None:
 
     assert preflight.is_file()
     script = preflight.read_text()
-    for directory in (".state", ".artifacts", ".writer-artifacts", "user_library"):
+    for directory in (".state", ".artifacts", ".writer-artifacts", "user_library", "backups"):
         assert directory in script
     assert "docker compose" in script
     assert "config -q" in script
@@ -55,7 +55,10 @@ def test_retention_maintenance_service_is_explicit_and_fail_closed() -> None:
     assert "retention:" in compose
     assert 'command: ["retention"]' in compose
     assert "./.writer-artifacts:/writer-artifacts" in compose
+    assert "${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}:/backups:ro" in compose
+    assert "BOOKAUDIT_DATABASE__POSTGRES_DSN" in compose
     assert "--backup-reference is required with --execute" in (ROOT / "src/calibre_ai_auditor/cli/main.py").read_text()
+    assert "acquire_writer_guard" in (ROOT / "src/calibre_ai_auditor/cli/main.py").read_text()
     runbook = (ROOT / "docs/runbooks/production-operations.md").read_text()
     assert "run --rm retention retention" in runbook
 
