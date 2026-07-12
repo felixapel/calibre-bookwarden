@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session, SQLModel, create_engine
 
+from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.web.api.verify import get_session, get_settings
 from calibre_ai_auditor.web.app import app
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+def client(tmp_path: Path) -> Generator[TestClient, None, None]:
+    engine = create_engine(f"sqlite:///{tmp_path / 'verify.db'}", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    settings = Settings()
+
+    def override_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_session] = override_session
+    yield TestClient(app)
+    app.dependency_overrides.pop(get_settings, None)
+    app.dependency_overrides.pop(get_session, None)
 
 
 def test_verify_runs_endpoint_empty(client: TestClient) -> None:

@@ -39,3 +39,16 @@ async def test_valkey_queue_with_redis() -> None:
     status = await queue.get_status("123")
     assert status == {"job_id": "123", "status": "pending"}
     mock_client.get.assert_called_with("job:123")
+
+
+@pytest.mark.asyncio
+async def test_valkey_backend_does_not_fall_back_on_connection_failure() -> None:
+    queue = ValkeyQueue(url="redis://localhost:6379", backend="valkey")
+    mock_client = AsyncMock()
+    mock_client.set.side_effect = ConnectionError("valkey unavailable")
+    queue._client = mock_client
+
+    with pytest.raises(RuntimeError, match="Valkey enqueue failed"):
+        await queue.enqueue("test_task", {"foo": "bar"})
+
+    assert queue._fallback_db == {}

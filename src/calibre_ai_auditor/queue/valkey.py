@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 
 
 class ValkeyQueue(JobQueue):
-    """
-    Queue implementation backed by Valkey/Redis.
-    Falls back to in-memory dictionary if the 'redis' package is not installed or backend is memory.
-    """
+    """Queue backed by Valkey, with memory behavior only when explicitly selected."""
 
     def __init__(self, url: str, backend: str = "valkey") -> None:
+        if backend not in {"memory", "valkey"}:
+            raise ValueError(f"Unsupported queue backend: {backend}")
         self.url = url
+        self.backend = backend
         self._client = None
         self._fallback_db: dict[str, dict[str, Any]] = {}
         self._fallback_queue: list[str] = []
@@ -27,11 +27,13 @@ class ValkeyQueue(JobQueue):
                 self._client = aioredis.from_url(url, decode_responses=True)  # type: ignore[assignment]
                 logger.info(f"ValkeyQueue initialized with URL: {url}")
             except ImportError:
-                logger.warning(
-                    "ValkeyQueue is falling back to in-memory behavior because the 'redis' package is not installed."
-                )
+                raise RuntimeError("Valkey backend requires the 'redis' package") from None
             except Exception as e:
-                logger.warning(f"ValkeyQueue failed to initialize with URL {url}: {e}. Falling back to memory.")
+                raise RuntimeError(f"Valkey queue initialization failed: {e}") from e
+
+    def _require_client(self) -> None:
+        if self.backend == "valkey" and self._client is None:
+            raise RuntimeError("Valkey backend is configured but no client is available")
 
     def _cleanup_memory_jobs(self) -> None:
         now = datetime.now()
@@ -61,6 +63,7 @@ class ValkeyQueue(JobQueue):
 
     async def enqueue(self, task: str, payload: dict[str, Any]) -> str:
         self._cleanup_memory_jobs()
+        self._require_client()
         job_id = str(uuid.uuid4())
         now_str = datetime.now().isoformat()
         job_data = {
@@ -83,8 +86,7 @@ class ValkeyQueue(JobQueue):
                 _ = (set_result, rpush_result)
                 return job_id
             except Exception as e:
-                logger.error(f"Valkey enqueue failed: {e}. Falling back to memory.")
-                # fall through to memory path below
+                raise RuntimeError(f"Valkey enqueue failed: {e}") from e
 
         self._fallback_db[job_id] = job_data
         self._fallback_queue.append(job_id)
@@ -92,6 +94,7 @@ class ValkeyQueue(JobQueue):
 
     async def get_status(self, job_id: str) -> dict[str, Any] | None:
         self._cleanup_memory_jobs()
+        self._require_client()
         if self._client:
             try:
                 data = await self._client.get(f"job:{job_id}")
@@ -99,12 +102,13 @@ class ValkeyQueue(JobQueue):
                     parsed: dict[str, Any] = json.loads(data)
                     return parsed
             except Exception as e:
-                logger.error(f"Valkey get_status failed: {e}.")
+                raise RuntimeError(f"Valkey get_status failed: {e}") from e
 
         return self._fallback_db.get(job_id)
 
     async def dequeue(self, timeout: int = 1) -> dict[str, Any] | None:
         self._cleanup_memory_jobs()
+        self._require_client()
         if self._client:
             try:
                 res: Any = await self._client.blpop("queue:jobs", timeout=timeout)
@@ -112,7 +116,7 @@ class ValkeyQueue(JobQueue):
                     job_id = res[1]
                     return await self.get_status(job_id)
             except Exception as e:
-                logger.error(f"Valkey dequeue failed: {e}. Falling back to memory queue.")
+                raise RuntimeError(f"Valkey dequeue failed: {e}") from e
         # memory fallback
         if self._fallback_queue:
             job_id = self._fallback_queue.pop(0)
@@ -121,6 +125,7 @@ class ValkeyQueue(JobQueue):
 
     async def update_job(self, job_id: str, updates: dict[str, Any]) -> None:
         self._cleanup_memory_jobs()
+        self._require_client()
         job_data = await self.get_status(job_id)
         if not job_data:
             return
@@ -136,7 +141,7 @@ class ValkeyQueue(JobQueue):
                     await self._client.set(f"job:{job_id}", json.dumps(job_data))
                 return
             except Exception as e:
-                logger.error(f"Valkey update_job failed: {e}.")
+                raise RuntimeError(f"Valkey update_job failed: {e}") from e
 
         self._fallback_db[job_id] = job_data
 

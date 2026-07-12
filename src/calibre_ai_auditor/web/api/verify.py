@@ -12,18 +12,23 @@ instead of a single aggregate MetadataResolution.
 
 import asyncio
 import logging
+from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+from uuid import uuid4
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
+from sqlmodel import Session, col, desc, select
 
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
-from calibre_ai_auditor.config.settings import load_settings
+from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
+from calibre_ai_auditor.storage.db import get_engine
+from calibre_ai_auditor.storage.models import VerificationResult, VerificationRun
 from calibre_ai_auditor.verification.engine import (
     ContentVerificationEngine,
     DeclaredMetadata,
@@ -78,15 +83,23 @@ class VerifyRunEnvelope(BaseModel):
     data: VerifyRunDetail
 
 
-# In-memory run state. In production this would go to Postgres / Valkey.
-_runs: dict[str, dict[str, Any]] = {}
+def get_settings() -> Settings:
+    return load_settings()
+
+
+def get_session(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Generator[Session, None, None]:
+    with Session(get_engine(settings)) as session:
+        yield session
 
 
 @router.post("", response_model=VerifyStartEnvelope)
 async def start_verify(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_session)],
     req: VerifyRequest = Body(default_factory=VerifyRequest),
 ) -> VerifyStartEnvelope:
-    settings = load_settings()
     lib_path = Path(req.library) if req.library else settings.library.path
     if not lib_path:
         raise HTTPException(status_code=400, detail="No library path configured")
@@ -99,21 +112,24 @@ async def start_verify(
     if req.limit:
         books = books[: req.limit]
 
-    run_id = f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    run_id = f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
     started_at = datetime.now(UTC)
     metrics = get_metrics()
     metrics.set_run_progress(run_id, total=len(books), completed=0)
 
     # Run synchronously in the background (FastAPI threadpool) so the
     # caller can poll /verify/{run_id} for progress.
-    _runs[run_id] = {
-        "status": "running",
-        "started_at": started_at,
-        "total": len(books),
-        "completed": 0,
-        "counts": {"no_change": 0, "suggest_fix": 0, "needs_review": 0, "defer": 0},
-        "verdicts": [],
-    }
+    session.add(
+        VerificationRun(
+            run_id=run_id,
+            started_at=started_at,
+            total=len(books),
+            counts={"no_change": 0, "suggest_fix": 0, "needs_review": 0, "defer": 0},
+            use_llm=req.use_llm,
+        )
+    )
+    session.commit()
+    database_engine = session.get_bind()
 
     async def _run() -> None:
         engine = ContentVerificationEngine()
@@ -232,19 +248,38 @@ async def start_verify(
                     observed=observed,
                 )
 
-                _runs[run_id]["verdicts"].append(verdict.model_dump())
-                _runs[run_id]["counts"][verdict.action.value] = _runs[run_id]["counts"].get(verdict.action.value, 0) + 1
+                with Session(database_engine) as result_session:
+                    durable_run = result_session.exec(
+                        select(VerificationRun).where(VerificationRun.run_id == run_id)
+                    ).one()
+                    counts = dict(durable_run.counts)
+                    counts[verdict.action.value] = counts.get(verdict.action.value, 0) + 1
+                    durable_run.counts = counts
+                    durable_run.completed = i
+                    result_session.add(
+                        VerificationResult(
+                            result_id=str(uuid4()),
+                            run_id=run_id,
+                            book_key=book_key,
+                            verdict=verdict.model_dump(mode="json"),
+                        )
+                    )
+                    result_session.add(durable_run)
+                    result_session.commit()
                 metrics.record_book_action(verdict.action.value, run_id)
                 await store.mark_completed(book_key)
-                _runs[run_id]["completed"] = i
                 metrics.set_run_progress(run_id, total=len(books), completed=i)
             except Exception as e:  # pragma: no cover — defensive
                 logger.warning("Verify failed for book %s: %s", book.get("id"), e)
                 await store.mark_failed(f"calibre:{book['id']}")
 
-        _runs[run_id]["status"] = "completed"
-        _runs[run_id]["finished_at"] = datetime.now(UTC)
-        logger.info("Verify run %s completed: %s", run_id, _runs[run_id]["counts"])
+        with Session(database_engine) as finish_session:
+            durable_run = finish_session.exec(select(VerificationRun).where(VerificationRun.run_id == run_id)).one()
+            durable_run.status = "completed"
+            durable_run.finished_at = datetime.now(UTC)
+            finish_session.add(durable_run)
+            finish_session.commit()
+            logger.info("Verify run %s completed: %s", run_id, durable_run.counts)
 
     # Fire-and-forget; the run id is returned to the caller
     asyncio.create_task(_run())
@@ -260,41 +295,30 @@ async def start_verify(
 
 
 @router.get("/runs", response_model=VerifyRunsEnvelope)
-async def list_verify_runs() -> VerifyRunsEnvelope:
+async def list_verify_runs(session: Annotated[Session, Depends(get_session)]) -> VerifyRunsEnvelope:
     """List all verify runs with summary stats."""
-    runs_summary = []
-    for rid, r in _runs.items():
-        finished_at = r.get("finished_at")
-        runs_summary.append(
-            {
-                "run_id": rid,
-                "status": r["status"],
-                "started_at": r["started_at"].isoformat(),
-                "finished_at": finished_at.isoformat() if finished_at else None,
-                "total": r["total"],
-                "completed": r["completed"],
-                "counts": r["counts"],
-            }
-        )
-    return VerifyRunsEnvelope(data={"runs": [VerifyRunSummary.model_validate(run) for run in runs_summary]})
+    runs = session.exec(select(VerificationRun).order_by(desc(VerificationRun.started_at)).limit(100)).all()
+    return VerifyRunsEnvelope(data={"runs": [VerifyRunSummary.model_validate(run) for run in runs]})
 
 
 @router.get("/{run_id}", response_model=VerifyRunEnvelope)
-async def get_verify_run(run_id: str) -> VerifyRunEnvelope:
+async def get_verify_run(run_id: str, session: Annotated[Session, Depends(get_session)]) -> VerifyRunEnvelope:
     """Get progress + per-book verdicts for a verify run."""
-    if run_id not in _runs:
+    durable_run = session.exec(select(VerificationRun).where(VerificationRun.run_id == run_id)).first()
+    if durable_run is None:
         raise HTTPException(status_code=404, detail=f"Verify run not found: {run_id}")
-    r = _runs[run_id]
-    finished_at = r.get("finished_at")
+    results = session.exec(
+        select(VerificationResult).where(VerificationResult.run_id == run_id).order_by(col(VerificationResult.id))
+    ).all()
     return VerifyRunEnvelope(
         data=VerifyRunDetail(
             run_id=run_id,
-            status=r["status"],
-            started_at=r["started_at"],
-            finished_at=finished_at,
-            total=r["total"],
-            completed=r["completed"],
-            counts=r["counts"],
-            verdicts=r["verdicts"],
+            status=durable_run.status,
+            started_at=durable_run.started_at,
+            finished_at=durable_run.finished_at,
+            total=durable_run.total,
+            completed=durable_run.completed,
+            counts=durable_run.counts,
+            verdicts=[result.verdict for result in results],
         )
     )

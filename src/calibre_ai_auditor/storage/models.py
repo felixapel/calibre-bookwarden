@@ -141,6 +141,33 @@ class OutboxEvent(SQLModel, table=True):
     last_error: str | None = None
 
 
+class VerificationRun(SQLModel, table=True):
+    """Durable progress and aggregate counts for a verification run."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(index=True, unique=True)
+    status: str = Field(default="running", index=True)
+    started_at: datetime = Field(default_factory=utc_now)
+    finished_at: datetime | None = None
+    total: int = 0
+    completed: int = 0
+    counts: dict[str, int] = Field(default_factory=dict, sa_column=Column(JSON))
+    use_llm: bool = False
+
+
+class VerificationResult(SQLModel, table=True):
+    """One immutable per-book verdict belonging to a verification run."""
+
+    __table_args__ = (UniqueConstraint("run_id", "book_key", name="uq_verificationresult_run_book"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    result_id: str = Field(index=True, unique=True)
+    run_id: str = Field(index=True)
+    book_key: str = Field(index=True)
+    verdict: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class CoverVisionCache(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     sha256: str | None = Field(default=None, index=True)

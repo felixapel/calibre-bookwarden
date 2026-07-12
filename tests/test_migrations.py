@@ -22,6 +22,8 @@ def test_clean_database_upgrades_and_downgrades(tmp_path: Path) -> None:
     assert "bookrecord" in tables
     assert "operationledger" in tables
     assert "outboxevent" in tables
+    assert "verificationrun" in tables
+    assert "verificationresult" in tables
 
     command.downgrade(config, "base")
 
