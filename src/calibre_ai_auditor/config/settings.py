@@ -189,6 +189,8 @@ class Settings(BaseSettings):
         "localhost,127.0.0.1,testserver",
         validation_alias=AliasChoices("BOOKAUDIT_TRUSTED_HOSTS", "trusted_hosts"),
     )
+    require_writer_ready: bool = False
+    writer_heartbeat_max_age_seconds: int = Field(default=300, ge=10, le=3600)
 
     # Flat aliases for common Docker env vars
     library_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH"))

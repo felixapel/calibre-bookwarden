@@ -43,6 +43,12 @@ restored Alembic head `6a3f83d9e621` successfully.
 4. Start `app` in read-only mode and require readiness to pass.
 5. Start the single writer only after the read-only gate is healthy.
 
+The full production profile sets `BOOKAUDIT_REQUIRE_WRITER_READY=true`. Once the
+writer is enabled, `/api/health/ready` and the writer container healthcheck both
+require a fresh Valkey heartbeat. During the temporary read-only upgrade gate,
+set it to `false` for the app only; restore it to `true` before declaring the
+write-enabled deployment healthy.
+
 Runtime services never run migrations automatically.
 
 ## Rollback

@@ -19,6 +19,7 @@ services:
       BOOKAUDIT_RATE_LIMITS__ENABLED: "true"
       BOOKAUDIT_RATE_LIMITS__BACKEND: valkey
       BOOKAUDIT_RATE_LIMITS__VALKEY_URL: redis://valkey:6379/1
+      BOOKAUDIT_REQUIRE_WRITER_READY: ${BOOKAUDIT_REQUIRE_WRITER_READY:-true}
       BOOKAUDIT_READ_ONLY: "true"
     volumes:
       - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:ro
@@ -77,6 +78,12 @@ services:
         condition: service_healthy
       valkey:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "bookaudit", "writer-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   migrate:
     image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}

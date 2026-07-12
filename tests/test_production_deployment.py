@@ -21,3 +21,10 @@ def test_compose_uses_current_configurable_image_reference() -> None:
 
     assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}") == 3
     assert "calibre-ai-auditor:v0.1" not in compose
+
+
+def test_compose_requires_and_health_checks_the_single_writer() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text()
+
+    assert "BOOKAUDIT_REQUIRE_WRITER_READY: ${BOOKAUDIT_REQUIRE_WRITER_READY:-true}" in compose
+    assert '["CMD", "bookaudit", "writer-health"]' in compose

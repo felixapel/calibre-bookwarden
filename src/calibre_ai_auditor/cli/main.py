@@ -5,6 +5,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import uuid4
 
 import typer
 from sqlalchemy import text
@@ -662,6 +663,26 @@ def mcp(
 
 
 @app.command()
+def writer_health(ctx: typer.Context) -> None:
+    """Exit successfully only when the production writer heartbeat is fresh."""
+    from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+
+    settings: Settings = ctx.obj
+    if settings.queue.backend != "valkey":
+        raise typer.Exit(1)
+    try:
+        heartbeat = read_writer_heartbeat(
+            settings.queue.valkey_url,
+            timeout=settings.queue.connect_timeout_seconds,
+        )
+    except Exception:
+        raise typer.Exit(1) from None
+    if not heartbeat_is_fresh(heartbeat, max_age_seconds=settings.writer_heartbeat_max_age_seconds):
+        raise typer.Exit(1)
+    typer.echo("writer heartbeat is fresh")
+
+
+@app.command()
 def writer(
     ctx: typer.Context,
     poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.1)] = 1.0,
@@ -694,6 +715,7 @@ def writer(
             raise typer.Exit(1)
     cli = CalibreCLI(settings.library.path)
     metadata_writer = MetadataWriter(cli, ApplyEngine(cli, settings.storage.artifacts_dir))
+    heartbeat_owner = str(uuid4())
 
     with Session(engine) as recovery_session:
         reconciled = reconcile_incomplete_operations(recovery_session, cli)
@@ -701,6 +723,14 @@ def writer(
             typer.echo(f"Reconciled {len(reconciled)} interrupted operations")
 
     while True:
+        if settings.queue.backend == "valkey":
+            from calibre_ai_auditor.apply.heartbeat import publish_writer_heartbeat
+
+            publish_writer_heartbeat(
+                settings.queue.valkey_url,
+                heartbeat_owner,
+                timeout=settings.queue.connect_timeout_seconds,
+            )
         with Session(engine) as session:
             operation_id = claim_next_operation(session)
             if operation_id:

@@ -105,6 +105,22 @@ async def readiness_check(settings: Settings = Depends(get_settings)) -> dict[st
     except Exception as exc:
         checks["rate_limit_valkey"] = {"ok": False, "error": type(exc).__name__}
 
+    if settings.require_writer_ready:
+        try:
+            from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+
+            heartbeat = read_writer_heartbeat(
+                settings.queue.valkey_url,
+                timeout=settings.queue.connect_timeout_seconds,
+            )
+            writer_ok = heartbeat_is_fresh(
+                heartbeat,
+                max_age_seconds=settings.writer_heartbeat_max_age_seconds,
+            )
+            checks["writer"] = {"ok": writer_ok}
+        except Exception as exc:
+            checks["writer"] = {"ok": False, "error": type(exc).__name__}
+
     if not all(check["ok"] for check in checks.values()):
         raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
     return {"status": "ready", "checks": checks}
