@@ -96,20 +96,11 @@ def test_lock_field_persists(test_db: Any) -> None:
         assert book.field_locks.get("title") == "Locked Title"
 
 
-def test_apply_requires_force(test_db: Any) -> None:
-    from calibre_ai_auditor.config.settings import Settings
-    from calibre_ai_auditor.web.api import apply as apply_module
+def test_apply_only_queues_operations(test_db: Any) -> None:
+    response = client.post("/api/apply", json={"force": False})
 
-    writable = Settings()
-    writable.library.read_only = False
-    original_load = apply_module.load_settings
-    apply_module.load_settings = lambda: writable
-    try:
-        response = client.post("/api/apply", json={"force": False})
-        assert response.status_code == 400
-        assert "force" in response.json()["detail"].lower()
-    finally:
-        apply_module.load_settings = original_load
+    assert response.status_code == 200
+    assert response.json()["data"]["queued_count"] == 0
 
 
 def test_reject_patch(test_db: Any) -> None:

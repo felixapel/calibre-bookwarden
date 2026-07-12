@@ -228,7 +228,7 @@ class ConservativeAutoApply:
 
     def __init__(
         self,
-        store: RestorePointStore,
+        store: RestorePointStore | None = None,
         *,
         allow_high_risk: bool = False,
         dry_run: bool = True,

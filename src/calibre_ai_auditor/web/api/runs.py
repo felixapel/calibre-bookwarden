@@ -7,13 +7,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, col, desc, select
 
-from calibre_ai_auditor.apply.engine import ApplyEngine
+from calibre_ai_auditor.apply.coordinator import queue_undo_operation
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.storage.db import get_engine
 from calibre_ai_auditor.storage.models import BookRecord, Change, Run
 from calibre_ai_auditor.web.jobs import get_job_status, start_job
-from calibre_ai_auditor.web.safety import require_write_confirmation
 from calibre_ai_auditor.web.schemas import RevertRequest
 
 router = APIRouter()
@@ -149,13 +148,10 @@ async def get_job(job_id: str) -> dict[str, Any]:
 async def revert_run(
     run_id: str,
     session: Annotated[Session, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
     req: RevertRequest = Body(default_factory=RevertRequest),
 ) -> dict[str, Any]:
-    require_write_confirmation(settings, force=req.force)
-
-    if not settings.library.path:
-        raise HTTPException(status_code=400, detail="Library path not set")
+    if not req.force:
+        raise HTTPException(status_code=400, detail="Revert requires explicit confirmation with force=true")
 
     # Find all changes for this run
     changes_stmt = (
@@ -171,33 +167,12 @@ async def revert_run(
             "data": {"message": f"No active changes found to revert for run {run_id}"},
         }
 
-    cli = CalibreCLI(settings.library.path)
-    apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
-
-    reverted_count = 0
-    errors = []
-
-    for change in changes:
-        try:
-            apply_engine.undo_change(session, change)
-
-            # Reset book record status back to suggest_fix
-            book_stmt = select(BookRecord).where(BookRecord.book_key == change.book_key)
-            book = session.exec(book_stmt).first()
-            if book:
-                book.status = "suggest_fix"
-                session.add(book)
-
-            reverted_count += 1
-        except Exception as e:
-            errors.append(f"Failed to revert change {change.id} for book {change.book_key}: {e}")
-
-    session.commit()
-
-    if errors:
-        raise HTTPException(status_code=500, detail=f"Revert completed with errors: {'; '.join(errors)}")
+    operation_ids = [queue_undo_operation(session, change) for change in changes]
 
     return {
         "status": "success",
-        "data": {"message": f"Successfully reverted {reverted_count} changes for run {run_id}"},
+        "data": {
+            "message": f"Queued {len(operation_ids)} undo operations for run {run_id}",
+            "operation_ids": operation_ids,
+        },
     }

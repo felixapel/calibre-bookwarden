@@ -638,5 +638,42 @@ def mcp(
     mcp_app.run()
 
 
+@app.command()
+def writer(
+    ctx: typer.Context,
+    poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.1)] = 1.0,
+    once: Annotated[bool, typer.Option("--once")] = False,
+) -> None:
+    """Run the dedicated durable metadata writer loop."""
+    import time
+
+    from sqlmodel import Session
+
+    from calibre_ai_auditor.apply.writer import MetadataWriter, claim_next_operation, reconcile_incomplete_operations
+
+    settings: Settings = ctx.obj
+    if not settings.library.path:
+        typer.secho("Writer requires BOOKAUDIT_LIBRARY_PATH", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    engine = get_engine(settings)
+    cli = CalibreCLI(settings.library.path)
+    metadata_writer = MetadataWriter(cli, ApplyEngine(cli, settings.storage.artifacts_dir))
+
+    with Session(engine) as recovery_session:
+        reconciled = reconcile_incomplete_operations(recovery_session, cli)
+        if reconciled:
+            typer.echo(f"Reconciled {len(reconciled)} interrupted operations")
+
+    while True:
+        with Session(engine) as session:
+            operation_id = claim_next_operation(session)
+            if operation_id:
+                metadata_writer.process(session, operation_id)
+        if once:
+            return
+        if operation_id is None:
+            time.sleep(poll_seconds)
+
+
 if __name__ == "__main__":
     app()

@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class InspectRequest(BaseModel):
@@ -24,6 +24,12 @@ class LockFieldRequest(BaseModel):
 
 class ApplyRequest(BaseModel):
     force: bool = False
+    authorization_ids: dict[str, str] = Field(default_factory=dict)
+
+
+class ManualAuthorizationRequest(BaseModel):
+    actor: str
+    reason: str
 
 
 class RevertRequest(BaseModel):

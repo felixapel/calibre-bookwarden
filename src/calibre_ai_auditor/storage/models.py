@@ -168,6 +168,20 @@ class VerificationResult(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class ManualAuthorization(SQLModel, table=True):
+    """Immutable operator approval bound to one exact verdict patch."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    authorization_id: str = Field(index=True, unique=True)
+    book_key: str = Field(index=True)
+    run_id: str = Field(index=True)
+    verdict_hash: str = Field(index=True)
+    patch_hash: str = Field(index=True)
+    actor: str
+    reason: str
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class CoverVisionCache(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     sha256: str | None = Field(default=None, index=True)

@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Generator
 from typing import Any, cast
 
@@ -6,17 +5,22 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import update
 from sqlmodel import Session, select
 
-from calibre_ai_auditor.apply.engine import ApplyEngine
-from calibre_ai_auditor.calibre.cli import CalibreCLI
+from calibre_ai_auditor.apply.coordinator import (
+    create_manual_authorization,
+    queue_approved_operations,
+    queue_undo_operation,
+)
 from calibre_ai_auditor.config.settings import load_settings
 from calibre_ai_auditor.storage.db import get_engine
 from calibre_ai_auditor.storage.models import BookRecord, Change, EvidencePackage
-from calibre_ai_auditor.verification.restore import ConservativeAutoApply, RestorePointStore
 from calibre_ai_auditor.verification.verdict import BookVerdict
-from calibre_ai_auditor.web.safety import require_write_confirmation
-from calibre_ai_auditor.web.schemas import APIResponse, ApplyRequest, LockFieldRequest, UndoRequest
-
-logger = logging.getLogger(__name__)
+from calibre_ai_auditor.web.schemas import (
+    APIResponse,
+    ApplyRequest,
+    LockFieldRequest,
+    ManualAuthorizationRequest,
+    UndoRequest,
+)
 
 router = APIRouter(prefix="", tags=["Review and Apply"])
 
@@ -91,88 +95,51 @@ async def apply_patches(
     req: ApplyRequest = Body(default_factory=ApplyRequest),
     session: Session = Depends(get_session),
 ) -> Any:
-    settings = load_settings()
-    require_write_confirmation(settings, force=req.force)
-
-    if not settings.library.path:
-        raise HTTPException(status_code=400, detail="Library path not set")
-
-    # Find books that have been approved / marked safe
-    statement = select(BookRecord).where(BookRecord.status == "suggest_fix")
-    books = session.exec(statement).all()
-
-    if not books:
-        return {
-            "status": "success",
-            "data": {"message": "No pending approved fixes to apply", "applied_count": 0},
-        }
-
-    cli = CalibreCLI(settings.library.path)
-    apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
-    gate = ConservativeAutoApply(
-        RestorePointStore(settings.storage.artifacts_dir),
-        dry_run=False,
+    result = queue_approved_operations(
+        session,
+        authorization_ids=req.authorization_ids,
     )
-    applied_count = 0
-
-    for book in books:
-        # Retrieve the matching evidence package for the book's current run
-        ev_stmt = (
-            select(EvidencePackage)
-            .where(EvidencePackage.book_key == book.book_key)
-            .where(EvidencePackage.run_id == book.run_id)
-        )
-        pkg = session.exec(ev_stmt).first()
-        if not pkg or not pkg.decision:
-            continue
-
-        try:
-            verdict = BookVerdict.model_validate(pkg.decision)
-        except ValueError as exc:
-            logger.warning("Invalid persisted verdict for %s: %s", book.book_key, exc)
-            continue
-
-        if verdict.book_key != book.book_key or verdict.run_id != book.run_id:
-            logger.warning("Persisted verdict identity mismatch for %s", book.book_key)
-            continue
-
-        eligible, reason = gate.is_eligible(verdict)
-        if not eligible:
-            logger.info("Skipping ineligible patch for %s: %s", book.book_key, reason)
-            continue
-
-        patch = dict(verdict.proposed_patch)
-        if not patch:
-            continue
-
-        locks = book.field_locks or {}
-        if locks:
-            patch = {k: v for k, v in patch.items() if k not in locks}
-        if not patch:
-            continue
-
-        if book.id is None or not claim_book_for_apply(session, book.id):
-            logger.info("Skipping already-claimed patch for %s", book.book_key)
-            continue
-
-        try:
-            change = apply_engine.apply_patch(session, book, patch)
-            session.add(change)
-            book.status = "applied"
-            session.add(book)
-            applied_count += 1
-            session.commit()
-        except Exception as e:
-            # Log failure but continue with other books
-            logger.error(f"Failed to apply patch for book {book.book_key}: {e}")
-            book.status = "error"
-            session.add(book)
-            session.commit()
 
     return {
         "status": "success",
-        "data": {"message": f"Applied {applied_count} patches", "applied_count": applied_count},
+        "data": {
+            "message": f"Queued {len(result.queued_operation_ids)} metadata operations",
+            "queued_count": len(result.queued_operation_ids),
+            "operation_ids": result.queued_operation_ids,
+            "skipped_book_keys": result.skipped_book_keys,
+        },
     }
+
+
+@router.post("/review/{book_key}/authorize", response_model=APIResponse)
+async def authorize_patch(
+    book_key: str,
+    req: ManualAuthorizationRequest,
+    session: Session = Depends(get_session),
+) -> Any:
+    book = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book record not found")
+    package = session.exec(
+        select(EvidencePackage)
+        .where(EvidencePackage.book_key == book.book_key)
+        .where(EvidencePackage.run_id == book.run_id)
+    ).first()
+    if package is None or package.decision is None:
+        raise HTTPException(status_code=409, detail="No persisted verdict is available")
+    try:
+        verdict = BookVerdict.model_validate(package.decision)
+        authorization = create_manual_authorization(
+            session,
+            book=book,
+            verdict=verdict,
+            actor=req.actor,
+            reason=req.reason,
+        )
+        session.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return {"status": "success", "data": {"authorization_id": authorization.authorization_id}}
 
 
 @router.post("/undo/{change_id}", response_model=APIResponse)
@@ -186,30 +153,14 @@ async def undo_change(
     if not change:
         raise HTTPException(status_code=404, detail="Change not found")
 
-    settings = load_settings()
-    require_write_confirmation(settings, force=req.force)
-
-    if not settings.library.path:
-        raise HTTPException(status_code=400, detail="Library path not set")
+    if not req.force:
+        raise HTTPException(status_code=400, detail="Undo requires explicit confirmation with force=true")
 
     if change.status == "undone":
         raise HTTPException(status_code=400, detail="Change is already undone")
 
-    cli = CalibreCLI(settings.library.path)
-    apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
-
-    try:
-        apply_engine.undo_change(session, change)
-
-        # Reset book record status back to suggest_fix
-        book_stmt = select(BookRecord).where(BookRecord.book_key == change.book_key)
-        book = session.exec(book_stmt).first()
-        if book:
-            book.status = "suggest_fix"
-            session.add(book)
-
-        session.commit()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to undo change: {e}") from None
-
-    return {"status": "success", "data": {"message": f"Change {change_id} successfully undone"}}
+    operation_id = queue_undo_operation(session, change)
+    return {
+        "status": "success",
+        "data": {"message": f"Change {change_id} queued for undo", "operation_id": operation_id},
+    }

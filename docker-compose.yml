@@ -37,6 +37,33 @@ services:
       retries: 3
       start_period: 10s
 
+  writer:
+    image: calibre-ai-auditor:v0.1
+    user: "${UID:-1000}:${GID:-1000}"
+    restart: unless-stopped
+    command: ["writer"]
+    env_file:
+      - .env
+    environment:
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_LIBRARY_PATH: /library
+      BOOKAUDIT_ARTIFACTS_DIR: /artifacts
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_DATABASE__POSTGRES_DSN:?set in .env}
+      BOOKAUDIT_QUEUE__BACKEND: valkey
+      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
+      BOOKAUDIT_READ_ONLY: "false"
+      BOOKAUDIT_LOG_JSON: "true"
+    volumes:
+      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:rw
+      - ./.artifacts:/artifacts
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+
   tika:
     image: apache/tika:latest
     restart: unless-stopped

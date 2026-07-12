@@ -112,15 +112,15 @@ export default function Review() {
       return
     }
     const confirmed = window.confirm(
-      `Apply ${approved.length} approved metadata patch(es) to your Calibre library? ` +
-        'OPF backups will be created first. This cannot be undone except via Changes & Undo.'
+      `Queue ${approved.length} approved metadata patch(es) for the dedicated writer? ` +
+        'The writer will create restore points and verify every completed target.'
     )
     if (!confirmed) return
 
     setApplying(true)
     try {
       const res = await applyPatches(true)
-      showToast(res.data?.message || 'Approved patches applied successfully', 'success')
+      showToast(res.data?.message || 'Approved patches queued successfully', 'success')
       loadBooks()
     } catch (e: any) {
       showToast(e.message || 'Failed to apply approved patches', 'error')
@@ -329,12 +329,12 @@ export default function Review() {
             {applying ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Applying fixes...
+                Queueing fixes...
               </>
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5" />
-                Apply Approved Fixes
+                Queue Approved Fixes
               </>
             )}
           </button>

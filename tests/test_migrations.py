@@ -24,6 +24,7 @@ def test_clean_database_upgrades_and_downgrades(tmp_path: Path) -> None:
     assert "outboxevent" in tables
     assert "verificationrun" in tables
     assert "verificationresult" in tables
+    assert "manualauthorization" in tables
 
     command.downgrade(config, "base")
 

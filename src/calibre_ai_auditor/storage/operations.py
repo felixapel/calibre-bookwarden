@@ -10,7 +10,7 @@ from calibre_ai_auditor.storage.models import OperationLedger, OutboxEvent, utc_
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "requested": frozenset({"claimed", "cancelled"}),
     "claimed": frozenset({"writing", "failed", "cancelled"}),
-    "writing": frozenset({"verifying", "unknown"}),
+    "writing": frozenset({"verifying", "restoring", "unknown"}),
     "verifying": frozenset({"succeeded", "restoring", "unknown"}),
     "restoring": frozenset({"restored", "restore_failed"}),
     "succeeded": frozenset(),

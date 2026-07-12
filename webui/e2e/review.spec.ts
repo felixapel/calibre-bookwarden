@@ -135,9 +135,9 @@ test.describe('Review page — v1.0 per-field verdicts', () => {
     await expect(page.locator('button:has-text("The Great Gatsby")')).toHaveCount(0)
   })
 
-  test('Apply Approved Fixes button is enabled when there are approved books', async ({ page }) => {
+  test('Queue Approved Fixes button is enabled when there are approved books', async ({ page }) => {
     await page.goto('/review')
-    const applyButton = page.locator('button:has-text("Apply Approved Fixes")')
+    const applyButton = page.locator('button:has-text("Queue Approved Fixes")')
     // With 4 SAMPLE_BOOKS, 3 of which are in suggest_fix/needs_review/audited status,
     // the button should be enabled (the queue is non-empty).
     await expect(applyButton).toBeEnabled()
