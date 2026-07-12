@@ -14,7 +14,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel
@@ -49,14 +49,43 @@ class VerifyStartResponse(BaseModel):
     status: str = "running"
 
 
+class VerifyRunSummary(BaseModel):
+    run_id: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    total: int
+    completed: int
+    counts: dict[str, int]
+
+
+class VerifyRunDetail(VerifyRunSummary):
+    verdicts: list[dict[str, Any]]
+
+
+class VerifyStartEnvelope(BaseModel):
+    status: Literal["success"] = "success"
+    data: VerifyStartResponse
+
+
+class VerifyRunsEnvelope(BaseModel):
+    status: Literal["success"] = "success"
+    data: dict[Literal["runs"], list[VerifyRunSummary]]
+
+
+class VerifyRunEnvelope(BaseModel):
+    status: Literal["success"] = "success"
+    data: VerifyRunDetail
+
+
 # In-memory run state. In production this would go to Postgres / Valkey.
 _runs: dict[str, dict[str, Any]] = {}
 
 
-@router.post("", response_model=VerifyStartResponse)
+@router.post("", response_model=VerifyStartEnvelope)
 async def start_verify(
     req: VerifyRequest = Body(default_factory=VerifyRequest),
-) -> VerifyStartResponse:
+) -> VerifyStartEnvelope:
     settings = load_settings()
     lib_path = Path(req.library) if req.library else settings.library.path
     if not lib_path:
@@ -220,16 +249,18 @@ async def start_verify(
     # Fire-and-forget; the run id is returned to the caller
     asyncio.create_task(_run())
 
-    return VerifyStartResponse(
-        run_id=run_id,
-        started_at=started_at,
-        total=len(books),
-        status="running",
+    return VerifyStartEnvelope(
+        data=VerifyStartResponse(
+            run_id=run_id,
+            started_at=started_at,
+            total=len(books),
+            status="running",
+        )
     )
 
 
-@router.get("/runs")
-async def list_verify_runs() -> dict[str, Any]:
+@router.get("/runs", response_model=VerifyRunsEnvelope)
+async def list_verify_runs() -> VerifyRunsEnvelope:
     """List all verify runs with summary stats."""
     runs_summary = []
     for rid, r in _runs.items():
@@ -245,23 +276,25 @@ async def list_verify_runs() -> dict[str, Any]:
                 "counts": r["counts"],
             }
         )
-    return {"runs": runs_summary}
+    return VerifyRunsEnvelope(data={"runs": [VerifyRunSummary.model_validate(run) for run in runs_summary]})
 
 
-@router.get("/{run_id}")
-async def get_verify_run(run_id: str) -> dict[str, Any]:
+@router.get("/{run_id}", response_model=VerifyRunEnvelope)
+async def get_verify_run(run_id: str) -> VerifyRunEnvelope:
     """Get progress + per-book verdicts for a verify run."""
     if run_id not in _runs:
         raise HTTPException(status_code=404, detail=f"Verify run not found: {run_id}")
     r = _runs[run_id]
     finished_at = r.get("finished_at")
-    return {
-        "run_id": run_id,
-        "status": r["status"],
-        "started_at": r["started_at"].isoformat(),
-        "finished_at": finished_at.isoformat() if finished_at else None,
-        "total": r["total"],
-        "completed": r["completed"],
-        "counts": r["counts"],
-        "verdicts": r["verdicts"],
-    }
+    return VerifyRunEnvelope(
+        data=VerifyRunDetail(
+            run_id=run_id,
+            status=r["status"],
+            started_at=r["started_at"],
+            finished_at=finished_at,
+            total=r["total"],
+            completed=r["completed"],
+            counts=r["counts"],
+            verdicts=r["verdicts"],
+        )
+    )

@@ -5,7 +5,7 @@
  * that match the v1.0 contract. Tests use these via api-mock.ts.
  */
 
-import type { BookVerdict, FieldVerdict } from './types'
+import type { BookVerdict } from './types'
 
 export const SAMPLE_BOOK_VERDICT_CONFIRMED: BookVerdict = {
   book_key: 'calibre:1',

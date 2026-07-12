@@ -178,7 +178,7 @@ export interface VerifyRunSummary {
 }
 
 export interface VerifyRunDetail extends VerifyRunSummary {
-  verdicts: any[]
+  verdicts: unknown[]
 }
 
 export const startVerify = async (req: {

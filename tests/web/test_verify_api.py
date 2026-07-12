@@ -17,8 +17,7 @@ def test_verify_runs_endpoint_empty(client: TestClient) -> None:
     """GET /api/verify/runs returns empty list initially."""
     r = client.get("/api/verify/runs")
     assert r.status_code == 200
-    assert "runs" in r.json()
-    assert r.json()["runs"] == []
+    assert r.json() == {"status": "success", "data": {"runs": []}}
 
 
 def test_verify_unknown_run_returns_404(client: TestClient) -> None:
