@@ -184,6 +184,32 @@ def test_backup_manifest_rejects_symlinked_input(tmp_path: Path) -> None:
         _verify_backup_manifest(manifest)
 
 
+def test_backup_manifest_rejects_symlinked_parent(tmp_path: Path) -> None:
+    backup_root = tmp_path / "real-backups"
+    backup_root.mkdir()
+    database_dump = backup_root / "database.dump"
+    database_dump.write_bytes(b"database backup")
+    archive = backup_root / "artifacts.tar"
+    archive.write_bytes(b"artifact backup")
+    manifest = backup_root / "backup.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "created_at": datetime.now(UTC).isoformat(),
+                "database_dump": database_dump.name,
+                "database_sha256": hashlib.sha256(database_dump.read_bytes()).hexdigest(),
+                "artifacts_archive": archive.name,
+                "artifacts_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+            }
+        )
+    )
+    linked_root = tmp_path / "linked-backups"
+    linked_root.symlink_to(backup_root, target_is_directory=True)
+
+    with pytest.raises(Exit):
+        _verify_backup_manifest(linked_root / manifest.name)
+
+
 def test_production_retention_closes_connection_when_lock_acquisition_errors(tmp_path: Path) -> None:
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()

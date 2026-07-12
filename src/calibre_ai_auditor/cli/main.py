@@ -324,11 +324,17 @@ def undo(
 def _verify_backup_manifest(manifest_path: Path) -> None:
     """Verify the paired database/artifact files named by a retention backup manifest."""
     try:
-        if manifest_path.is_symlink() or not manifest_path.is_file():
+        absolute_manifest = manifest_path.absolute()
+        checked_component = Path(absolute_manifest.anchor)
+        for component in absolute_manifest.parts[1:]:
+            checked_component /= component
+            if checked_component.is_symlink():
+                raise ValueError("backup manifest path contains a symlink")
+        if not absolute_manifest.is_file():
             raise ValueError("backup manifest must be a regular non-symlink file")
-        manifest = json_lib.loads(manifest_path.read_text())
+        manifest = json_lib.loads(absolute_manifest.read_text())
         datetime.fromisoformat(manifest["created_at"])
-        root = manifest_path.resolve().parent
+        root = absolute_manifest.parent
         for file_key, digest_key in (
             ("database_dump", "database_sha256"),
             ("artifacts_archive", "artifacts_sha256"),
