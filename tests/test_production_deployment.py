@@ -30,6 +30,17 @@ def test_compose_requires_and_health_checks_the_single_writer() -> None:
     assert '["CMD", "bookaudit", "writer-health"]' in compose
 
 
+def test_production_preflight_creates_all_bind_mount_targets() -> None:
+    preflight = ROOT / "scripts" / "prepare-production.sh"
+
+    assert preflight.is_file()
+    script = preflight.read_text()
+    for directory in (".state", ".artifacts", ".writer-artifacts", "user_library"):
+        assert directory in script
+    assert "docker compose" in script
+    assert "config -q" in script
+
+
 def test_release_workflow_publishes_only_after_full_gates() -> None:
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text()
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()

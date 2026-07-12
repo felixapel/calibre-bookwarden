@@ -1,5 +1,25 @@
 # Production operations runbook
 
+## First deployment
+
+Copy `.env.example` to `.env`, replace every placeholder with distinct secrets
+and an absolute library path, then run `./scripts/prepare-production.sh`. This
+creates every bind-mount target with the configured runtime UID/GID and validates
+the complete Compose contract before Docker can create root-owned directories.
+
+Build or pull the exact `BOOKAUDIT_IMAGE`, start PostgreSQL and Valkey, run the
+one-shot migration, then start the writer and app:
+
+```bash
+docker compose build app
+docker compose up -d postgres valkey
+docker compose --profile maintenance run --rm migrate
+docker compose up -d writer app
+```
+
+Do not expose the port until both containers report healthy and authenticated
+`/api/health/ready` returns `ready`.
+
 ## Backup
 
 The commands use the PostgreSQL bootstrap administrator inside the private
