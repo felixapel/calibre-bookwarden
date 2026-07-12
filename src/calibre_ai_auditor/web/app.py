@@ -208,6 +208,47 @@ async def enforce_trusted_host(request: Request, call_next: Any) -> Response:
     return response
 
 
+@app.middleware("http")
+async def enforce_production_rate_limit(request: Request, call_next: Any) -> Response:
+    """Limit authenticated API boundary traffic and fail closed without Valkey."""
+    is_api = request.url.path == "/api" or request.url.path.startswith("/api/")
+    if not is_api or request.url.path == "/api/health/live":
+        response: Response = await call_next(request)
+        return response
+
+    from calibre_ai_auditor.config.settings import load_settings
+    from calibre_ai_auditor.web.rate_limit import consume_rate_limit
+
+    settings = load_settings()
+    if settings.profile != "production":
+        response = await call_next(request)
+        return response
+    if not settings.rate_limits.enabled or settings.rate_limits.backend != "valkey":
+        return JSONResponse(status_code=503, content={"detail": "API rate limiting is not configured"})
+
+    consumer = getattr(request.app.state, "rate_limit_consumer", consume_rate_limit)
+    identity = request.client.host if request.client is not None else "unknown"
+    try:
+        retry_after = await consumer(
+            settings.rate_limits.valkey_url,
+            identity,
+            settings.rate_limits.requests_per_window,
+            settings.rate_limits.window_seconds,
+            settings.queue.connect_timeout_seconds,
+        )
+    except Exception:
+        logger.exception("Production API rate limiter is unavailable")
+        return JSONResponse(status_code=503, content={"detail": "API rate limiting is unavailable"})
+    if retry_after:
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            content={"detail": "API request rate exceeded"},
+        )
+    response = await call_next(request)
+    return response
+
+
 app.include_router(health.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(inspect.router, prefix="/api")

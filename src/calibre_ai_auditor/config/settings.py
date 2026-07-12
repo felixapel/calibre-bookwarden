@@ -74,6 +74,8 @@ class RateLimitSettings(BaseModel):
     enabled: bool = True
     backend: str = "memory"
     valkey_url: str = "redis://valkey:6379/1"
+    requests_per_window: int = Field(default=120, ge=1, le=10000)
+    window_seconds: int = Field(default=60, ge=1, le=3600)
 
 
 class VectorSettings(BaseModel):

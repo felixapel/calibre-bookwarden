@@ -6,6 +6,16 @@ from calibre_ai_auditor.web.app import app
 PRODUCTION_KEY = "test-api-key-with-at-least-32-characters"
 
 
+@pytest.fixture(autouse=True)
+def allow_test_requests_through_rate_limit() -> None:
+    async def allow(_url: str, _identity: str, _limit: int, _window: int, _timeout: float) -> int:
+        return 0
+
+    app.state.rate_limit_consumer = allow
+    yield
+    del app.state.rate_limit_consumer
+
+
 def test_production_api_fails_closed_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOOKAUDIT_PROFILE", "production")
     monkeypatch.delenv("BOOKAUDIT_API_KEY", raising=False)
@@ -89,3 +99,31 @@ def test_production_rejects_untrusted_host_before_redirect(monkeypatch: pytest.M
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid host header"
+
+
+def test_production_rate_limit_returns_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def reject(_url: str, _identity: str, _limit: int, _window: int, _timeout: float) -> int:
+        return 17
+
+    monkeypatch.setenv("BOOKAUDIT_PROFILE", "production")
+    monkeypatch.setenv("BOOKAUDIT_API_KEY", PRODUCTION_KEY)
+    app.state.rate_limit_consumer = reject
+
+    response = TestClient(app).get("/api/config", headers={"X-API-Key": PRODUCTION_KEY})
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "17"
+
+
+def test_production_rate_limit_fails_closed_when_valkey_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def unavailable(_url: str, _identity: str, _limit: int, _window: int, _timeout: float) -> int:
+        raise ConnectionError("Valkey unavailable")
+
+    monkeypatch.setenv("BOOKAUDIT_PROFILE", "production")
+    monkeypatch.setenv("BOOKAUDIT_API_KEY", PRODUCTION_KEY)
+    app.state.rate_limit_consumer = unavailable
+
+    response = TestClient(app).get("/api/config", headers={"X-API-Key": PRODUCTION_KEY})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "API rate limiting is unavailable"

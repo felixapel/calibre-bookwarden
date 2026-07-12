@@ -39,6 +39,7 @@ async def readiness_check(settings: Settings = Depends(get_settings)) -> dict[st
     production_contract_ok = (
         settings.database.backend == "postgres"
         and settings.queue.backend == "valkey"
+        and settings.rate_limits.enabled
         and settings.rate_limits.backend == "valkey"
         and settings.library.read_only
         and not settings.allow_remote_file_upload
@@ -79,6 +80,29 @@ async def readiness_check(settings: Settings = Depends(get_settings)) -> dict[st
         checks["valkey"] = {"ok": True}
     except Exception as exc:
         checks["valkey"] = {"ok": False, "error": type(exc).__name__}
+
+    try:
+        import redis.asyncio as aioredis
+
+        rate_client = aioredis.from_url(
+            settings.rate_limits.valkey_url,
+            decode_responses=True,
+            socket_connect_timeout=settings.queue.connect_timeout_seconds,
+            socket_timeout=settings.queue.connect_timeout_seconds,
+        )
+        try:
+            rate_ping = rate_client.ping()
+            if inspect.isawaitable(rate_ping):
+                await rate_ping
+            elif not rate_ping:
+                raise ConnectionError("Rate-limit Valkey ping returned false")
+        finally:
+            rate_close = rate_client.aclose()
+            if inspect.isawaitable(rate_close):
+                await cast(Awaitable[bool], rate_close)
+        checks["rate_limit_valkey"] = {"ok": True}
+    except Exception as exc:
+        checks["rate_limit_valkey"] = {"ok": False, "error": type(exc).__name__}
 
     if not all(check["ok"] for check in checks.values()):
         raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
