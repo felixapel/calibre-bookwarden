@@ -13,6 +13,7 @@ services:
       BOOKAUDIT_DATABASE__BACKEND: postgres
       BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_DATABASE__POSTGRES_DSN:?set in .env}
       BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_LOG_JSON: "true"
       BOOKAUDIT_API_KEY: ${BOOKAUDIT_API_KEY:?set in .env}
       BOOKAUDIT_READ_ONLY: "true"
     volumes:

@@ -1,4 +1,5 @@
 profile: default
+log_json: false
 
 library:
   path: null          # overridden by BOOKAUDIT_LIBRARY_PATH env var

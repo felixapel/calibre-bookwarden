@@ -2,9 +2,11 @@ import contextlib
 import hmac
 import logging
 import os
+import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -38,8 +40,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     from calibre_ai_auditor.ingest.watcher import IngestWatcher
     from calibre_ai_auditor.web.covers import resolve_covers_dir
     from calibre_ai_auditor.web.jobs import start_worker_task, stop_worker_task
+    from calibre_ai_auditor.web.observability import configure_logging
 
     settings = load_settings()
+    configure_logging(settings.log_level, json_enabled=settings.log_json)
 
     if not getattr(_app.state, "covers_mounted", False):
         covers_dir = resolve_covers_dir(settings.storage.artifacts_dir)
@@ -90,6 +94,23 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+@app.middleware("http")
+async def correlate_request(request: Request, call_next: Any) -> Response:
+    from calibre_ai_auditor.web.observability import request_id_context
+
+    supplied = request.headers.get("X-Request-ID", "")
+    request_id = supplied if REQUEST_ID_PATTERN.fullmatch(supplied) else str(uuid4())
+    token = request_id_context.set(request_id)
+    try:
+        response: Response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        request_id_context.reset(token)
 
 
 # Trailing slash redirection middleware for nested frontend routes

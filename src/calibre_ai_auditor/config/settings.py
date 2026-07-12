@@ -178,6 +178,7 @@ class Settings(BaseSettings):
     judge_model: str = "gemma4:e4b-it-q4_K_M"
     vision_model: str = "gemma4:e4b-it-q4_K_M"
     log_level: str = "INFO"
+    log_json: bool = False
     api_key: SecretStr | None = Field(
         None,
         validation_alias=AliasChoices("BOOKAUDIT_API_KEY", "api_key"),

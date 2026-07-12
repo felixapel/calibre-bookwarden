@@ -15,6 +15,7 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
         "profile": settings_dict.get("profile"),
         "allow_remote_file_upload": settings_dict.get("allow_remote_file_upload"),
         "log_level": settings_dict.get("log_level"),
+        "log_json": settings_dict.get("log_json"),
         "judge_model": settings_dict.get("judge_model"),
         "vision_model": settings_dict.get("vision_model"),
     }
