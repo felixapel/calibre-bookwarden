@@ -4,7 +4,7 @@ Key differences from v0.9's ApplyEngine:
   1. Every apply creates a per-book RESTORE POINT (not just an OPF backup).
      The restore point holds: original OPF, original cover (if modified),
      original file copy, and a JSON snapshot of the before/after patch.
-  2. Restore points have TTL (default 7 days) and are auto-cleaned.
+  2. Restore points have TTL (default 30 days) and are auto-cleaned.
   3. Conservative gate runs BEFORE any write:
      - Auto-apply eligible (per BookVerdict.auto_apply_eligible)
      - No high-risk flags in the verdict
@@ -47,7 +47,7 @@ class RestorePoint:
     calibre_book_id: int | None
     applied_at: datetime
     fields_changed: list[str]
-    restore_point_ttl: timedelta = timedelta(days=7)
+    restore_point_ttl: timedelta = timedelta(days=30)
 
     def is_expired(self, now: datetime | None = None) -> bool:
         if now is None:
@@ -70,7 +70,7 @@ class RestorePoint:
 class RestorePointStore:
     """Manages on-disk restore points under <artifacts_dir>/restore/."""
 
-    def __init__(self, artifacts_dir: Path, default_ttl: timedelta = timedelta(days=7)):
+    def __init__(self, artifacts_dir: Path, default_ttl: timedelta = timedelta(days=30)):
         self.artifacts_dir = artifacts_dir
         self.restore_root = artifacts_dir / "restore"
         self.restore_root.mkdir(parents=True, exist_ok=True)
@@ -211,7 +211,7 @@ class RestorePointStore:
                             calibre_book_id=meta.get("calibre_book_id"),
                             applied_at=datetime.fromisoformat(meta["applied_at"]),
                             fields_changed=meta.get("fields_changed", []),
-                            restore_point_ttl=timedelta(seconds=meta.get("ttl_seconds", 7 * 24 * 3600)),
+                            restore_point_ttl=timedelta(seconds=meta.get("ttl_seconds", 30 * 24 * 3600)),
                         )
                     )
                 except (json.JSONDecodeError, KeyError, ValueError):

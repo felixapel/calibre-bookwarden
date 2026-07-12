@@ -75,6 +75,7 @@ def validate_apply_operation(session: Session, operation: OperationLedger, book:
     """Revalidate a sealed queued operation at the privileged writer boundary."""
     if (
         operation.operation_type != "apply_metadata"
+        or operation.policy_version != "v1"
         or operation.run_id != book.run_id
         or operation.calibre_book_id != book.calibre_book_id
         or operation.patch_hash != _hash_json(operation.requested_patch)
@@ -119,6 +120,7 @@ def queue_undo_operation(session: Session, change: Change) -> str:
         run_id=change.run_id,
         requested_patch={"change_id": change.id},
         calibre_book_id=book.calibre_book_id if book else None,
+        expected_before_metadata=change.after_metadata,
     )
     if book:
         book.status = "undo_queued"
@@ -184,6 +186,7 @@ def queue_approved_operations(
             verdict_hash=_hash_verdict(verdict),
             patch_hash=_hash_json(patch),
             field_locks_hash=_hash_json(book.field_locks or {}),
+            expected_before_metadata={field: book.current_metadata.get(field) for field in patch},
         )
         if operation.state == "requested":
             book.status = "apply_queued"

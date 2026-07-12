@@ -22,12 +22,16 @@ def upgrade() -> None:
     op.add_column("change", sa.Column("backup_opf_sha256", sqlmodel.sql.sqltypes.AutoString(), nullable=True))
     op.create_index(op.f("ix_change_operation_id"), "change", ["operation_id"], unique=True)
 
-    for name, column in (
+    for _name, column in (
         ("calibre_book_id", sa.Column("calibre_book_id", sa.Integer(), nullable=True)),
+        ("expected_before_metadata", sa.Column("expected_before_metadata", sa.JSON(), nullable=True)),
         ("verdict_hash", sa.Column("verdict_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=True)),
         ("patch_hash", sa.Column("patch_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=True)),
         ("field_locks_hash", sa.Column("field_locks_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=True)),
-        ("policy_version", sa.Column("policy_version", sqlmodel.sql.sqltypes.AutoString(), nullable=False, server_default="v1")),
+        (
+            "policy_version",
+            sa.Column("policy_version", sqlmodel.sql.sqltypes.AutoString(), nullable=False, server_default="v1"),
+        ),
         ("change_id", sa.Column("change_id", sa.Integer(), nullable=True)),
         ("rollback_opf_path", sa.Column("rollback_opf_path", sqlmodel.sql.sqltypes.AutoString(), nullable=True)),
         ("rollback_opf_sha256", sa.Column("rollback_opf_sha256", sqlmodel.sql.sqltypes.AutoString(), nullable=True)),
@@ -66,6 +70,7 @@ def downgrade() -> None:
         "patch_hash",
         "verdict_hash",
         "calibre_book_id",
+        "expected_before_metadata",
     ):
         op.drop_column("operationledger", name)
     op.drop_index(op.f("ix_change_operation_id"), table_name="change")

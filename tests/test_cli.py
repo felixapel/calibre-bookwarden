@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -24,6 +25,15 @@ def test_config() -> None:
     assert result.exit_code == 0
     assert "profile" in result.stdout
     assert "open_ai_api_key" not in result.stdout  # Should be excluded
+
+
+def test_migrate_runs_explicit_schema_upgrade() -> None:
+    with patch("calibre_ai_auditor.cli.main.init_db") as upgrade:
+        result = runner.invoke(app, ["migrate"])
+
+    assert result.exit_code == 0
+    upgrade.assert_called_once()
+    assert "Database schema upgraded" in result.stdout
 
 
 def test_ingest_paperless_disabled() -> None:

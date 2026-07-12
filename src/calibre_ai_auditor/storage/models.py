@@ -120,6 +120,7 @@ class OperationLedger(SQLModel, table=True):
     calibre_book_id: int | None = Field(default=None, index=True)
     state: str = Field(default="requested", index=True)
     requested_patch: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    expected_before_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     before_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     target_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     observed_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))

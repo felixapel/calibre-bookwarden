@@ -47,21 +47,21 @@ def claim_next_operation(
             continue
         owner = lease_owner or str(uuid4())
         expires_at = utc_now() + timedelta(seconds=lease_seconds)
+        # Lock the stable book row before inserting the lock row. This orders
+        # first-claim races for the same book on PostgreSQL.
+        session.exec(select(BookRecord).where(BookRecord.book_key == operation.book_key).with_for_update()).first()
         book_lock = session.get(BookWriteLock, operation.book_key, with_for_update=True)
-        if book_lock is not None and _lease_active(book_lock.lease_expires_at):
+        # Never steal an expired lock automatically: Calibre has no fencing
+        # primitive, so only startup reconciliation may release a dead owner.
+        if book_lock is not None:
             session.rollback()
             return None
-        if book_lock is None:
-            book_lock = BookWriteLock(
-                book_key=operation.book_key,
-                operation_id=operation.operation_id,
-                lease_owner=owner,
-                lease_expires_at=expires_at,
-            )
-        else:
-            book_lock.operation_id = operation.operation_id
-            book_lock.lease_owner = owner
-            book_lock.lease_expires_at = expires_at
+        book_lock = BookWriteLock(
+            book_key=operation.book_key,
+            operation_id=operation.operation_id,
+            lease_owner=owner,
+            lease_expires_at=expires_at,
+        )
         transition_operation(operation, "claimed")
         operation.lease_owner = owner
         operation.lease_expires_at = expires_at
@@ -104,6 +104,7 @@ def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[s
             session.commit()
             continue
         book = session.exec(select(BookRecord).where(BookRecord.book_key == operation.book_key)).first()
+        change = session.exec(select(Change).where(Change.operation_id == operation.operation_id)).first()
         if (
             book is None
             or not book.calibre_book_id
@@ -111,7 +112,13 @@ def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[s
             or operation.target_metadata is None
         ):
             _mark_unknown(operation, "insufficient recovery evidence")
+            _finish_outbox(session, operation.operation_id, "failed", operation.error)
             session.add(operation)
+            if book is not None:
+                book.status = "error"
+                session.add(book)
+            reconciled.append(operation.operation_id)
+            session.commit()
             continue
         try:
             observed = cli.show_metadata(book.calibre_book_id)
@@ -121,20 +128,27 @@ def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[s
                     transition_operation(operation, "verifying")
                 if operation.state == "verifying":
                     transition_operation(operation, "succeeded")
+                    if change is not None:
+                        change.status = "applied"
+                    book.status = "applied"
+                    _finish_outbox(session, operation.operation_id, "published")
                 else:
                     _mark_unknown(operation, "target observed during restore")
-                book.status = "applied"
-                _finish_outbox(session, operation.operation_id, "published")
+                    book.status = "error"
+                    _finish_outbox(session, operation.operation_id, "failed", operation.error)
             elif _matches_patch(observed, operation.before_metadata):
                 if operation.state in {"writing", "verifying"}:
                     transition_operation(operation, "restoring")
                 transition_operation(operation, "restored")
+                if change is not None:
+                    change.status = "failed_rolled_back"
                 book.status = "suggest_fix"
                 _finish_outbox(session, operation.operation_id, "failed", "previous state already restored")
             else:
-                change = session.exec(select(Change).where(Change.operation_id == operation.operation_id)).first()
                 if change is None:
                     _mark_unknown(operation, "partial state without restore point")
+                    book.status = "error"
+                    _finish_outbox(session, operation.operation_id, "failed", operation.error)
                 else:
                     if operation.state in {"writing", "verifying"}:
                         transition_operation(operation, "restoring")
@@ -143,17 +157,24 @@ def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[s
                     restored = cli.show_metadata(book.calibre_book_id)
                     if _matches_patch(restored, operation.before_metadata):
                         transition_operation(operation, "restored")
+                        change.status = "failed_rolled_back"
                         book.status = "suggest_fix"
                         _finish_outbox(session, operation.operation_id, "failed", "partial state restored")
                     else:
                         transition_operation(operation, "restore_failed", error="restore verification failed")
+                        change.status = "failed_rollback_failed"
                         book.status = "error"
                         _finish_outbox(session, operation.operation_id, "failed", "restore verification failed")
         except Exception as exc:
             _mark_unknown(operation, str(exc))
             book.status = "error"
+            if change is not None:
+                change.status = "failed_rollback_failed"
+            _finish_outbox(session, operation.operation_id, "failed", str(exc))
         session.add(operation)
         session.add(book)
+        if change is not None:
+            session.add(change)
         reconciled.append(operation.operation_id)
         session.commit()
     return reconciled
@@ -185,6 +206,14 @@ class MetadataWriter:
             return operation
 
         before = self.cli.show_metadata(book.calibre_book_id)
+        if operation.expected_before_metadata is None or not _matches_patch(before, operation.expected_before_metadata):
+            transition_operation(operation, "failed", error="live metadata changed after authorization")
+            book.status = "suggest_fix"
+            _finish_outbox(session, operation.operation_id, "failed", operation.error)
+            session.add(operation)
+            session.add(book)
+            session.commit()
+            return operation
         operation.before_metadata = before
         operation.target_metadata = {**before, **operation.requested_patch}
         transition_operation(operation, "writing")
@@ -227,13 +256,14 @@ class MetadataWriter:
         transition_operation(operation, "verifying")
         observed = self.cli.show_metadata(book.calibre_book_id)
         operation.observed_metadata = observed
-        if _matches_patch(observed, operation.requested_patch):
+        if _matches_patch(observed, operation.target_metadata):
             transition_operation(operation, "succeeded")
             book.status = "applied"
             _finish_outbox(session, operation.operation_id, "published")
         else:
             transition_operation(operation, "restoring")
             try:
+                _require_artifact(change.backup_opf_path, change.backup_opf_sha256)
                 self.cli.set_metadata(book.calibre_book_id, Path(change.backup_opf_path))
                 restored = self.cli.show_metadata(book.calibre_book_id)
                 if not _matches_patch(restored, before):
@@ -277,6 +307,14 @@ class MetadataWriter:
         _require_artifact(change.backup_opf_path, change.backup_opf_sha256)
 
         before = self.cli.show_metadata(book.calibre_book_id)
+        if operation.expected_before_metadata is None or not _matches_patch(before, operation.expected_before_metadata):
+            transition_operation(operation, "failed", error="live metadata changed after undo was queued")
+            book.status = "applied"
+            _finish_outbox(session, operation.operation_id, "failed", operation.error)
+            session.add(operation)
+            session.add(book)
+            session.commit()
+            return operation
         current_backup = self.apply_engine.artifacts_dir / "undo" / operation.operation_id / "current.opf"
         current_backup.parent.mkdir(parents=True, exist_ok=True)
         self.cli.export_opf(book.calibre_book_id, current_backup)

@@ -81,7 +81,10 @@ class ApplyEngine:
         logger.info(f"Applying metadata patch to book {book.calibre_book_id}...")
         target_opf = backup_opf.with_name(backup_opf.name.replace("before_", "target_"))
         self._build_target_opf(backup_opf, target_opf, patch)
+        target_sha256 = hashlib.sha256(target_opf.read_bytes()).hexdigest()
         try:
+            if hashlib.sha256(target_opf.read_bytes()).hexdigest() != target_sha256:
+                raise RuntimeError("target OPF changed before metadata write")
             self.cli.set_metadata(book.calibre_book_id, target_opf)
         except Exception:
             try:

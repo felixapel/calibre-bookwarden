@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from sqlalchemy import text
 from sqlmodel import Session, desc, select
 
 from calibre_ai_auditor.apply.engine import ApplyEngine
@@ -82,6 +83,14 @@ def doctor(ctx: typer.Context) -> None:
 
     typer.echo(f"\nLibrary path: {settings.library.path}")
     typer.echo(f"DB path:      {settings.storage.sqlite_path}")
+
+
+@app.command()
+def migrate(ctx: typer.Context) -> None:
+    """Upgrade the configured database to the repository's Alembic head and exit."""
+    settings: Settings = ctx.obj
+    init_db(settings)
+    typer.secho("Database schema upgraded to head.", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -214,6 +223,12 @@ def apply(
     Apply approved fixes after backup.
     """
     settings: Settings = ctx.obj
+    if settings.profile == "production":
+        typer.secho(
+            "Direct CLI apply is disabled in production; queue through the authenticated API",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
     engine = get_engine(settings)
     cli = CalibreCLI(settings.library.path)
     apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
@@ -277,6 +292,12 @@ def undo(
     Revert one applied change.
     """
     settings: Settings = ctx.obj
+    if settings.profile == "production":
+        typer.secho(
+            "Direct CLI undo is disabled in production; queue through the authenticated API",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
     engine = get_engine(settings)
     cli = CalibreCLI(settings.library.path)
     apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
@@ -663,6 +684,14 @@ def writer(
         typer.secho("Writer requires BOOKAUDIT_LIBRARY_PATH", fg=typer.colors.RED)
         raise typer.Exit(1)
     engine = get_engine(settings)
+    writer_guard = None
+    if engine.dialect.name == "postgresql":
+        writer_guard = engine.connect()
+        acquired = writer_guard.execute(text("SELECT pg_try_advisory_lock(1129270868)")).scalar_one()
+        if not acquired:
+            writer_guard.close()
+            typer.secho("Another metadata writer owns the production writer lock", fg=typer.colors.RED)
+            raise typer.Exit(1)
     cli = CalibreCLI(settings.library.path)
     metadata_writer = MetadataWriter(cli, ApplyEngine(cli, settings.storage.artifacts_dir))
 

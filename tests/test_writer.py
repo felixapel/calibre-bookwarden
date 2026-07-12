@@ -62,7 +62,7 @@ def test_writer_verifies_successful_target() -> None:
         cli.set_metadata.assert_not_called()
 
 
-def test_writer_restores_verified_partial_write() -> None:
+def test_writer_restores_verified_partial_write(tmp_path: Path) -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -70,20 +70,23 @@ def test_writer_restores_verified_partial_write() -> None:
         assert claim_next_operation(session) == operation_id
         cli = MagicMock()
         cli.show_metadata.side_effect = [{"title": "Old"}, {"title": "Partial"}, {"title": "Old"}]
+        backup = tmp_path / "before.opf"
+        backup.write_text("backup")
         apply_engine = MagicMock()
         apply_engine.apply_patch.return_value = Change(
             book_key="calibre:1",
             run_id="run-1",
-            backup_opf_path="/tmp/before.opf",
+            backup_opf_path=str(backup),
+            backup_opf_sha256=hashlib.sha256(backup.read_bytes()).hexdigest(),
         )
 
         operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
 
         assert operation.state == "restored"
-        cli.set_metadata.assert_called_once_with(1, Path("/tmp/before.opf"))
+        cli.set_metadata.assert_called_once_with(1, backup)
 
 
-def test_writer_marks_restore_failed_when_backup_does_not_restore_before_state() -> None:
+def test_writer_marks_restore_failed_when_backup_does_not_restore_before_state(tmp_path: Path) -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -91,12 +94,15 @@ def test_writer_marks_restore_failed_when_backup_does_not_restore_before_state()
         assert claim_next_operation(session) == operation_id
         cli = MagicMock()
         cli.show_metadata.side_effect = [{"title": "Old"}, {"title": "Partial"}, {"title": "Still Partial"}]
+        backup = tmp_path / "wrong-restore.opf"
+        backup.write_text("backup")
         apply_engine = MagicMock()
         apply_engine.apply_patch.return_value = Change(
             operation_id=operation_id,
             book_key="calibre:1",
             run_id="run-1",
-            backup_opf_path="/tmp/before.opf",
+            backup_opf_path=str(backup),
+            backup_opf_sha256=hashlib.sha256(backup.read_bytes()).hexdigest(),
         )
 
         operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
@@ -202,6 +208,23 @@ def test_writer_refuses_patch_tampered_after_queueing() -> None:
         assert result.state == "failed"
         assert "seal changed" in (result.error or "")
         cli.show_metadata.assert_not_called()
+
+
+def test_writer_refuses_stale_patch_after_external_calibre_edit() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        operation_id = _setup_operation(session)
+        assert claim_next_operation(session) == operation_id
+        cli = MagicMock()
+        cli.show_metadata.return_value = {"title": "Newer Manual Edit"}
+        apply_engine = MagicMock()
+
+        result = MetadataWriter(cli, apply_engine).process(session, operation_id)
+
+        assert result.state == "failed"
+        assert "changed after authorization" in (result.error or "")
+        apply_engine.apply_patch.assert_not_called()
 
 
 def test_writer_undo_verifies_target_and_updates_linked_change(tmp_path: Path) -> None:
