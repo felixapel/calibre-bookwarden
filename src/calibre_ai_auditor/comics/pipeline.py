@@ -105,13 +105,13 @@ async def enrich_comic_observations(
                             val = getattr(best, k, None)
                             if val is not None and (k not in comic_meta or comic_meta.get(k) is None):
                                 comic_meta[k] = val
-                        if best.series and (not comic_meta.get("series")):
-                            comic_meta["series"] = best.series
+                        if best.metadata.series and not comic_meta.get("series"):
+                            comic_meta["series"] = best.metadata.series
         except Exception as e:
             logger.warning(f"Komf lookup failed: {e}")
 
     # 4. Merge into declared/observed (prefer comic_meta non-None; ensure decimal chapter)
-    def _merge(target: dict[str, Any], src: dict[str, Any]):
+    def _merge(target: dict[str, Any], src: dict[str, Any]) -> None:
         for k, v in src.items():
             if v is not None and (k not in target or target.get(k) is None):
                 if k in ("chapter", "series_position"):

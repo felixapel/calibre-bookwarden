@@ -91,10 +91,6 @@ show_error_codes = true
 module = "calibre_ai_auditor.ocr.vision"
 ignore_errors = true
 
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-
 # Per-file mypy overrides. Each lists the module path and the ignore flags.
 # Format: one `[[tool.mypy.overrides]]` block per module to avoid the
 # "Cannot overwrite a value" error that the new pydantic-settings emits.
@@ -122,3 +118,15 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "calibre_ai_auditor.vectors.embeddings"
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fastmcp"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "calibre_ai_auditor.mcp_server"
+disallow_untyped_decorators = false

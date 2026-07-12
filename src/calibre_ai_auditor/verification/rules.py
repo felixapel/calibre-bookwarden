@@ -1360,6 +1360,8 @@ def verify_volume(declared: Any, observed: Any, *, page_range: str | None = None
             reason="Volume declared but not found in content sample.",
         )
 
+    assert d is not None
+    assert o is not None
     # Tolerant whole-number match (round to handle 2.0 vs 2 etc.)
     if int(round(d)) == int(round(o)):
         return FieldVerdict(
@@ -1425,6 +1427,8 @@ def verify_chapter(declared: Any, observed: Any, *, page_range: str | None = Non
             reason="Chapter declared but not found in content sample.",
         )
 
+    assert d is not None
+    assert o is not None
     # Tolerant decimal match (same epsilon as series_index)
     if abs(d - o) < 0.01:
         return FieldVerdict(
@@ -1489,6 +1493,8 @@ def verify_series_position(declared: Any, observed: Any, *, page_range: str | No
             reason="Series position declared but not found in content sample.",
         )
 
+    assert d is not None
+    assert o is not None
     # Tolerant decimal match
     if abs(d - o) < 0.01:
         return FieldVerdict(

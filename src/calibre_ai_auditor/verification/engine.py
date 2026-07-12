@@ -17,6 +17,7 @@ is a separate concern (`engine_llm.py`).
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -59,7 +60,7 @@ class ObservationSet:
     volume_extracted: int | None = None
     chapter_extracted: float | None = None  # decimal per Weebarr convention
     series_position_extracted: float | None = None
-    cover_vision: dict | None = None  # optional vision-extracted comic metadata
+    cover_vision: dict[str, Any] | None = None  # optional vision-extracted comic metadata
     page_range_title: str = "1-3"
     page_range_copyright: str = "2-5"
     page_range_header: str = "running"
@@ -315,7 +316,7 @@ def build_observation_from_extraction(
     volume_extracted: int | None = None,
     chapter_extracted: float | None = None,
     series_position_extracted: float | None = None,
-    cover_vision: dict | None = None,
+    cover_vision: dict[str, Any] | None = None,
 ) -> ObservationSet:
     """Build observations and fill empty comic fields from cover vision."""
     vol = volume_extracted
@@ -326,20 +327,14 @@ def build_observation_from_extraction(
     if cover_vision:
         cv = cover_vision
         if vol is None and cv.get("volume") is not None:
-            try:
+            with suppress(TypeError, ValueError):
                 vol = int(cv["volume"])
-            except Exception:
-                vol = cv.get("volume")
         if ch is None and cv.get("chapter") is not None:
-            try:
+            with suppress(TypeError, ValueError):
                 ch = float(cv["chapter"])  # ensure decimal chapter
-            except Exception:
-                ch = cv.get("chapter")
         if sp is None and cv.get("series_position") is not None:
-            try:
-                sp = float(cv.get("series_position"))
-            except Exception:
-                sp = cv.get("series_position")
+            with suppress(TypeError, ValueError):
+                sp = float(cv["series_position"])
         if not ser and cv.get("series"):
             ser = cv.get("series")
         if not tit and cv.get("title"):
