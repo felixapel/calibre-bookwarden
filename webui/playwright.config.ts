@@ -55,6 +55,7 @@ export default defineConfig({
     env: {
       BOOKAUDIT_DATABASE__BACKEND: 'sqlite',
       BOOKAUDIT_DB_PATH: TEST_DB,
+      BOOKAUDIT_QUEUE__BACKEND: 'memory',
       BOOKAUDIT_READ_ONLY: 'true',
       BOOKAUDIT_LIBRARY_PATH: '/dev/null',
       BOOKAUDIT_LOG_LEVEL: 'WARNING',
