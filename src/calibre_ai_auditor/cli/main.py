@@ -613,5 +613,30 @@ def hosts(
     typer.echo(json_lib.dumps(summary, indent=2, default=str))
 
 
+@app.command()
+def mcp(
+    ctx: typer.Context,  # noqa: ARG001
+) -> None:
+    """
+    v1.2: Start the MCP server (STDIO) exposing read-only audit tools.
+
+    Tools: query_book_audit, list_problematic_books, get_run_metrics, list_recent_runs.
+    Requires the optional 'mcp' extra (fastmcp).
+
+    Intended for Hermes and other MCP clients. Run via: bookaudit mcp
+    """
+    try:
+        from calibre_ai_auditor.mcp_server import mcp as mcp_app  # type: ignore[attr-defined]
+    except ImportError as e:
+        typer.secho(
+            "MCP support not installed. Install with: uv pip install -e '.[mcp]' (or pip install fastmcp)",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1) from e
+
+    typer.echo("Starting calibre-audit MCP server (stdio)...")
+    mcp_app.run()
+
+
 if __name__ == "__main__":
     app()

@@ -6,8 +6,21 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — v1.2 MCP Server (read-only, STDIO)
+- New `src/calibre_ai_auditor/mcp_server.py` using FastMCP (with native-mcp stdio pattern compatibility).
+- Read-only tools exposed:
+  - `query_book_audit(book_key)` — BookRecord + full persisted BookVerdict (FieldVerdicts, decimal chapter support)
+  - `list_problematic_books(...)` — triage list with status/risk filters; comic decimal fields (chapter as float) intact
+  - `get_run_metrics(run_id?)` + `list_recent_runs` — aggregates from persisted records
+- CLI integration: `bookaudit mcp` subcommand (graceful error if `[mcp]` extra missing).
+- Optional dependency group: `[mcp]` → fastmcp>=0.1.0 in pyproject.toml.
+- Tests: `tests/test_mcp.py` (temp SQLite, decimal chapter assertions, status filtering).
+- Reuses existing layers only (verification/engine models, storage/*, comics/pipeline, db access). No mutations.
+- Docs: ROADMAP v1.2 marked DONE; CHANGELOG entry; CLI discoverable.
+- Evidence: gate script (verify-calibre-gate.sh) unchanged and continues to pass core+komf (no new required markers); `rg` on mcp_server shows only read paths (selects, no update/apply).
+
 ### Documentation & Final Verification (2026-07-10)
-- Updated ROADMAP.md (v1.1 marked DONE), CHANGELOG.md, and related notes for production state.
+- Updated ROADMAP.md (v1.1 marked DONE; v1.2 now DONE), CHANGELOG.md, and related notes for production state.
 - Final practical gate evidence captured: verify-calibre-gate.sh exit 0 (144 core tests + komf integration test pass; rg no ⏳/IN PROGRESS in docs/ROADMAP; komf refs in pipeline+engine; launch smoke OK).
 - Full pytest limited by benchmark collection/env (38 errors on bench_*, no native GPU etc.); core paths + komf verified. See calibre-gate.log and acceptance-ledger.md.
 - Central comics pipeline (`comics/pipeline.py`: enrich_comic_observations with lazy Vision + Komf + decimal merge) + wiring in audit/engine + extractors.

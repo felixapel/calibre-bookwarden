@@ -22,7 +22,7 @@ the primary source of truth; LLMs are witnesses, not generators.
 | `v1.0` | **Content-Ground Verification**: Per-field BookVerdict + scale | [DONE] |
 | `v1.0.x` | **Hardening**: WebUI Verify page + benchmark baselines + CI | [DONE] |
 | `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [DONE] |
-| `v1.2` | **MCP Server**: Expose audit tools to Hermes | [PLANNED] |
+| `v1.2` | **MCP Server**: Expose audit tools to Hermes | [DONE] |
 
 ---
 
@@ -103,11 +103,22 @@ for what's in/out of v1.0:
 
 Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invoked, OCR profile, decimal support). Production state documented with honest gate results.
 
-## v1.2 — MCP Server (PLANNED)
+## v1.2 — MCP Server (DONE)
 
-- STDIO transport for personal AI workflows
-- Tools: `query_book_audit`, `list_problematic_books`, `get_run_metrics`
-- Hermes integration for "which of my books have the worst metadata?" workflows
+- STDIO transport via FastMCP (preferred) + native mcp stdio pattern for Hermes / personal AI clients
+- New module: `src/calibre_ai_auditor/mcp_server.py`
+  - Tools (all read-only):
+    - `query_book_audit(book_key)` — returns BookRecord + latest BookVerdict (EvidencePackage.decision) with full per-field FieldVerdicts
+    - `list_problematic_books(limit, status, has_risk)` — surfaces needs_review / suggest_fix / defer + risk_flags; decimal chapter/volume/series_position preserved (Weebarr convention)
+    - `get_run_metrics(run_id?)` — aggregates counts_by_status from BookRecord rows
+    - `list_recent_runs(limit)` — discovery helper
+- CLI: `bookaudit mcp` (lazy import, requires `[mcp]` extra)
+- Optional dependency: `fastmcp` under `[project.optional-dependencies] mcp`
+- Reuses without modification: ContentVerificationEngine surface, storage/models (BookRecord/EvidencePackage/Run), comics/pipeline decimal handling, db.get_engine (sqlite+postgres), metrics patterns
+- Basic tests in `tests/test_mcp.py` (import skip when optional absent; temp DB + decimal assertions)
+- Evidence: verify-calibre-gate.sh still exits 0 (core + komf paths); no pending markers; `bookaudit --help` shows mcp subcommand when extra present
+- Hermes usage: `hermes mcp add calibre_auditor --command python3 --args /path/to/hermes-agent/mcp_servers/calibre_auditor_mcp.py` (FastMCP stdio wrapper over /api + direct surfaces; see agentic-workflows/hermes-agent/mcp_servers/calibre_auditor_mcp.py and config.example.yaml)
+- Cross-project: combined with gemma_translator_mcp.py for audit → context-aware translate flows (WS3)
 
 ---
 

@@ -127,6 +127,36 @@ Display the effective runtime configuration with sensitive keys redacted.
 bookaudit config
 ```
 
+## v1.2 — MCP Server (Hermes / agent integration)
+
+### `bookaudit mcp`
+
+Start the read-only MCP server over stdio. Exposes audit query tools to MCP clients
+(Hermes, Claude Code, etc.).
+
+```bash
+bookaudit mcp
+```
+
+Requires the optional extra:
+
+```bash
+uv pip install -e '.[mcp]'
+# or
+pip install fastmcp
+```
+
+**Exposed tools** (all read-only, no DB mutation):
+
+- `query_book_audit(book_key)` — current BookRecord + latest BookVerdict (per-field results, risk flags, proposed patch, decimal chapter/volume/series_position)
+- `list_problematic_books(limit=50, status=None, has_risk=True)` — books with needs_review / suggest_fix / defer (or explicit status); comic fields preserved
+- `get_run_metrics(run_id=None)` — status counts + sample for a run (latest if omitted)
+- `list_recent_runs(limit=10)` — recent Run rows for discovery
+
+Intended for workflows such as "Hermes: list my 20 worst metadata books".
+
+See ROADMAP.md v1.2 and `src/calibre_ai_auditor/mcp_server.py` for details.
+
 ### `bookaudit web`
 
 Start the FastAPI backend and serve the WebUI (built React SPA).

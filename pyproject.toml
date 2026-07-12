@@ -1,6 +1,6 @@
 [project]
 name = "calibre-ai-auditor"
-version = "1.0.0"
+version = "1.2.0"
 description = "Content-ground metadata verification for Calibre libraries — the book file is the ground truth, LLMs are witnesses"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -39,6 +39,9 @@ dev = [
     "pytest-benchmark>=4.0.0",
     "ruff>=0.4.4",
     "mypy>=1.10.0",
+]
+mcp = [
+    "fastmcp>=0.1.0",
 ]
 ingest = [
     "watchdog>=4.0.0",
