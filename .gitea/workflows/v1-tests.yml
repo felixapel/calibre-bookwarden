@@ -22,22 +22,22 @@ jobs:
           apt-get update
           apt-get install -y calibre tesseract-ocr ghostscript qpdf ocrmypdf
 
-      - name: Install Python deps
+      - name: Install uv and locked Python deps
         run: |
-          python -m pip install --upgrade pip
-          pip install ".[dev]"
+          python -m pip install uv==0.11.15
+          uv sync --frozen --extra dev
 
       - name: Lint (ruff)
         run: |
-          ruff check .
-          ruff format --check .
+          uv run ruff check .
+          uv run ruff format --check .
 
       - name: Type check (mypy)
-        run: mypy src
+        run: uv run mypy src
 
       - name: Run unit + integration tests
         run: |
-          pytest -m "not benchmark and not ocr_live and not network" \
+          uv run pytest -m "not benchmark and not ocr_live and not network" \
                  --cov=src --cov-report=xml -v
 
       - name: Upload coverage
@@ -57,11 +57,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Python deps
-        run: pip install ".[dev]"
+        run: |
+          pip install uv==0.11.15
+          uv sync --frozen --extra dev
       - name: Run benchmarks
         run: |
           mkdir -p .benchmarks
-          pytest --benchmark-only --benchmark-json=.benchmarks/baseline.json \
+          uv run pytest --benchmark-only --benchmark-json=.benchmarks/baseline.json \
                  -m "not ocr_live and not network"
       - name: Upload benchmark baseline
         uses: actions/upload-artifact@v4
@@ -83,29 +85,33 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install pnpm
-        run: npm install -g pnpm
-
       - name: Install Python deps
         run: |
           apt-get update
           apt-get install -y calibre
           python -m pip install --upgrade pip
-          pip install ".[dev]"
+          pip install uv==0.11.15
+          uv sync --frozen --extra dev
 
       - name: Install webui deps
         working-directory: webui
-        run: pnpm install --frozen-lockfile
+        run: npm ci
+
+      - name: Lint and audit webui
+        working-directory: webui
+        run: |
+          npm run lint -- --max-warnings=0
+          npm audit --audit-level=high
 
       - name: Build webui
         working-directory: webui
-        run: pnpm build
+        run: npm run build
 
       - name: Run Playwright E2E
         working-directory: webui
         env:
           PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
-        run: pnpm exec playwright test --project=chromium --reporter=line
+        run: npx playwright test --project=chromium --reporter=line
 
       - name: Upload Playwright report
         if: always()
