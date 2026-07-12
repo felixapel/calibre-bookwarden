@@ -4,7 +4,7 @@ Key differences from v0.9's ApplyEngine:
   1. Every apply creates a per-book RESTORE POINT (not just an OPF backup).
      The restore point holds: original OPF, original cover (if modified),
      original file copy, and a JSON snapshot of the before/after patch.
-  2. Restore points have TTL (default 30 days) and are auto-cleaned.
+  2. Restore points have a retention target (default 30 days) and expose explicit cleanup.
   3. Conservative gate runs BEFORE any write:
      - Auto-apply eligible (per BookVerdict.auto_apply_eligible)
      - No high-risk flags in the verdict

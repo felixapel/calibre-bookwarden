@@ -64,7 +64,7 @@ auto-apply gate. **manual review** means human approval is required.
   Verify instead)
 - **Inspect File** — Single-file inspection; useful before adding to library
 - **Duplicates** — Qdrant-backed semantic duplicate detection
-- **Changes & Undo** — v1.0 restore points + bulk undo by run_id
+- **Changes & Undo** — v1.0 restore points + API-queued run revert
 - **Settings** — Provider config, privacy filters, local API key
 
 ---

@@ -174,7 +174,7 @@ Before merging any change to the v1.0 **Apply Engine** or **RestorePointStore**:
    `<artifacts_dir>/restore/<run_id>/<book_key>/`.
 2. Verify that `bookaudit undo <change_id>` restores the metadata to the
    exact `before_metadata` snapshot.
-3. Verify that `bookaudit undo --run <run_id>` bulk-restores all books from
+3. Verify that `POST /api/runs/<run_id>/revert` queues eligible books from
    a run.
 4. Ensure the library remains read-only unless `BOOKAUDIT_READ_ONLY=false`
    is explicitly set.

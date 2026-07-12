@@ -162,7 +162,7 @@ before every apply, at `<artifacts_dir>/restore/<run_id>/<book_key>/`:
   in one command, including file and cover.
 - **Disk usage**: hardlinks make the restore point nearly free when the
   underlying file is unchanged; copies only when the file moves.
-- **Bulk undo**: `bookaudit undo --run <run_id>` reverses an entire run
+- **Bulk undo**: `POST /api/runs/{run_id}/revert` queues an entire run for the sole writer
   in one command.
 
 ---

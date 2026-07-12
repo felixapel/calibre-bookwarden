@@ -85,27 +85,27 @@ Every apply creates a **restore point** at
 - `after.json` — full metadata snapshot after the apply
 - `restore.json` — metadata for bulk-undo by `run_id`
 
-**TTL: 30 days** (configurable). After TTL the restore points are
-automatically cleaned up.
+**Retention target: 30 days** (configurable). The store exposes bounded cleanup,
+but production does not schedule it automatically. Monitor artifact-disk usage
+and run only the approved retention procedure after confirming the paired
+database/artifact backup is no longer needed.
 
 ---
 
 ## v1.0: Bulk Undo by Run
 
-The v1.0 `undo` command supports undoing all books from a run at once:
+The API supports queueing undo for all changes in a run at once:
 
 ```bash
-# CLI
-bookaudit undo --run <run_id>
-
 # API
-curl -X POST http://localhost:8080/api/undo/<run_id> \
+curl -X POST http://localhost:8080/api/runs/<run_id>/revert \
+     -H "X-API-Key: $BOOKAUDIT_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"force": true}'
 ```
 
-Both walk every restore point under `<artifacts_dir>/restore/<run_id>/` and
-restore the books. Single-change undo still works via `change_id`.
+The request queues each eligible change for the sole writer. CLI undo remains
+single-change only: `bookaudit undo <change_id>`.
 
 ---
 

@@ -84,7 +84,7 @@ field against the actual book content.
 
 - **`RestorePointStore`** (`restore.py`) — per-book restore points at
   `<artifacts_dir>/restore/<run_id>/<book_key>/` (OPF + cover + hardlinked
-  file + JSON snapshots) with 30-day retention cleanup
+  file + JSON snapshots) with a 30-day retention target
 - **`ResumableRunStore`** (`resumable.py`) — Valkey Streams-backed per-book
   state; `in_progress` rollback on worker crash; handles 50k books in ~8ms
 - **Prometheus `/metrics`** (`metrics.py`) — counters, gauges, histograms

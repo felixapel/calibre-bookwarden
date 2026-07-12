@@ -22,7 +22,7 @@ the actual book content.
 | Decision unit | Single `MetadataResolution` aggregate | **Per-field `FieldVerdict`** with cited `EvidenceSpan`s |
 | Adjudication | One LLM call decides everything | **8 deterministic rules** per field; **LLM witness** called only for ambiguous cases |
 | Auto-apply | Manual review queue | **Conservative auto-apply gate** (≥80% confidence, no high-risk flags, per-book restore point) |
-| Undo | OPF backup only | **RestorePointStore**: OPF + cover + hardlinked file + JSON snapshot, 30-day retention |
+| Undo | OPF backup only | **RestorePointStore**: OPF + cover + hardlinked file + JSON snapshot, 30-day retention target |
 | Resume | None | **PostgreSQL ledger/outbox** with single-writer crash reconciliation |
 | OCR | None | **Multi-provider OCR router** (Tesseract / PaddleOCR / Surya) by page hint |
 | Inference | Single Ollama | **Multi-host discovery** (3090 + 5060 Ti + 1660 SUPER + remote) |
@@ -44,7 +44,7 @@ the actual book content.
     declared field has a deterministic verdict, (b) overall confidence ≥80,
     (c) no high-risk flag is present, (d) per-field confidence ≥75.
 5.  **Every apply creates a restore point.** Per-book snapshot of OPF, cover,
-    file hardlink, and JSON metadata diff. 30-day retention, bulk undo by run_id.
+    file hardlink, and JSON metadata diff. 30-day retention target; bulk undo is queued by run ID through the API.
 6.  **Resumable on crash.** A durable PostgreSQL operation ledger/outbox and
     per-book locks reconcile interrupted external writes before new work begins.
 

@@ -185,7 +185,7 @@ LM Studio.
 | **Inspect File** | Single-file inspection |
 | **Duplicates** | Semantic duplicates from Qdrant |
 | **Review Queue** | Per-field verdict rendering for books needing human review |
-| **Changes & Undo** | v1.0 restore points + bulk undo by run_id |
+| **Changes & Undo** | v1.0 restore points + API-queued run revert |
 
 ---
 

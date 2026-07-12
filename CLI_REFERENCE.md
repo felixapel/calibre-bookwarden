@@ -94,19 +94,17 @@ snapshot), then `calibredb set_metadata` applies the patch.
 
 ### `bookaudit undo`
 
-Revert a change. Supports both single-change undo (v0.9 path, by `change_id`)
-and bulk undo (v1.0 path, by `run_id`).
+Revert one change by `change_id`. Run-wide reverts are queued through
+`POST /api/runs/{run_id}/revert`; there is no run-wide CLI flag.
 
 ```bash
 # Single change undo
 bookaudit undo <change_id>
 
-# Bulk undo of all changes from a v1.0 run
-bookaudit undo --run <run_id>
 ```
 
-Restore points live at `<artifacts_dir>/restore/<run_id>/<book_key>/` and
-have a 7-day TTL (configurable).
+Restore points live at `<artifacts_dir>/restore/<run_id>/<book_key>/`. The
+retention target is 30 days, with explicit operator-approved cleanup.
 
 ## Sanity / introspection
 
