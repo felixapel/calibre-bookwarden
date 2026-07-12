@@ -24,7 +24,9 @@ class Metrics:
         self._lock = threading.Lock()
         self._counters: dict[tuple[str, tuple[tuple[str, str], ...]], int] = defaultdict(int)
         self._gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
-        self._histograms: dict[tuple[str, tuple[tuple[str, str], ...]], list[float]] = defaultdict(list)
+        self._histograms: dict[
+            tuple[str, tuple[tuple[str, str], ...]], tuple[int, float]
+        ] = defaultdict(lambda: (0, 0.0))
         self._started_at: float = 0.0
         self._labels_seen: dict[str, set[tuple[tuple[str, str], ...]]] = defaultdict(set)
 
@@ -54,13 +56,26 @@ class Metrics:
     def observe(self, name: str, value: float, *, labels: dict[str, str] | None = None) -> None:
         with self._lock:
             label_key = tuple(sorted((labels or {}).items()))
-            self._histograms[(name, label_key)].append(value)
+            count, total = self._histograms[(name, label_key)]
+            self._histograms[(name, label_key)] = (count + 1, total + value)
             self._labels_seen[name].add(label_key)
 
     # ---- explicit helpers for our domain ----
 
     def record_book_action(self, action: str, run_id: str) -> None:
-        self.inc("bookaudit_books_total", labels={"action": action, "run_id": run_id})
+        del run_id  # Run IDs are intentionally excluded to bound label cardinality.
+        self.inc("bookaudit_books_total", labels={"action": action})
+
+    def record_http_request(
+        self,
+        method: str,
+        route: str,
+        status: int,
+        duration_seconds: float,
+    ) -> None:
+        labels = {"method": method, "route": route, "status": str(status)}
+        self.inc("bookaudit_http_requests_total", labels=labels)
+        self.observe("bookaudit_http_request_duration_seconds", duration_seconds, labels=labels)
 
     def record_llm_call(
         self,
@@ -115,15 +130,16 @@ class Metrics:
 
             # Histograms (basic: count + sum + average)
             seen_hist: set[str] = set()
-            for (name, labels), values in sorted(self._histograms.items()):
+            for (name, labels), aggregate in sorted(self._histograms.items()):
                 if name not in seen_hist:
                     lines.append(f"# TYPE {name} summary")
                     seen_hist.add(name)
                 label_str = _render_labels(dict(labels))
-                if values:
-                    lines.append(f"{name}_count{label_str} {len(values)}")
-                    lines.append(f"{name}_sum{label_str} {sum(values)}")
-                    lines.append(f"{name}_avg{label_str} {sum(values) / len(values)}")
+                count, total = aggregate
+                if count:
+                    lines.append(f"{name}_count{label_str} {count}")
+                    lines.append(f"{name}_sum{label_str} {total}")
+                    lines.append(f"{name}_avg{label_str} {total / count}")
 
         return "\n".join(lines) + "\n"
 

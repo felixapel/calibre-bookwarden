@@ -3,6 +3,7 @@ import hmac
 import logging
 import os
 import re
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -109,6 +110,32 @@ REJECTED_API_KEYS = {
 
 def _api_key_is_strong(value: str) -> bool:
     return len(value) >= 32 and len(set(value)) >= 8 and value.lower() not in REJECTED_API_KEYS
+
+
+@app.middleware("http")
+async def measure_http_requests(request: Request, call_next: Any) -> Response:
+    """Expose bounded-cardinality request rates and latency for alerting."""
+    if request.url.path == "/api/metrics":
+        metrics_response: Response = await call_next(request)
+        return metrics_response
+
+    from calibre_ai_auditor.verification.metrics import get_metrics
+
+    started = time.perf_counter()
+    status = 500
+    try:
+        response: Response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        route = request.scope.get("route")
+        route_path = getattr(route, "path", "unmatched")
+        get_metrics().record_http_request(
+            request.method,
+            route_path,
+            status,
+            time.perf_counter() - started,
+        )
 
 
 @app.middleware("http")

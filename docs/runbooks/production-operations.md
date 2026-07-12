@@ -80,3 +80,17 @@ operations.
   `BookWriteLock` while its owner may still be running.
 - Low disk: stop writer before deleting anything. Restore points have a 30-day
   retention and must be cleaned only through the verified retention workflow.
+
+## Monitoring alerts
+
+Load `ops/monitoring/alerts.yml` into Prometheus and replace the API-key
+placeholder in `ops/monitoring/prometheus.yml` through the deployment secret
+mechanism. The metrics endpoint is intentionally authenticated in production.
+
+- `BookAuditUnavailable`: check container health, then `/api/health/ready` with
+  the API key. Keep the writer stopped if PostgreSQL, Valkey, or its heartbeat is
+  unhealthy.
+- `BookAuditHighServerErrorRate`: correlate the route/status labels with
+  structured logs using `X-Request-ID`; pause new apply requests if writes fail.
+- `BookAuditSlowApi`: inspect database and Valkey latency before scaling API
+  replicas. Never scale the writer beyond one instance.

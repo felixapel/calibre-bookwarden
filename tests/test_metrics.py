@@ -34,14 +34,33 @@ def test_histogram() -> None:
     assert 'latency_ms_avg{op="ocr"} 20.0' in out
 
 
+def test_histogram_storage_is_constant_size() -> None:
+    m = Metrics()
+    for value in range(10_000):
+        m.observe("latency_ms", float(value), labels={"op": "http"})
+    aggregate = next(iter(m._histograms.values()))
+    assert aggregate == (10_000, 49_995_000.0)
+
+
 def test_record_book_action_helper() -> None:
     m = Metrics()
     m.record_book_action("suggest_fix", "run_001")
     m.record_book_action("suggest_fix", "run_001")
     m.record_book_action("needs_review", "run_001")
     out = m.render()
-    assert 'bookaudit_books_total{action="suggest_fix",run_id="run_001"} 2' in out
-    assert 'bookaudit_books_total{action="needs_review",run_id="run_001"} 1' in out
+    assert 'bookaudit_books_total{action="suggest_fix"} 2' in out
+    assert 'bookaudit_books_total{action="needs_review"} 1' in out
+    assert "run_id" not in out
+
+
+def test_record_http_request_uses_bounded_labels() -> None:
+    m = Metrics()
+    m.record_http_request("GET", "/api/books/{book_key}", 200, 0.125)
+    out = m.render()
+    labels = 'method="GET",route="/api/books/{book_key}",status="200"'
+    assert f"bookaudit_http_requests_total{{{labels}}} 1" in out
+    assert f"bookaudit_http_request_duration_seconds_count{{{labels}}} 1" in out
+    assert f"bookaudit_http_request_duration_seconds_sum{{{labels}}} 0.125" in out
 
 
 def test_record_llm_call_helper() -> None:
