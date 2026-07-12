@@ -137,9 +137,7 @@ def queue_approved_operations(
 ) -> CoordinationResult:
     """Validate verdicts and atomically enqueue idempotent writer operations."""
     books = session.exec(
-        select(BookRecord)
-        .where(BookRecord.status == "suggest_fix")
-        .where(col(BookRecord.book_key).in_(book_keys))
+        select(BookRecord).where(BookRecord.status == "suggest_fix").where(col(BookRecord.book_key).in_(book_keys))
     ).all()
     gate = ConservativeAutoApply(dry_run=False)
     queued: list[str] = []

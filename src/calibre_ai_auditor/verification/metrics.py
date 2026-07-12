@@ -24,9 +24,9 @@ class Metrics:
         self._lock = threading.Lock()
         self._counters: dict[tuple[str, tuple[tuple[str, str], ...]], int] = defaultdict(int)
         self._gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
-        self._histograms: dict[
-            tuple[str, tuple[tuple[str, str], ...]], tuple[int, float]
-        ] = defaultdict(lambda: (0, 0.0))
+        self._histograms: dict[tuple[str, tuple[tuple[str, str], ...]], tuple[int, float]] = defaultdict(
+            lambda: (0, 0.0)
+        )
         self._started_at: float = 0.0
         self._labels_seen: dict[str, set[tuple[tuple[str, str], ...]]] = defaultdict(set)
 

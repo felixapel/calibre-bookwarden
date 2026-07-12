@@ -208,9 +208,7 @@ async def enforce_api_key(request: Request, call_next: Any) -> Response:
     expected = settings.api_key.get_secret_value() if settings.api_key else ""
     if settings.profile == "production" and not _api_key_is_strong(expected):
         detail = (
-            "API authentication is not configured"
-            if not expected
-            else "API authentication is not securely configured"
+            "API authentication is not configured" if not expected else "API authentication is not securely configured"
         )
         return JSONResponse(status_code=503, content={"detail": detail})
     if expected:
