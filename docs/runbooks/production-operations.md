@@ -12,7 +12,7 @@ one-shot migration, then start the writer and app:
 
 ```bash
 docker compose build app
-docker compose up -d postgres valkey
+docker compose up -d --wait postgres valkey
 docker compose --profile maintenance run --rm migrate
 docker compose up -d writer app
 ```
@@ -44,7 +44,7 @@ Provision an empty PostgreSQL database and an empty writer artifacts directory,
 then restore both halves before starting runtime roles:
 
 ```bash
-docker compose up -d postgres valkey
+docker compose up -d --wait postgres valkey
 docker compose exec -T postgres pg_restore -U bookaudit -d bookaudit < bookaudit.dump
 tar -C . -xzf writer-artifacts.tar.gz
 docker compose up -d app writer
