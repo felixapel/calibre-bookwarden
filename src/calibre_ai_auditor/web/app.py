@@ -96,6 +96,23 @@ app = FastAPI(
 )
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
+    "form-action 'self'; object-src 'none'; img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
+)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next: Any) -> Response:
+    """Apply browser hardening at the application boundary."""
+    response: Response = await call_next(request)
+    response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 
 @app.middleware("http")
