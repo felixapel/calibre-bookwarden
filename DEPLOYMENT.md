@@ -4,7 +4,7 @@
 
 ## 1. Multi-Stage Docker Build
 
-The application uses a two-stage build process:
+The application uses a multi-stage build process:
 1.  **Frontend Builder**: Compiles the React + Vite SPA.
 2.  **Runtime**: A Python-based container that serves the static assets and the FastAPI backend.
 
@@ -36,8 +36,9 @@ profile adds specialized sidecars:
 cp .env.example .env
 # Replace every placeholder and synchronize each DSN password with the matching
 # POSTGRES_*_PASSWORD value.
+./scripts/prepare-production.sh
 docker compose build app
-docker compose up -d postgres valkey
+docker compose up -d --wait postgres valkey
 docker compose --profile maintenance run --rm migrate
 docker compose up -d app writer
 ```
@@ -54,7 +55,7 @@ empty data directory.
 
 | Volume | Mount Point | Purpose |
 |---|---|---|
-| `./fake_library` | `/library` | The Calibre library to audit. |
+| `${BOOKAUDIT_LIBRARY_HOST_PATH}` | `/library` | Real Calibre library; app mounts read-only and the sole writer mounts read-write. |
 | `./.state` | `/state` | Database files and app state. |
 | `./.artifacts` | `/artifacts` | API audit artifacts (never writer restore evidence). |
 | `./.writer-artifacts` | `/writer-artifacts` | Writer-exclusive OPF targets and restore evidence. |
@@ -94,7 +95,9 @@ Critical variables for deployment:
 
 ## 6. Operational Rules
 
-1.  **Safety First**: Always mount your library as `:ro` (read-only) unless you are performing an active `apply` operation.
+1.  **Safety First**: The app always mounts the library read-only. Only the
+    dedicated single-writer service receives the read-write mount; stop it when
+    no approved apply/undo operation should be possible.
 2.  **Backups**: Back up `.writer-artifacts`; only the writer may mount this directory read-write.
 3.  **Permissions**: Containers run as the host's UID/GID (defined in `.env`) to prevent "root-owned" file issues on your host filesystem.
 # Production v2 network boundary
