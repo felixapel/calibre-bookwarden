@@ -60,8 +60,9 @@ def test_release_workflow_publishes_only_after_full_gates() -> None:
     assert "attest-sbom@" in release
     assert "push-by-digest=true" in release
     assert "docker buildx imagetools create" in release
-    assert "UPDATE operationledger SET status = status WHERE false" in release
-    assert "UPDATE operationledger SET state = state" not in release
+    assert "UPDATE operationledger SET state = state WHERE false" in release
+    assert "grep -F '42501'" in release
+    assert "permission denied for table operationledger" in release
     assert "benchmark_50k_metadata.py" in release
     assert "TEST_POSTGRES_DSN" in ci
     assert "benchmark_50k_metadata.py" in ci

@@ -141,11 +141,17 @@ jobs:
             http://127.0.0.1:18080/api/health/ready)" = 401
           test "$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: invalid.example' \
             -H "X-API-Key: $BOOKAUDIT_API_KEY" http://127.0.0.1:18080/api/health/ready)" = 400
-          if docker compose exec -T postgres sh -lc \
-            "PGPASSWORD='$POSTGRES_APP_PASSWORD' psql -v ON_ERROR_STOP=1 -U bookaudit_app -d bookaudit -c 'UPDATE operationledger SET status = status WHERE false'"; then
+          set +e
+          acl_output=$(docker compose exec -T postgres sh -lc \
+            "PGPASSWORD='$POSTGRES_APP_PASSWORD' psql -v ON_ERROR_STOP=1 --set=VERBOSITY=verbose -U bookaudit_app -d bookaudit -c 'UPDATE operationledger SET state = state WHERE false'" 2>&1)
+          acl_status=$?
+          set -e
+          if [ "$acl_status" -eq 0 ]; then
             echo 'app role unexpectedly updated the writer ledger' >&2
             exit 1
           fi
+          grep -F '42501' <<< "$acl_output"
+          grep -F 'permission denied for table operationledger' <<< "$acl_output"
       - name: Promote the scanned digest to release tags
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
