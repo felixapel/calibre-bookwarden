@@ -183,6 +183,10 @@ class Settings(BaseSettings):
         None,
         validation_alias=AliasChoices("BOOKAUDIT_API_KEY", "api_key"),
     )
+    trusted_hosts: str = Field(
+        "localhost,127.0.0.1,testserver",
+        validation_alias=AliasChoices("BOOKAUDIT_TRUSTED_HOSTS", "trusted_hosts"),
+    )
 
     # Flat aliases for common Docker env vars
     library_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH"))

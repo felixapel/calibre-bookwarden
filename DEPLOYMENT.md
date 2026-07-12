@@ -78,6 +78,8 @@ Critical variables for deployment:
 *   `OLLAMA_BASE_URL`: Pointer to your homelab Ollama instance.
 *   `BOOKAUDIT_JUDGE_MODEL`: The LLM to use for auditing (e.g., `qwen3.5:9b-q4_K_M`).
 *   `OPENAI_API_KEY`: Required only for remote deep reasoning.
+*   `BOOKAUDIT_TRUSTED_HOSTS`: comma-separated public hostnames accepted from
+    the reverse proxy. Add the production DNS name before exposing the proxy.
 *   `BOOKAUDIT_APP_POSTGRES_DSN`, `BOOKAUDIT_WRITER_POSTGRES_DSN`, and
     `BOOKAUDIT_MIGRATOR_POSTGRES_DSN`: distinct database roles. Their passwords
     must match `POSTGRES_APP_PASSWORD`, `POSTGRES_WRITER_PASSWORD`, and

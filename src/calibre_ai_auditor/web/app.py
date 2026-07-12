@@ -101,6 +101,14 @@ CONTENT_SECURITY_POLICY = (
     "form-action 'self'; object-src 'none'; img-src 'self' data:; "
     "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
 )
+REJECTED_API_KEYS = {
+    "replace-with-at-least-32-random-characters",
+    "change-me",
+}
+
+
+def _api_key_is_strong(value: str) -> bool:
+    return len(value) >= 32 and len(set(value)) >= 8 and value.lower() not in REJECTED_API_KEYS
 
 
 @app.middleware("http")
@@ -169,14 +177,34 @@ async def enforce_api_key(request: Request, call_next: Any) -> Response:
 
     settings = load_settings()
     expected = settings.api_key.get_secret_value() if settings.api_key else ""
-    if settings.profile == "production" and not expected:
-        return JSONResponse(status_code=503, content={"detail": "API authentication is not configured"})
+    if settings.profile == "production" and not _api_key_is_strong(expected):
+        detail = (
+            "API authentication is not configured"
+            if not expected
+            else "API authentication is not securely configured"
+        )
+        return JSONResponse(status_code=503, content={"detail": detail})
     if expected:
         provided = request.headers.get("X-API-Key", "")
         if not hmac.compare_digest(provided, expected):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API Key"})
 
     response = await call_next(request)
+    return response
+
+
+@app.middleware("http")
+async def enforce_trusted_host(request: Request, call_next: Any) -> Response:
+    """Reject host-header injection before redirects or application routing."""
+    from calibre_ai_auditor.config.settings import load_settings
+
+    settings = load_settings()
+    if settings.profile == "production":
+        allowed = {host.strip().lower() for host in settings.trusted_hosts.split(",") if host.strip()}
+        hostname = (request.url.hostname or "").lower()
+        if hostname not in allowed:
+            return JSONResponse(status_code=400, content={"detail": "Invalid host header"})
+    response: Response = await call_next(request)
     return response
 
 
