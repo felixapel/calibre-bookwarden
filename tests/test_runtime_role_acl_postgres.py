@@ -45,8 +45,9 @@ def test_runtime_roles_cannot_mutate_each_others_security_tables() -> None:
         with writer.connect() as connection:
             connection.execute(text("SELECT count(*) FROM manualauthorization"))
 
-        with pytest.raises(ProgrammingError), app.begin() as connection:
+        with pytest.raises(ProgrammingError) as denied_update, app.begin() as connection:
             connection.execute(text("UPDATE operationledger SET state = state WHERE false"))
+        assert denied_update.value.orig.sqlstate == "42501"
         with pytest.raises(ProgrammingError), app.begin() as connection:
             connection.execute(
                 text("INSERT INTO \"change\" (book_key, run_id, backup_opf_path) VALUES ('x', 'x', 'x')")
