@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Check,
   X,
@@ -78,11 +78,7 @@ export default function Review() {
 
   const { showToast } = useToast()
 
-  useEffect(() => {
-    loadBooks()
-  }, [])
-
-  const loadBooks = async () => {
+  const loadBooks = useCallback(async () => {
     setLoading(true)
     try {
       const data = await fetchBooks()
@@ -103,7 +99,11 @@ export default function Review() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showToast])
+
+  useEffect(() => {
+    loadBooks()
+  }, [loadBooks])
 
   const handleApplyAll = async () => {
     const approved = books.filter((b) => b.status === 'suggest_fix')

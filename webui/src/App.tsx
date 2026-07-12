@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { setApiKey } from './api/auth'
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { LayoutDashboard, FileSearch, Search, Settings, ShieldAlert, History, BookOpen, KeyRound, ShieldCheck, X, Copy, Sparkles } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -94,7 +95,7 @@ function Sidebar() {
 
 export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('BOOKAUDIT_API_KEY') || '')
+  const [apiKeyInput, setApiKeyInput] = useState('')
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -107,9 +108,9 @@ export default function App() {
   }, [])
 
   const handleSaveApiKey = () => {
-    localStorage.setItem('BOOKAUDIT_API_KEY', apiKeyInput)
+    setApiKey(apiKeyInput)
     setShowAuthModal(false)
-    window.location.reload()
+    window.dispatchEvent(new Event('bookaudit-authenticated'))
   }
 
   return (

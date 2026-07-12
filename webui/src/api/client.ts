@@ -1,5 +1,7 @@
+import { getApiKey } from './auth'
+
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-  const apiKey = localStorage.getItem('BOOKAUDIT_API_KEY') || ''
+  const apiKey = getApiKey()
   const headers = new Headers(options.headers || {})
   if (apiKey) {
     headers.set('X-API-Key', apiKey)

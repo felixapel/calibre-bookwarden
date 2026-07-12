@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { BookOpen, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
+import { getApiKey } from '../api/auth'
 
 interface CoverImageProps {
   bookKey: string
@@ -21,7 +22,7 @@ export default function CoverImage({ bookKey, className }: CoverImageProps) {
 
     const cleanKey = bookKey.replace(':', '_')
     const url = `/api/covers/${cleanKey}.jpg`
-    const apiKey = localStorage.getItem('BOOKAUDIT_API_KEY') || ''
+    const apiKey = getApiKey()
     
     let active = true
     let objectUrl: string | null = null
