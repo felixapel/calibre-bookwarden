@@ -37,11 +37,22 @@ restored Alembic head `6a3f83d9e621` successfully.
 
 ## Upgrade
 
-1. Pull/build the digest-pinned image and retain the prior image digest.
-2. Stop `app` and `writer` and take the paired backup above.
-3. Run `docker compose --profile maintenance run --rm migrate` exactly once.
-4. Start `app` in read-only mode and require readiness to pass.
-5. Start the single writer only after the read-only gate is healthy.
+1. Verify the release signature and attestations, pull the digest-pinned image,
+   and retain the prior image digest:
+
+   ```bash
+   cosign verify ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
+     --certificate-identity-regexp='https://github.com/OWNER/REPOSITORY/.github/workflows/release.yml@refs/tags/v.*' \
+     --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+   gh attestation verify oci://ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
+     --repo OWNER/REPOSITORY
+   ```
+
+2. Set `BOOKAUDIT_IMAGE` to that exact digest.
+3. Stop `app` and `writer` and take the paired backup above.
+4. Run `docker compose --profile maintenance run --rm migrate` exactly once.
+5. Start `app` in read-only mode and require readiness to pass.
+6. Start the single writer only after the read-only gate is healthy.
 
 The full production profile sets `BOOKAUDIT_REQUIRE_WRITER_READY=true`. Once the
 writer is enabled, `/api/health/ready` and the writer container healthcheck both

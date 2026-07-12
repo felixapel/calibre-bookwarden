@@ -28,3 +28,18 @@ def test_compose_requires_and_health_checks_the_single_writer() -> None:
 
     assert "BOOKAUDIT_REQUIRE_WRITER_READY: ${BOOKAUDIT_REQUIRE_WRITER_READY:-true}" in compose
     assert '["CMD", "bookaudit", "writer-health"]' in compose
+
+
+def test_release_workflow_publishes_only_after_full_gates() -> None:
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    legacy_gate = (ROOT / "scripts" / "verify-calibre-gate.sh").read_text()
+
+    assert "needs: verify" in release
+    assert "cosign sign --yes" in release
+    assert "attest-build-provenance@" in release
+    assert "attest-sbom@" in release
+    assert "benchmark_50k_metadata.py" in release
+    assert "TEST_POSTGRES_DSN" in ci
+    assert "benchmark_50k_metadata.py" in ci
+    assert "|| true" not in legacy_gate

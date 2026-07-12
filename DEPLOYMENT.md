@@ -10,6 +10,11 @@ The application uses a two-stage build process:
 
 **Image**: `${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}`
 
+Release tags matching `v<pyproject version>` publish a signed GHCR image with
+provenance and SPDX SBOM. For production, set `BOOKAUDIT_IMAGE` to the immutable
+`ghcr.io/<owner>/<repo>@sha256:<digest>` printed by the release workflow. The
+local version tag is intended for build-and-test deployments only.
+
 ---
 
 ## 2. Service Stack (Docker Compose)
