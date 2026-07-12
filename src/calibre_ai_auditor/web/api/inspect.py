@@ -4,8 +4,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
+from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.storage.models import EvidencePackage
@@ -119,9 +119,7 @@ async def _build_inspection_package(path: Path, settings: Settings, *, no_provid
         "published_date": extracted.get("published_date"),
     }
     is_cbz = path.suffix.lower() in (".cbz", ".cbr")
-    enriched_decl, enriched_obs = await enrich_comic_observations(
-        settings, path if is_cbz else None, None, raw, raw
-    )
+    enriched_decl, enriched_obs = await enrich_comic_observations(settings, path if is_cbz else None, None, raw, raw)
     # apply back to extracted for legacy extra_extracted and declared/obs below
     for k, v in enriched_obs.items():
         if v is not None:
@@ -168,7 +166,16 @@ async def _build_inspection_package(path: Path, settings: Settings, *, no_provid
     # Return as EvidencePackage-shaped dict for back-compat with existing UI
     # C3: include merged comic fields in extracted (current uses enhanced declared)
     extra_extracted: dict[str, Any] = {}
-    for comic_key in ("series", "series_index", "volume", "chapter", "series_position", "publisher", "published_date", "tags"):
+    for comic_key in (
+        "series",
+        "series_index",
+        "volume",
+        "chapter",
+        "series_position",
+        "publisher",
+        "published_date",
+        "tags",
+    ):
         if comic_key in extracted and extracted[comic_key] is not None:
             extra_extracted[comic_key] = extracted[comic_key]
     package = EvidencePackage(

@@ -20,8 +20,8 @@ from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel
 
 from calibre_ai_auditor.calibre.cli import CalibreCLI
-from calibre_ai_auditor.config.settings import load_settings
 from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
+from calibre_ai_auditor.config.settings import load_settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.verification.engine import (
@@ -157,7 +157,9 @@ async def start_verify(
                     if fp.exists():
                         first_file_path_for_comic = fp
                         break
-                is_cbz = bool(first_file_path_for_comic and first_file_path_for_comic.suffix.lower() in (".cbz", ".cbr"))
+                is_cbz = bool(
+                    first_file_path_for_comic and first_file_path_for_comic.suffix.lower() in (".cbz", ".cbr")
+                )
                 enriched_decl, enriched_obs = await enrich_comic_observations(
                     settings, first_file_path_for_comic if is_cbz else None, None, raw_decl, raw_obs
                 )

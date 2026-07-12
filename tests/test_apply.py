@@ -19,9 +19,7 @@ def session() -> Any:
 
 def test_apply_patch_backup(session: Any, tmp_path: Any) -> None:
     mock_cli = MagicMock()
-    mock_cli.export_opf.side_effect = lambda _book_id, destination: destination.write_text(
-        "original metadata"
-    )
+    mock_cli.export_opf.side_effect = lambda _book_id, destination: destination.write_text("original metadata")
     engine = ApplyEngine(mock_cli, tmp_path)
 
     book = BookRecord(

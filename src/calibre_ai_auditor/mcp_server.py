@@ -38,8 +38,7 @@ try:
     from fastmcp import FastMCP
 except ImportError as _e:  # pragma: no cover - optional dep
     raise ImportError(
-        "fastmcp is required for the MCP server. "
-        "Install with: uv pip install -e '.[mcp]' or pip install fastmcp"
+        "fastmcp is required for the MCP server. Install with: uv pip install -e '.[mcp]' or pip install fastmcp"
     ) from _e
 
 mcp = FastMCP("calibre-audit")
@@ -121,12 +120,8 @@ def list_problematic_books(
 
     with _open_session() as session:
         stmt = select(BookRecord)
-        if status:
-            stmt = stmt.where(BookRecord.status == status)
-        else:
-            # Use python-side filter for portability (status may be any string)
-            # Fetch a bit more then filter
-            stmt = stmt.limit(safe_limit * 2)
+        # Fetch extra rows when filtering problematic statuses in Python.
+        stmt = stmt.where(BookRecord.status == status) if status else stmt.limit(safe_limit * 2)
 
         books = session.exec(stmt).all()
 
@@ -190,7 +185,10 @@ def get_run_metrics(run_id: str | None = None) -> dict[str, Any]:
             "total_books": len(books),
             "counts_by_status": counts,
             "sample_book_keys": sample,
-            "note": "Counts derived from BookRecord.status after verification/audit. Decimal fields supported in source data.",
+            "note": (
+                "Counts derived from BookRecord.status after verification/audit. "
+                "Decimal fields supported in source data."
+            ),
         }
 
 

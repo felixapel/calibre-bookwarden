@@ -32,10 +32,7 @@ def claim_book_for_apply(session: Session, book_id: int) -> bool:
     """Atomically claim an approved book before starting external writes."""
     table = cast(Any, BookRecord).__table__
     result = session.execute(
-        update(BookRecord)
-        .where(table.c.id == book_id)
-        .where(table.c.status == "suggest_fix")
-        .values(status="applying")
+        update(BookRecord).where(table.c.id == book_id).where(table.c.status == "suggest_fix").values(status="applying")
     )
     session.commit()
     return bool(getattr(result, "rowcount", 0) == 1)

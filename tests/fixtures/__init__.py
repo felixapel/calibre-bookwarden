@@ -1,4 +1,5 @@
 """Synthetic fixture library for v1.0 content-verification engine tests."""
+
 from .gold_truth import VERIFICATION_CONTRACT
 from .synthetic_library.gold_truth import (
     SYNTHETIC_FIXTURES,

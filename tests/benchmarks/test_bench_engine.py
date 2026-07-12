@@ -21,7 +21,6 @@ from calibre_ai_auditor.verification.engine import (
     ObservationSet,
 )
 
-
 pytestmark = pytest.mark.benchmark
 
 
@@ -63,7 +62,7 @@ def test_bench_engine_100_books(benchmark, engine, factory) -> None:
                 ),
             )
 
-    result = benchmark(_run)
+    benchmark(_run)
     benchmark.extra_info["books_per_run"] = len(corpus)
     # Throughput metric — books per second
     mean_s = benchmark.stats.stats.mean / 1000.0
@@ -166,8 +165,7 @@ def test_bench_engine_scaling_check(engine, factory) -> None:
 
     # Sanity: throughput should not degrade >2x as size grows
     assert results[10000] > results[1000] / 2, (
-        f"Engine scaling looks bad: {results[10000]} books/sec at 10k "
-        f"vs {results[1000]} at 1k — non-linear slowdown"
+        f"Engine scaling looks bad: {results[10000]} books/sec at 10k vs {results[1000]} at 1k — non-linear slowdown"
     )
     # Print for the report
     for size, rate in results.items():

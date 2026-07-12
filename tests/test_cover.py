@@ -52,4 +52,3 @@ def test_extract_zip_cover() -> None:
         # Try with a non-existent ZIP file
         result_fail = extract_zip_cover(Path(tmp_dir) / "doesnotexist.cbz", output_jpg)
         assert result_fail is False
-

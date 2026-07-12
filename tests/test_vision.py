@@ -88,6 +88,7 @@ async def test_vision_verifier_unsupported(tmp_path: Any) -> None:
 
     db_module._engine = None
 
+
 @pytest.mark.asyncio
 async def test_vision_verifier_cache(tmp_path: Any) -> None:
     # Reset engine

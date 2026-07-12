@@ -24,7 +24,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.ocr_live
 
 
@@ -126,14 +125,22 @@ def _run_tesseract(pdf_path: Path) -> tuple[str, float]:
     if not shutil.which("ocrmypdf"):
         return ("", 0.0)
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         sidecar = tmp_dir / "sidecar.txt"
         out_pdf = tmp_dir / "out.pdf"
         cmd = [
-            "ocrmypdf", "--sidecar", str(sidecar),
-            "--pages", "1", "--optimize", "0", "--skip-text",
-            str(pdf_path), str(out_pdf),
+            "ocrmypdf",
+            "--sidecar",
+            str(sidecar),
+            "--pages",
+            "1",
+            "--optimize",
+            "0",
+            "--skip-text",
+            str(pdf_path),
+            str(out_pdf),
         ]
         start = time.monotonic()
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -161,7 +168,9 @@ def _run_paddleocr(pdf_path: Path) -> tuple[str, float]:
     img_bytes = pix.tobytes("png")
     doc.close()
     import io as _io
+
     from PIL import Image
+
     img = Image.open(_io.BytesIO(img_bytes))
     result = ocr.ocr(img, cls=True)
     elapsed_ms = (time.monotonic() - start) * 1000
@@ -179,9 +188,10 @@ def _run_surya(pdf_path: Path) -> tuple[str, float]:
         from surya.ocr import run_ocr
     except ImportError:
         return ("", 0.0)
+    import io as _io
+
     import fitz  # type: ignore[import-untyped]
     from PIL import Image
-    import io as _io
     from surya.model.detection.model import load_model as load_det_model
     from surya.model.detection.processor import load_processor as load_det_processor
     from surya.model.recognition.model import load_model as load_rec_model
@@ -194,13 +204,16 @@ def _run_surya(pdf_path: Path) -> tuple[str, float]:
     img = Image.open(_io.BytesIO(pix.tobytes("png")))
     doc.close()
     predictions = run_ocr(
-        [img], ["en"],
-        load_det_model(), load_det_processor(),
-        load_rec_model(), load_rec_processor(),
+        [img],
+        ["en"],
+        load_det_model(),
+        load_det_processor(),
+        load_rec_model(),
+        load_rec_processor(),
     )
     elapsed_ms = (time.monotonic() - start) * 1000
     if predictions:
-        return ("\n".join(l.text for l in predictions[0].text_lines), elapsed_ms)
+        return ("\n".join(line.text for line in predictions[0].text_lines), elapsed_ms)
     return ("", elapsed_ms)
 
 
@@ -313,18 +326,30 @@ def test_ocr_comparison_report(tmp_path) -> None:
             try:
                 text, ms = runner(pdf)
             except Exception as e:
-                results.append(OcrResult(
-                    provider=name, file=pdf.name, pages=0,
-                    total_ms=0, ms_per_page=0, char_count=0,
-                    accuracy_pct=None, notes=f"failed: {e}",
-                ))
+                results.append(
+                    OcrResult(
+                        provider=name,
+                        file=pdf.name,
+                        pages=0,
+                        total_ms=0,
+                        ms_per_page=0,
+                        char_count=0,
+                        accuracy_pct=None,
+                        notes=f"failed: {e}",
+                    )
+                )
                 continue
-            results.append(OcrResult(
-                provider=name, file=pdf.name, pages=1,
-                total_ms=round(ms, 1), ms_per_page=round(ms, 1),
-                char_count=len(text),
-                accuracy_pct=_char_accuracy(text, gt) if text else 0.0,
-            ))
+            results.append(
+                OcrResult(
+                    provider=name,
+                    file=pdf.name,
+                    pages=1,
+                    total_ms=round(ms, 1),
+                    ms_per_page=round(ms, 1),
+                    char_count=len(text),
+                    accuracy_pct=_char_accuracy(text, gt) if text else 0.0,
+                )
+            )
 
     # Write Markdown report
     report_path = tmp_path / "ocr_comparison_report.md"

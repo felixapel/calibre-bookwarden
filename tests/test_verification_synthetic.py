@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from calibre_ai_auditor.verification.engine import (
     ContentVerificationEngine,
@@ -206,7 +207,7 @@ def test_comic_fields_in_declared_observed_no_breakage() -> None:
 
 
 @pytest.mark.parametrize(
-    "rule_func,declared,observed,expected_verdict,expected_conf,reason_sub",
+    ("rule_func", "declared", "observed", "expected_verdict", "expected_conf", "reason_sub"),
     [
         # volume cases (int tolerant)
         (verify_volume, None, None, VerdictKind.confirmed, 90, "No volume"),
@@ -221,7 +222,6 @@ def test_comic_fields_in_declared_observed_no_breakage() -> None:
         (verify_chapter, None, 12.5, VerdictKind.missing, 85, "Chapter found"),
         (verify_chapter, 5.0, None, VerdictKind.ambiguous, 50, "Chapter declared"),
         (verify_chapter, 1.5, 1.5, VerdictKind.confirmed, 95, "Chapter matches"),
-        (verify_chapter, 1.5, 1.50, VerdictKind.confirmed, 95, "Chapter matches"),
         (verify_chapter, "3.25", 3.25, VerdictKind.confirmed, 95, "Chapter matches"),
         (verify_chapter, 10, 10.0, VerdictKind.confirmed, 95, "Chapter matches"),
         (verify_chapter, 1.0, 1.1, VerdictKind.mismatch, 90, "Chapter mismatch"),
@@ -253,7 +253,6 @@ async def test_enrich_comic_pipeline_komf_and_vision_paths(tmp_path: Path) -> No
     """Assert komf path and vision path are exercised in enrich_comic_observations (synthetic)."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    import calibre_ai_auditor.ocr.vision  # ensure submodule for patch
     from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
     from calibre_ai_auditor.config.settings import MangaProviders, MangaSettings, Settings
 
@@ -278,9 +277,11 @@ async def test_enrich_comic_pipeline_komf_and_vision_paths(tmp_path: Path) -> No
     mock_komf = MagicMock()
     mock_komf.fetch_candidates = AsyncMock(return_value=[mock_komf_cand])
 
-    with patch("calibre_ai_auditor.ocr.vision.verify_comic_cover", new_callable=AsyncMock) as mock_verify, \
-         patch("calibre_ai_auditor.calibre.cli.CalibreCLI") as mock_cli, \
-         patch("calibre_ai_auditor.providers.registry.ProviderRegistry") as mock_reg_cls:
+    with (
+        patch("calibre_ai_auditor.ocr.vision.verify_comic_cover", new_callable=AsyncMock) as mock_verify,
+        patch("calibre_ai_auditor.calibre.cli.CalibreCLI") as mock_cli,
+        patch("calibre_ai_auditor.providers.registry.ProviderRegistry") as mock_reg_cls,
+    ):
         mock_verify.return_value = mock_vision_res
         mock_cli.return_value = MagicMock()
         reg = MagicMock()

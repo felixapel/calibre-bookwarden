@@ -13,23 +13,22 @@ No writes are performed by the tools under test.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 # Skip entire module if fastmcp not installed (optional dep)
 fastmcp = pytest.importorskip("fastmcp")
 
-from calibre_ai_auditor.mcp_server import (
+from calibre_ai_auditor.mcp_server import (  # noqa: E402
     get_run_metrics,
     list_problematic_books,
     mcp,
     query_book_audit,
 )
-from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, Run
+from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, Run  # noqa: E402
 
 
 @pytest.fixture(name="mcp_test_db")
@@ -40,9 +39,9 @@ def mcp_test_db_fixture(tmp_path: Any) -> Generator[tuple[Any, Session], None, N
     SQLModel.metadata.create_all(engine)
 
     # Monkey-patch get_engine + load_settings so tools use our tmp DB and never touch /state
-    import calibre_ai_auditor.storage.db as dbmod
     import calibre_ai_auditor.config.settings as settings_mod
     import calibre_ai_auditor.mcp_server as mcpserver_mod
+    import calibre_ai_auditor.storage.db as dbmod
 
     original_get_engine = dbmod.get_engine
     original_load = settings_mod.load_settings
@@ -169,7 +168,8 @@ def test_query_book_audit_returns_verdict_and_preserves_decimals(mcp_test_db: tu
     assert result["book_key"] == "calibre:202"
     assert result["status"] == "needs_review"
     assert result["has_verdict"] is True
-    assert "verdict" in result and result["verdict"] is not None
+    assert "verdict" in result
+    assert result["verdict"] is not None
     assert result["verdict"]["action"] == "needs_review"
     assert result["verdict"]["risk_flags"] == ["edition_ambiguous"]
 

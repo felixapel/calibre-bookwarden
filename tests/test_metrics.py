@@ -47,8 +47,11 @@ def test_record_book_action_helper() -> None:
 def test_record_llm_call_helper() -> None:
     m = Metrics()
     m.record_llm_call(
-        provider="ollama", model="qwen3:8b",
-        duration_ms=1200, tokens_in=200, tokens_out=80,
+        provider="ollama",
+        model="qwen3:8b",
+        duration_ms=1200,
+        tokens_in=200,
+        tokens_out=80,
     )
     out = m.render()
     assert 'bookaudit_llm_calls_total{model="qwen3:8b",provider="ollama"} 1' in out

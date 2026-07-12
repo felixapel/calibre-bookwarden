@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -143,14 +144,14 @@ def test_cache_control_headers(test_db: Any) -> None:
     assert response.headers["Cache-Control"] == "no-cache, must-revalidate"
 
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 def test_paperless_webhook_endpoint_json_body(test_db: Any) -> None:
     from calibre_ai_auditor.config.settings import Settings
+
     settings = Settings()
     settings.paperless.enabled = True
 
     from calibre_ai_auditor.web.api.bridges import get_settings as bridges_get_settings
+
     app.dependency_overrides[bridges_get_settings] = lambda: settings
 
     with patch("calibre_ai_auditor.web.api.bridges.start_job", return_value="mock_job_id") as mock_start_job:
@@ -212,53 +213,59 @@ def test_paperless_webhook_endpoint_json_body(test_db: Any) -> None:
 async def test_do_paperless_webhook_audit(tmp_path: Any) -> None:
     # Reset the global engine cache to ensure a fresh test database is created
     import calibre_ai_auditor.storage.db
+
     calibre_ai_auditor.storage.db._engine = None
 
     try:
         mock_doc = {"id": 123, "title": "Mocked Book", "created": "2026-05-20"}
-        
+
         mock_bridge = MagicMock()
         mock_bridge.get_document = AsyncMock(return_value=mock_doc)
         mock_bridge.download_document_file = AsyncMock(return_value=tmp_path / "mocked_book.pdf")
-        
+
         dummy_pdf = tmp_path / "mocked_book.pdf"
         dummy_pdf.write_bytes(b"dummy pdf bytes")
-        
+
         from calibre_ai_auditor.config.settings import Settings
+
         settings = Settings()
         settings.paperless.enabled = True
         settings.storage.sqlite_path = tmp_path / "test.db"
         settings.storage.artifacts_dir = tmp_path / "artifacts"
-        
+
+        from sqlmodel import Session, SQLModel, select
+
         from calibre_ai_auditor.storage.db import get_engine
-        from sqlmodel import SQLModel, Session, select
+
         engine = get_engine(settings)
         SQLModel.metadata.create_all(engine)
-        
-        from calibre_ai_auditor.storage.models import Run, BookRecord
+
+        from calibre_ai_auditor.storage.models import BookRecord, Run
+
         run_id = "test_webhook_run"
         with Session(engine) as session:
             run = Run(run_id=run_id, status="started")
             session.add(run)
             session.commit()
-            
+
         with (
             patch("calibre_ai_auditor.integrations.paperless.PaperlessBridge", return_value=mock_bridge),
             patch("calibre_ai_auditor.audit.engine.run_audit", new_callable=AsyncMock) as mock_run_audit,
-            patch("calibre_ai_auditor.web.api.bridges.get_engine", return_value=engine)
+            patch("calibre_ai_auditor.web.api.bridges.get_engine", return_value=engine),
         ):
             from calibre_ai_auditor.web.api.bridges import do_paperless_webhook_audit
+
             await do_paperless_webhook_audit(settings, 123, run_id)
-            
+
             mock_run_audit.assert_called_once_with(settings, run_id, judge=True, save_evidence=True)
-            
+
             with Session(engine) as session:
                 book = session.exec(select(BookRecord).where(BookRecord.book_key == "paperless:123")).first()
                 assert book is not None
                 assert book.current_metadata["title"] == "Mocked Book"
                 assert book.paperless_document_id == 123
                 assert book.source == "paperless"
-                
+
                 run = session.exec(select(Run).where(Run.run_id == run_id)).first()
                 assert run is not None
                 assert run.status == "completed"

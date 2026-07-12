@@ -12,7 +12,6 @@ import pytest
 
 from calibre_ai_auditor.verification.metrics import Metrics
 
-
 pytestmark = pytest.mark.benchmark
 
 
@@ -86,7 +85,7 @@ def test_bench_metrics_inc_100k(benchmark) -> None:
     m = Metrics()
 
     def _run() -> None:
-        for i in range(100_000):
+        for _ in range(100_000):
             m.inc("hot_path_counter", labels={"kind": "a"})
 
     benchmark(_run)

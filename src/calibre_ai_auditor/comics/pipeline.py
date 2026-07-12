@@ -3,6 +3,7 @@
 Single shipped function that wires vision + Komf and returns enriched declared/observed.
 Replaces scattered duplicate merge logic across audit/ingest/web.
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,6 +14,7 @@ from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.extractors.comics import extract_comic_info_xml
 
 logger = logging.getLogger(__name__)
+
 
 async def enrich_comic_observations(
     settings: Settings,
@@ -45,34 +47,35 @@ async def enrich_comic_observations(
     if enabled and cover_path and getattr(cover_path, "exists", lambda: False)():
         try:
             from calibre_ai_auditor.ocr.vision import VisionVerifier, verify_comic_cover
+
             verifier = VisionVerifier(settings)
             vision_res = await verify_comic_cover(verifier, cover_path)
             if vision_res:
                 cover_vision = vision_res
                 for k in ("volume", "chapter", "series_position", "series", "title"):
-                    if k not in comic_meta or comic_meta.get(k) is None:
-                        if k in vision_res and vision_res[k] is not None:
-                            comic_meta[k] = vision_res[k]
+                    if (k not in comic_meta or comic_meta.get(k) is None) and vision_res.get(k) is not None:
+                        comic_meta[k] = vision_res[k]
         except Exception as e:
             logger.warning(f"comic vision failed for {cover_path}: {e}")
     elif enabled and book_path and book_path.suffix.lower() in (".cbz", ".cbr"):
         # auto-extract for cbz vision path (so callers can pass cover=None)
         try:
             import tempfile
+
             from calibre_ai_auditor.extractors.cover import extract_zip_cover
+
             with tempfile.TemporaryDirectory() as tmpd:
                 tmp_cover = Path(tmpd) / "cbz_cover.jpg"
                 if extract_zip_cover(book_path, tmp_cover) and tmp_cover.exists():
                     from calibre_ai_auditor.ocr.vision import VisionVerifier, verify_comic_cover
-                    from calibre_ai_auditor.ocr.vision import VisionVerifier, verify_comic_cover
+
                     verifier = VisionVerifier(settings)
                     vision_res = await verify_comic_cover(verifier, tmp_cover)
                     if vision_res:
                         cover_vision = vision_res
                         for k in ("volume", "chapter", "series_position", "series", "title"):
-                            if k not in comic_meta or comic_meta.get(k) is None:
-                                if k in vision_res and vision_res[k] is not None:
-                                    comic_meta[k] = vision_res[k]
+                            if (k not in comic_meta or comic_meta.get(k) is None) and vision_res.get(k) is not None:
+                                comic_meta[k] = vision_res[k]
         except Exception as e:
             logger.warning(f"comic vision (auto) failed for {book_path}: {e}")
 
@@ -81,12 +84,18 @@ async def enrich_comic_observations(
         try:
             from calibre_ai_auditor.calibre.cli import CalibreCLI
             from calibre_ai_auditor.providers.registry import ProviderRegistry
+
             lib_path = getattr(getattr(settings, "library", None), "path", None)
             cli = CalibreCLI(lib_path)
             reg = ProviderRegistry(cli)
             komf = reg.providers.get("komf")
             if komf:
-                title = comic_meta.get("series") or comic_meta.get("title") or declared.get("series") or declared.get("title")
+                title = (
+                    comic_meta.get("series")
+                    or comic_meta.get("title")
+                    or declared.get("series")
+                    or declared.get("title")
+                )
                 if title:
                     candidates = await komf.fetch_candidates(title=title, authors=declared.get("authors"))
                     if candidates:

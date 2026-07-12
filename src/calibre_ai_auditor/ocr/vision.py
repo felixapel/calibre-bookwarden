@@ -122,7 +122,17 @@ class VisionVerifier:
                 "confidence": {"type": "number"},
                 "explanation": {"type": "string"},
             },
-            "required": ["title", "authors", "publisher", "isbn", "volume", "chapter", "series_position", "confidence", "explanation"],
+            "required": [
+                "title",
+                "authors",
+                "publisher",
+                "isbn",
+                "volume",
+                "chapter",
+                "series_position",
+                "confidence",
+                "explanation",
+            ],
             "additionalProperties": False,
         }
 
@@ -131,8 +141,9 @@ class VisionVerifier:
         if is_comic:
             system_prompt = (
                 "You are a comic/manga cover metadata auditor. Analyze the provided book cover image. "
-                "Extract the exact title, author(s), publisher, ISBN if visible, volume number, chapter number (use decimal), "
-                "and series position. For manga covers, prioritize series title, volume/edition from art, and any chapter hints. "
+                "Extract the exact title, author(s), publisher, ISBN if visible, volume number, "
+                "chapter number (use decimal), and series position. For manga covers, prioritize "
+                "series title, volume/edition from art, and any chapter hints. "
                 "Assess your confidence in the extraction (0.0 to 1.0) and explain your reasoning."
             )
         else:

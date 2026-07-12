@@ -46,4 +46,3 @@ def test_extract_comic_info_xml() -> None:
         assert metadata is not None
         assert metadata["title"] == "Zipped Manga"
         assert metadata["authors"] == ["Manga Artist"]
-

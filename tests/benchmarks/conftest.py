@@ -12,30 +12,67 @@ from typing import Any
 
 import pytest
 
-
 # Realistic book titles, authors, ISBNs to seed the corpus
 TITLES = [
-    "The Great Gatsby", "Moby-Dick; or, The Whale", "Pride and Prejudice",
-    "The Hunchback of Notre-Dame", "War and Peace", "Crime and Punishment",
-    "One Hundred Years of Solitude", "The Lord of the Rings", "Foundation",
-    "Snow Crash", "A Brief History of Time", "Sapiens", "Project Hail Mary",
-    "The Stand", "Brave New World", "1984", "Animal Farm", "Dune",
-    "La casa de los espíritus", "The Pragmatic Programmer",
+    "The Great Gatsby",
+    "Moby-Dick; or, The Whale",
+    "Pride and Prejudice",
+    "The Hunchback of Notre-Dame",
+    "War and Peace",
+    "Crime and Punishment",
+    "One Hundred Years of Solitude",
+    "The Lord of the Rings",
+    "Foundation",
+    "Snow Crash",
+    "A Brief History of Time",
+    "Sapiens",
+    "Project Hail Mary",
+    "The Stand",
+    "Brave New World",
+    "1984",
+    "Animal Farm",
+    "Dune",
+    "La casa de los espíritus",
+    "The Pragmatic Programmer",
 ]
 
 AUTHORS = [
-    "F. Scott Fitzgerald", "Herman Melville", "Jane Austen", "Victor Hugo",
-    "Leo Tolstoy", "Fyodor Dostoevsky", "Gabriel García Márquez",
-    "J.R.R. Tolkien", "Isaac Asimov", "Neal Stephenson",
-    "Stephen Hawking", "Yuval Noah Harari", "Andy Weir", "Stephen King",
-    "Aldous Huxley", "George Orwell", "Frank Herbert", "Isabel Allende",
-    "Andrew Hunt", "David Thomas",
+    "F. Scott Fitzgerald",
+    "Herman Melville",
+    "Jane Austen",
+    "Victor Hugo",
+    "Leo Tolstoy",
+    "Fyodor Dostoevsky",
+    "Gabriel García Márquez",
+    "J.R.R. Tolkien",
+    "Isaac Asimov",
+    "Neal Stephenson",
+    "Stephen Hawking",
+    "Yuval Noah Harari",
+    "Andy Weir",
+    "Stephen King",
+    "Aldous Huxley",
+    "George Orwell",
+    "Frank Herbert",
+    "Isabel Allende",
+    "Andrew Hunt",
+    "David Thomas",
 ]
 
 PUBLISHERS = [
-    "Penguin", "Penguin Books", "Harper", "HarperCollins", "Random House",
-    "Scribner", "Bantam", "Bantam Spectra", "Vintage", "Tor",
-    "Addison-Wesley", "Prentice Hall", "Simon & Schuster",
+    "Penguin",
+    "Penguin Books",
+    "Harper",
+    "HarperCollins",
+    "Random House",
+    "Scribner",
+    "Bantam",
+    "Bantam Spectra",
+    "Vintage",
+    "Tor",
+    "Addison-Wesley",
+    "Prentice Hall",
+    "Simon & Schuster",
 ]
 
 LANGUAGES = ["eng", "spa", "fre", "ger", "rus", "ita", "por", "jpn"]

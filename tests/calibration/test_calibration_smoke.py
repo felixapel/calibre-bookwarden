@@ -19,10 +19,7 @@ import pytest
 
 from calibre_ai_auditor.verification.engine import (
     ContentVerificationEngine,
-    DeclaredMetadata,
-    ObservationSet,
 )
-
 
 pytestmark = pytest.mark.benchmark
 
@@ -89,6 +86,7 @@ def test_action_distribution_computes_correctly() -> None:
 
     # Action breakdown
     from collections import Counter
+
     actions = Counter(v.action.value for v in verdicts)
     eligible = sum(1 for v in verdicts if v.auto_apply_eligible)
     total = len(verdicts)

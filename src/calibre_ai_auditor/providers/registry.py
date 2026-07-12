@@ -46,17 +46,25 @@ class KomfProvider(BaseProvider):
                         if r.status_code == 200:
                             data = r.json()
                             # naive: if list or wrapped
-                            items = data if isinstance(data, list) else data.get("candidates", [data]) if isinstance(data, dict) else []
+                            items = (
+                                data
+                                if isinstance(data, list)
+                                else data.get("candidates", [data])
+                                if isinstance(data, dict)
+                                else []
+                            )
                             cands = []
                             for item in items[:3]:
                                 md = self.normalize_metadata(item)
-                                cands.append(Candidate(
-                                    candidate_id=f"komf-{item.get('id', title)}",
-                                    provider="komf",
-                                    provider_url=item.get("url"),
-                                    metadata=md,
-                                    raw_score=0.8,
-                                ))
+                                cands.append(
+                                    Candidate(
+                                        candidate_id=f"komf-{item.get('id', title)}",
+                                        provider="komf",
+                                        provider_url=item.get("url"),
+                                        metadata=md,
+                                        raw_score=0.8,
+                                    )
+                                )
                             if cands:
                                 return cands
                     except Exception:
@@ -74,12 +82,14 @@ class KomfProvider(BaseProvider):
             series_position=1.0,
             identifiers={"komf": "stub"},
         )
-        return [Candidate(
-            candidate_id=f"komf-stub-{title}",
-            provider="komf",
-            metadata=meta,
-            raw_score=0.4,
-        )]
+        return [
+            Candidate(
+                candidate_id=f"komf-stub-{title}",
+                provider="komf",
+                metadata=meta,
+                raw_score=0.4,
+            )
+        ]
 
     def normalize_metadata(self, raw_data: Any) -> Metadata:
         if isinstance(raw_data, Metadata):

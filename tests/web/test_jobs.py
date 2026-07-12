@@ -1,9 +1,8 @@
-import asyncio
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from calibre_ai_auditor.config.settings import Settings
+
 from calibre_ai_auditor.queue.valkey import ValkeyQueue
-from calibre_ai_auditor.web.jobs import start_job, get_job_status, run_job_from_payload, get_queue
 
 
 @pytest.mark.asyncio

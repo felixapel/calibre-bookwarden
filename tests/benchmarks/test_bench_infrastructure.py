@@ -9,7 +9,6 @@ Run: pytest --benchmark-only tests/benchmarks/test_bench_infrastructure.py
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -21,7 +20,6 @@ from calibre_ai_auditor.verification.host_registry import (
     default_felix_homelab,
 )
 from calibre_ai_auditor.verification.restore import RestorePointStore
-
 
 pytestmark = pytest.mark.benchmark
 
@@ -62,6 +60,7 @@ def epub_path() -> Path | None:
 @pytest.mark.benchmark(group="host_discovery")
 def test_bench_host_discovery_static(benchmark) -> None:
     """Build the default 3-host config (no network)."""
+
     def _run() -> None:
         HostRegistryConfig(hosts=default_felix_homelab())
 
@@ -95,7 +94,6 @@ def test_bench_host_discovery_live(benchmark) -> None:
 @pytest.mark.benchmark(group="restore_point")
 def test_bench_restore_point_create_1000(benchmark, tmp_path) -> None:
     """Create 1000 restore points (with hardlinks)."""
-    import json
     store = RestorePointStore(tmp_path)
     before = {"title": "Old Title", "authors": ["Author"]}
     after = {"title": "New Title", "authors": ["Author"]}
@@ -200,6 +198,7 @@ def test_bench_extract_snippets_200x(benchmark, epub_path) -> None:
 def test_bench_resumable_50k_books(benchmark) -> None:
     """Build a ResumableRunStore for 50k books (the worst case scale)."""
     import asyncio
+
     from calibre_ai_auditor.verification.resumable import ResumableRunStore
 
     book_keys = [f"calibre:{i}" for i in range(50_000)]

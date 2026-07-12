@@ -16,7 +16,6 @@ recorder).  For now they are hand-crafted from real LLM outputs.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -29,7 +28,6 @@ from calibre_ai_auditor.verification.engine_llm import (
     WitnessCache,
     WitnessCacheEntry,
     WitnessConfig,
-    WitnessResult,
     build_witness_prompt,
 )
 from calibre_ai_auditor.verification.verdict import (
@@ -37,7 +35,6 @@ from calibre_ai_auditor.verification.verdict import (
     FieldVerdict,
     VerdictKind,
 )
-
 
 CASSETTE_DIR = Path(__file__).parent / "cassettes"
 
@@ -78,9 +75,7 @@ def _make_mock_router(response_payload: dict[str, Any]) -> MagicMock:
     provider.name = "recorded-cassette"
     provider.is_local = True
     router.get_provider_for_task = MagicMock(return_value=provider)
-    router.execute_structured = AsyncMock(
-        return_value=MagicMock(content=json.dumps(response_payload))
-    )
+    router.execute_structured = AsyncMock(return_value=MagicMock(content=json.dumps(response_payload)))
     return router
 
 
@@ -219,9 +214,7 @@ async def test_witness_handles_provider_error_gracefully() -> None:
     provider = MagicMock()
     provider.name = "broken"
     router.get_provider_for_task = MagicMock(return_value=provider)
-    router.execute_structured = AsyncMock(
-        side_effect=ConnectionError("host unreachable")
-    )
+    router.execute_structured = AsyncMock(side_effect=ConnectionError("host unreachable"))
     witness = LLMWitness(router, WitnessConfig(cache_responses=False))
 
     result = await witness.witness_field(field_name="title", current_fv=fv)

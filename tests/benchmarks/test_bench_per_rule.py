@@ -21,7 +21,6 @@ from calibre_ai_auditor.verification.rules import (
     verify_title,
 )
 
-
 pytestmark = pytest.mark.benchmark
 
 
@@ -85,8 +84,8 @@ def test_bench_verify_authors_with_transliteration(benchmark) -> None:
     ] * 333
 
     def _run() -> None:
-        for c, l in zip(cyrillic_authors, latin_authors):
-            verify_authors([l], [c])
+        for cyrillic, latin in zip(cyrillic_authors, latin_authors, strict=True):
+            verify_authors([latin], [cyrillic])
 
     benchmark(_run)
     benchmark.extra_info["rule"] = "authors"

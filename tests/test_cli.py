@@ -54,12 +54,8 @@ paperless:
         # Mock PaperlessBridge
         mock_bridge = MagicMock()
         mock_bridge.test_connection = AsyncMock(return_value=True)
-        mock_bridge.fetch_candidate_documents = AsyncMock(
-            return_value=[{"id": 42, "title": "Scanned Novel"}]
-        )
-        mock_bridge.download_document_file = AsyncMock(
-            return_value=Path(tmp_dir) / "scanned_novel.pdf"
-        )
+        mock_bridge.fetch_candidate_documents = AsyncMock(return_value=[{"id": 42, "title": "Scanned Novel"}])
+        mock_bridge.download_document_file = AsyncMock(return_value=Path(tmp_dir) / "scanned_novel.pdf")
 
         # Create dummy file to simulate downloaded book
         (Path(tmp_dir) / "scanned_novel.pdf").write_bytes(b"dummy pdf bytes")
@@ -75,4 +71,3 @@ paperless:
             assert result.exit_code == 0
             assert "Ingestion complete." in result.stdout
             assert "Ingesting document 42: Scanned Novel..." in result.stdout
-

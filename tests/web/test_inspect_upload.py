@@ -2,7 +2,6 @@ import io
 from typing import Any
 from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from calibre_ai_auditor.config.settings import Settings

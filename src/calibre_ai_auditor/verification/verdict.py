@@ -63,7 +63,8 @@ class JudgeCall(BaseModel):
 class FieldVerdict(BaseModel):
     """Per-field adjudication result."""
 
-    field: str  # title | authors | isbn | publisher | published_date | language | series | series_index | volume | chapter | series_position | cover | tags
+    # Supported values include standard bibliographic fields and comic position fields.
+    field: str
     declared_value: Any
     observed_value: Any | None = None
     verdict: VerdictKind

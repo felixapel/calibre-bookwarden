@@ -8,8 +8,8 @@ from typing import Any
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.audit.engine import run_audit
-from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
+from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.storage.db import get_engine

@@ -28,8 +28,8 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.comics.pipeline import enrich_comic_observations
+from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
 from calibre_ai_auditor.storage.db import get_engine
@@ -86,7 +86,19 @@ async def _build_observation_set(book: BookRecord, settings: Settings) -> Observ
     )
 
     # Update heuristics from enriched for ObservationSet
-    for k in ("title", "authors", "publisher", "published_date", "language", "series", "series_index", "isbn", "volume", "chapter", "series_position"):
+    for k in (
+        "title",
+        "authors",
+        "publisher",
+        "published_date",
+        "language",
+        "series",
+        "series_index",
+        "isbn",
+        "volume",
+        "chapter",
+        "series_position",
+    ):
         if k in enriched_obs and enriched_obs[k] is not None:
             heuristics[k] = enriched_obs[k]
 
@@ -113,7 +125,7 @@ async def _build_observation_set(book: BookRecord, settings: Settings) -> Observ
 
 
 async def _build_declared(book: BookRecord, settings: Settings) -> DeclaredMetadata:
-    """Build DeclaredMetadata from a BookRecord's current_metadata, using pipeline for comic enrichment (ComicInfo/Komf/vision)."""
+    """Build declared metadata, including enrichment from the comic pipeline."""
     current_meta = book.current_metadata or {}
     raw_decl = {
         "title": current_meta.get("title"),
@@ -134,14 +146,13 @@ async def _build_declared(book: BookRecord, settings: Settings) -> DeclaredMetad
         fp = fmt.get("path") if isinstance(fmt, dict) else None
         if fp:
             from pathlib import Path
+
             p = Path(fp)
             if p.exists():
                 file_path = p
                 break
     is_cbz = bool(file_path and file_path.suffix.lower() in (".cbz", ".cbr"))
-    enriched_decl, _ = await enrich_comic_observations(
-        settings, file_path if is_cbz else None, None, raw_decl, {}
-    )
+    enriched_decl, _ = await enrich_comic_observations(settings, file_path if is_cbz else None, None, raw_decl, {})
     return DeclaredMetadata(
         title=enriched_decl.get("title"),
         authors=enriched_decl.get("authors") or [],

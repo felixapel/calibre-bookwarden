@@ -47,7 +47,7 @@ def test_verify_start_default_library(client: TestClient) -> None:
 
 def test_verify_response_schema(client: TestClient) -> None:
     """VerifyStartResponse has the right fields."""
-    from calibre_ai_auditor.web.api.verify import VerifyStartResponse, VerifyRequest
+    from calibre_ai_auditor.web.api.verify import VerifyRequest, VerifyStartResponse
 
     req = VerifyRequest(library="/tmp", limit=1)
     # Just check pydantic validation works

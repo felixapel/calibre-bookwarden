@@ -27,7 +27,6 @@ from calibre_ai_auditor.verification.verdict import (
     VerdictKind,
 )
 
-
 pytestmark = pytest.mark.benchmark
 
 

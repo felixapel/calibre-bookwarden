@@ -317,7 +317,7 @@ def build_observation_from_extraction(
     series_position_extracted: float | None = None,
     cover_vision: dict | None = None,
 ) -> ObservationSet:
-    """Convenience builder. Wires usage of cover_vision: if present and comic fields empty, populate from it (decimal chapter)."""
+    """Build observations and fill empty comic fields from cover vision."""
     vol = volume_extracted
     ch = chapter_extracted
     sp = series_position_extracted

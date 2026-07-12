@@ -63,16 +63,12 @@ async def test_paperless_bridge_fetch_candidates() -> None:
         # Mock document types request
         mock_types_response = MagicMock()
         mock_types_response.raise_for_status = MagicMock()
-        mock_types_response.json = MagicMock(
-            return_value={"results": [{"id": 42, "name": "book_scan"}]}
-        )
+        mock_types_response.json = MagicMock(return_value={"results": [{"id": 42, "name": "book_scan"}]})
 
         # Mock documents list request
         mock_docs_response = MagicMock()
         mock_docs_response.raise_for_status = MagicMock()
-        mock_docs_response.json = MagicMock(
-            return_value={"results": [{"id": 101, "title": "Scanned Book 1"}]}
-        )
+        mock_docs_response.json = MagicMock(return_value={"results": [{"id": 101, "title": "Scanned Book 1"}]})
 
         # A custom client that routes calls to different mocks
         mock_client = MagicMock()
@@ -106,9 +102,7 @@ async def test_paperless_bridge_download() -> None:
 
         mock_stream_response = MagicMock()
         mock_stream_response.raise_for_status = MagicMock()
-        mock_stream_response.headers = {
-            "content-disposition": 'attachment; filename="my_scanned_book.pdf"'
-        }
+        mock_stream_response.headers = {"content-disposition": 'attachment; filename="my_scanned_book.pdf"'}
 
         # Mock stream chunks
         async def aiter_bytes():
