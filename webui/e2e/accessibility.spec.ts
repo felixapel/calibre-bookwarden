@@ -52,3 +52,36 @@ test('dashboard has no serious accessibility violations or horizontal overflow',
   }))
   expect(dimensions.scrollWidth, JSON.stringify(dimensions, null, 2)).toBeLessThanOrEqual(dimensions.clientWidth)
 })
+
+test('dashboard stays within production web-performance budgets', async ({ page }) => {
+  await page.addInitScript(() => {
+    const vitals = { cls: 0, lcp: 0 }
+    ;(window as unknown as { __bookauditVitals: typeof vitals }).__bookauditVitals = vitals
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const shift = entry as PerformanceEntry & { hadRecentInput?: boolean; value?: number }
+        if (!shift.hadRecentInput) vitals.cls += shift.value ?? 0
+      }
+    }).observe({ type: 'layout-shift', buffered: true })
+    new PerformanceObserver((list) => {
+      const latest = list.getEntries().at(-1)
+      if (latest) vitals.lcp = latest.startTime
+    }).observe({ type: 'largest-contentful-paint', buffered: true })
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await page.waitForTimeout(500)
+  const metrics = await page.evaluate(() => {
+    const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
+    const vitals = (window as unknown as { __bookauditVitals: { cls: number; lcp: number } }).__bookauditVitals
+    const scriptTransferBytes = performance.getEntriesByType('resource')
+      .filter((entry) => entry.name.includes('/assets/') && entry.name.endsWith('.js'))
+      .reduce((total, entry) => total + (entry as PerformanceResourceTiming).encodedBodySize, 0)
+    return { ...vitals, domContentLoaded: navigation.domContentLoadedEventEnd, scriptTransferBytes }
+  })
+  expect(metrics.cls).toBeLessThanOrEqual(0.1)
+  if (metrics.lcp > 0) expect(metrics.lcp).toBeLessThanOrEqual(2_500)
+  expect(metrics.domContentLoaded).toBeLessThanOrEqual(2_500)
+  expect(metrics.scriptTransferBytes).toBeLessThanOrEqual(150_000)
+})

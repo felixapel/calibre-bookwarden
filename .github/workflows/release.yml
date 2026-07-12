@@ -63,7 +63,7 @@ jobs:
           npm run build
           npm audit --audit-level=high
           npx playwright install --with-deps chromium
-          npm run e2e:chromium -- --reporter=line
+          npx playwright test --project=chromium --project=mobile-chromium --reporter=line
 
   publish:
     needs: verify
