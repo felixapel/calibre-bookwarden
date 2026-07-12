@@ -3,12 +3,15 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.storage.models import BookRecord
 from calibre_ai_auditor.web.api.apply import get_session as apply_get_session
 from calibre_ai_auditor.web.api.books import get_session as books_get_session
+from calibre_ai_auditor.web.api.config import save_config
 from calibre_ai_auditor.web.api.runs import get_session as runs_get_session
 from calibre_ai_auditor.web.app import app
 
@@ -58,7 +61,17 @@ def test_health_check(test_db: Any) -> None:
 def test_config(test_db: Any) -> None:
     response = client.get("/api/config")
     assert response.status_code == 200
-    assert "profile" in response.json()
+    assert response.json()["status"] == "success"
+    assert "profile" in response.json()["data"]["config"]
+    assert response.json()["data"]["mutable"] is True
+
+
+@pytest.mark.asyncio
+async def test_production_config_is_explicitly_read_only() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await save_config({"log_level": "DEBUG"}, Settings(profile="production"))
+
+    assert getattr(exc_info.value, "status_code", None) == 403
 
 
 def test_duplicates(test_db: Any) -> None:

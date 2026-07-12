@@ -10,12 +10,15 @@ test.describe('Settings page', () => {
         body: {
           status: 'success',
           data: {
+            mutable: true,
+            config: {
             library: { path: '/library', read_only: true },
             ollama_enabled: true,
             ollama_base_url: 'http://localhost:11434',
             judge_model: 'qwen3:8b',
             vision_model: 'qwen2.5vl:7b',
             privacy: { allow_remote_text: false, allow_remote_images: false },
+            },
           },
         },
       },

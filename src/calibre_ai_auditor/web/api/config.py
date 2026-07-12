@@ -2,11 +2,16 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 
-from calibre_ai_auditor.config.settings import load_settings
+from calibre_ai_auditor.config.settings import Settings, load_settings
+from calibre_ai_auditor.web.schemas import APIResponse
 
 router = APIRouter()
+
+
+def get_settings() -> Settings:
+    return load_settings()
 
 
 def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
@@ -97,14 +102,24 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
-@router.get("/config")
-async def get_config() -> dict[str, Any]:
-    settings = load_settings()
-    return sanitize_config(settings.model_dump())
+@router.get("/config", response_model=APIResponse)
+async def get_config(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+    return {
+        "status": "success",
+        "data": {
+            "config": sanitize_config(settings.model_dump()),
+            "mutable": settings.profile != "production",
+        },
+    }
 
 
-@router.post("/config")
-async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+@router.post("/config", response_model=APIResponse)
+async def save_config(
+    payload: dict[str, Any] = Body(...),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    if settings.profile == "production":
+        raise HTTPException(status_code=403, detail="Production configuration is read-only; update deployment inputs")
     config_path = Path("config/config.yml")
     yaml_config: dict[str, Any] = {}
     if config_path.exists():
@@ -128,5 +143,8 @@ async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     with open(config_path, "w") as f:
         yaml.safe_dump(yaml_config, f, default_flow_style=False)
 
-    settings = load_settings(config_path)
-    return sanitize_config(settings.model_dump())
+    updated = load_settings(config_path)
+    return {
+        "status": "success",
+        "data": {"config": sanitize_config(updated.model_dump()), "mutable": True},
+    }

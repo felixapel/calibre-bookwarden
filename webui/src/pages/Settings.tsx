@@ -8,6 +8,7 @@ export default function Settings() {
   const [config, setConfig] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
+  const [mutable, setMutable] = useState(false)
   const [localApiKey, setLocalApiKey] = useState('')
 
   const { showToast } = useToast()
@@ -21,7 +22,8 @@ export default function Settings() {
     setLoading(true)
     try {
       const data = await fetchConfig()
-      setConfig(data)
+      setConfig(data.data.config)
+      setMutable(data.data.mutable)
     } catch (e) {
       showToast('Failed to load settings', 'error')
     } finally {
@@ -74,10 +76,12 @@ export default function Settings() {
           )}
           <button 
             onClick={handleSave}
+            disabled={!mutable}
+            title={mutable ? 'Save configuration' : 'Production configuration is managed by deployment inputs'}
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold rounded-xl transition-all duration-300 shadow-[0_0_12px_rgba(139,92,246,0.2)] text-sm cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            Save Changes
+            {mutable ? 'Save Changes' : 'Managed by deployment'}
           </button>
         </div>
       </header>
