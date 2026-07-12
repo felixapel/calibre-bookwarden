@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from alembic import command
@@ -31,7 +32,7 @@ def get_engine(settings: Settings) -> Engine:
 def init_db(settings: Settings) -> None:
     """Upgrade the configured database to the repository's Alembic head."""
     engine = get_engine(settings)
-    repository_root = Path(__file__).resolve().parents[3]
+    repository_root = Path(os.environ.get("BOOKAUDIT_REPOSITORY_ROOT", Path(__file__).resolve().parents[3]))
     config = Config(repository_root / "alembic.ini")
     config.set_main_option("script_location", str(repository_root / "migrations"))
     config.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False).replace("%", "%%"))

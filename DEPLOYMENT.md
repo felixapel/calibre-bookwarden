@@ -16,8 +16,9 @@ The application uses a two-stage build process:
 
 We use **Docker Compose Profiles** to manage complexity.
 
-### The `full` Profile
-Starts the application plus all specialized sidecar services:
+### Optional integrations
+The default production stack starts only the required services. The `optional`
+profile adds specialized sidecars:
 - **`app`**: FastAPI Backend + React WebUI.
 - **`postgres`**: High-availability database.
 - **`valkey`**: Task queue and rate-limit caching.
@@ -25,9 +26,10 @@ Starts the application plus all specialized sidecar services:
 - **`gotenberg`**: PDF preview/report renderer.
 - **`qdrant`**: Semantic duplicate detection.
 
-### Deployment Command
+### Deployment commands
 ```bash
-docker compose up -d
+docker compose --profile maintenance run --rm migrate
+docker compose up -d app writer
 ```
 
 ---
@@ -38,7 +40,8 @@ docker compose up -d
 |---|---|---|
 | `./fake_library` | `/library` | The Calibre library to audit. |
 | `./.state` | `/state` | Database files and app state. |
-| `./.artifacts` | `/artifacts` | Backups, snippets, and covers. |
+| `./.artifacts` | `/artifacts` | API audit artifacts (never writer restore evidence). |
+| `./.writer-artifacts` | `/writer-artifacts` | Writer-exclusive OPF targets and restore evidence. |
 | `./config` | `/app/config` | YAML configuration overrides. |
 
 ---
@@ -48,11 +51,11 @@ docker compose up -d
 | Service | Host Port | Container Port |
 |---|---|---|
 | **App (WebUI/API)** | **8080** | 8080 |
-| **PostgreSQL** | **15432** | 5432 |
-| **Valkey** | **16379** | 6379 |
-| **Qdrant** | **6333** | 6333 |
-| **Tika** | **9998** | 9998 |
-| **Gotenberg** | **3000** | 3000 |
+| **PostgreSQL** | not published | 5432 |
+| **Valkey** | not published | 6379 |
+| **Qdrant** | not published | 6333 |
+| **Tika** | not published | 9998 |
+| **Gotenberg** | not published | 3000 |
 
 ---
 
@@ -64,13 +67,16 @@ Critical variables for deployment:
 *   `OLLAMA_BASE_URL`: Pointer to your homelab Ollama instance.
 *   `BOOKAUDIT_JUDGE_MODEL`: The LLM to use for auditing (e.g., `qwen3.5:9b-q4_K_M`).
 *   `OPENAI_API_KEY`: Required only for remote deep reasoning.
+*   `BOOKAUDIT_APP_POSTGRES_DSN`, `BOOKAUDIT_WRITER_POSTGRES_DSN`, and
+    `BOOKAUDIT_MIGRATOR_POSTGRES_DSN`: distinct database roles. Provision them
+    before the migration window; do not reuse the migrator credential at runtime.
 
 ---
 
 ## 6. Operational Rules
 
 1.  **Safety First**: Always mount your library as `:ro` (read-only) unless you are performing an active `apply` operation.
-2.  **Backups**: Ensure the `.artifacts/backups` directory is backed up. This folder contains the OPF files needed for the **Undo** operation.
+2.  **Backups**: Back up `.writer-artifacts`; only the writer may mount this directory read-write.
 3.  **Permissions**: Containers run as the host's UID/GID (defined in `.env`) to prevent "root-owned" file issues on your host filesystem.
 # Production v2 network boundary
 
@@ -84,3 +90,7 @@ Set `BOOKAUDIT_LIBRARY_HOST_PATH` to an absolute Calibre library path. The
 read-only gate always mounts it as `/library:ro`; no environment option can
 turn that mount read-write. Copy `.env.example` to `.env`, replace every
 placeholder secret, and keep `.env` outside version control.
+
+Schema upgrades are an explicit maintenance action. Stop `app` and `writer`,
+take a PostgreSQL plus `.writer-artifacts` backup, run the one-shot `migrate`
+service, then start the runtime roles. Runtime services never auto-migrate.

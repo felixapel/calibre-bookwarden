@@ -50,7 +50,6 @@ ingest = [
 ocr = [
     "paddleocr>=2.7.0",
     "paddlepaddle>=2.6.0",
-    "surya-ocr>=0.4.0",
 ]
 
 [project.scripts]
