@@ -151,7 +151,7 @@ Per-book restore points at `<artifacts_dir>/restore/<run_id>/<book_key>/`:
 - `before.json` and `after.json` snapshots
 - `restore.json` metadata for bulk undo by run_id
 
-7-day TTL cleanup; configurable.
+30-day retention target; cleanup is an explicit operator-approved action.
 
 ### ResumableRunStore (new in v1.0)
 

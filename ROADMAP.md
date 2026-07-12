@@ -45,7 +45,7 @@ becomes the witness stand and the LLM becomes the jury.
 - **Multi-host discovery** — `HostRegistry` knows the gaming PC (RTX 3090),
   Unraid (RTX 5060 Ti + 1660 SUPER), and local Ollama. Routes tasks by GPU class.
 - **`RestorePointStore`** — per-book restore points (OPF + cover + hardlinked file + JSON)
-  with 7-day TTL cleanup
+  with a 30-day retention target and explicit cleanup
 - **`ConservativeAutoApply`** — gates auto-apply on ≥80 confidence AND no high-risk flags
   AND per-field thresholds AND no required-review
 - **`ResumableRunStore`** — Valkey Streams-backed per-book state with
