@@ -72,3 +72,15 @@ Critical variables for deployment:
 1.  **Safety First**: Always mount your library as `:ro` (read-only) unless you are performing an active `apply` operation.
 2.  **Backups**: Ensure the `.artifacts/backups` directory is backed up. This folder contains the OPF files needed for the **Undo** operation.
 3.  **Permissions**: Containers run as the host's UID/GID (defined in `.env`) to prevent "root-owned" file issues on your host filesystem.
+# Production v2 network boundary
+
+The production Compose profile binds the API only to `127.0.0.1`. Terminate
+TLS in a reverse proxy on the same host and proxy to
+`http://127.0.0.1:${BOOKAUDIT_PORT:-8080}`. Do not publish the application port
+directly on the LAN. PostgreSQL, Valkey, and optional sidecars are reachable
+only on the Compose network.
+
+Set `BOOKAUDIT_LIBRARY_HOST_PATH` to an absolute Calibre library path. The
+read-only gate always mounts it as `/library:ro`; no environment option can
+turn that mount read-write. Copy `.env.example` to `.env`, replace every
+placeholder secret, and keep `.env` outside version control.

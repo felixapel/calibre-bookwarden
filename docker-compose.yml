@@ -17,13 +17,13 @@ services:
       BOOKAUDIT_API_KEY: ${BOOKAUDIT_API_KEY:?set in .env}
       BOOKAUDIT_READ_ONLY: "true"
     volumes:
-      - ./fake_library:/library:ro
+      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:ro
       - ./user_library:/input_files:ro
       - ./.state:/state
       - ./.artifacts:/artifacts
       - ./config:/app/config:ro
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${BOOKAUDIT_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,8 +41,6 @@ services:
     image: apache/tika:latest
     restart: unless-stopped
     profiles: ["optional"]
-    ports:
-      - "9998:9998"
 
   postgres:
     image: postgres:15-alpine
@@ -53,8 +51,6 @@ services:
       POSTGRES_DB: bookaudit
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "15432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bookaudit -d bookaudit"]
       interval: 10s
@@ -64,8 +60,6 @@ services:
   valkey:
     image: valkey/valkey:latest
     restart: unless-stopped
-    ports:
-      - "16379:6379"
     volumes:
       - valkey-data:/data
 
@@ -73,8 +67,6 @@ services:
     image: qdrant/qdrant:latest
     restart: unless-stopped
     profiles: ["optional"]
-    ports:
-      - "6333:6333"
     volumes:
       - qdrant-data:/qdrant/storage
 
@@ -82,8 +74,6 @@ services:
     image: gotenberg/gotenberg:8
     restart: unless-stopped
     profiles: ["optional"]
-    ports:
-      - "3000:3000"
 
 volumes:
   postgres-data:
