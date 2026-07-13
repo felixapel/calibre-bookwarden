@@ -1,10 +1,14 @@
 import json
 import logging
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
+
+DC = "http://purl.org/dc/elements/1.1/"
+OPF = "http://www.idpf.org/2007/opf"
 
 
 class CalibreCLIError(Exception):
@@ -22,9 +26,7 @@ class CalibreCLI:
     ) -> subprocess.CompletedProcess[str]:
         try:
             logger.debug(f"Running Calibre command: {' '.join(cmd)}")
-            return subprocess.run(
-                cmd, capture_output=capture_output, text=True, check=True, timeout=timeout
-            )
+            return subprocess.run(cmd, capture_output=capture_output, text=True, check=True, timeout=timeout)
         except subprocess.TimeoutExpired as e:
             logger.error(f"Calibre command timed out after {timeout}s: {' '.join(cmd)}")
             raise CalibreCLIError(f"Command '{' '.join(cmd)}' timed out.") from e
@@ -59,7 +61,7 @@ class CalibreCLI:
         result = self._run_command(cmd)
         json_part = self._extract_json(result.stdout)
         if not json_part:
-             return []
+            return []
         return cast(list[dict[str, Any]], json.loads(json_part))
 
     def show_metadata(self, book_id: int) -> dict[str, Any]:
@@ -79,7 +81,7 @@ class CalibreCLI:
         result = self._run_command(cmd)
         json_part = self._extract_json(result.stdout)
         if not json_part:
-             raise CalibreCLIError(f"Book with ID {book_id} not found (no JSON output).")
+            raise CalibreCLIError(f"Book with ID {book_id} not found (no JSON output).")
         books = cast(list[dict[str, Any]], json.loads(json_part))
         if not books:
             raise CalibreCLIError(f"Book with ID {book_id} not found.")
@@ -102,12 +104,39 @@ class CalibreCLI:
             f.write(result.stdout)
 
     def set_metadata(self, book_id: int, opf_path: Path) -> None:
-        """Wraps 'calibredb set_metadata --from-opf'."""
+        """Apply a full OPF snapshot, including clearing absent optional fields."""
+        missing_fields = self._missing_optional_opf_fields(opf_path)
+        if missing_fields:
+            clear_cmd = ["calibredb", "set_metadata", str(book_id)]
+            for field in missing_fields:
+                clear_cmd.extend(["--field", f"{field}:"])
+            if self.library_path:
+                clear_cmd.extend(["--with-library", str(self.library_path)])
+            self._run_command(clear_cmd)
         cmd = ["calibredb", "set_metadata", str(book_id), str(opf_path)]
         if self.library_path:
             cmd.extend(["--with-library", str(self.library_path)])
 
         self._run_command(cmd)
+
+    @staticmethod
+    def _missing_optional_opf_fields(opf_path: Path) -> list[str]:
+        metadata = ET.parse(opf_path).getroot().find(f"{{{OPF}}}metadata")
+        if metadata is None:
+            raise CalibreCLIError(f"OPF metadata element is missing: {opf_path}")
+        missing: list[str] = []
+        for calibre_field, dc_tag in (
+            ("publisher", "publisher"),
+            ("pubdate", "date"),
+            ("languages", "language"),
+            ("identifiers", "identifier"),
+        ):
+            if metadata.find(f"{{{DC}}}{dc_tag}") is None:
+                missing.append(calibre_field)
+        meta_names = {element.get("name") for element in metadata.findall(f"{{{OPF}}}meta")}
+        if "calibre:series" not in meta_names:
+            missing.append("series")
+        return missing
 
     def extract_cover(self, file_path: Path, output_path: Path) -> None:
         """Wraps 'ebook-meta --get-cover'."""

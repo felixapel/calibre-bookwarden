@@ -34,24 +34,18 @@ class PollingWatcher:
             if not folder.exists():
                 continue
             for file_path in folder.rglob("*"):
-                if (
-                    file_path.is_file()
-                    and file_path.suffix.lower() in self.supported_extensions
-                ):
+                if file_path.is_file() and file_path.suffix.lower() in self.supported_extensions:
                     self.seen_files.add(file_path.resolve())
 
         while self.running:
             await asyncio.sleep(self.interval)
-            
+
             for folder in self.folders:
                 if not folder.exists():
                     continue
 
                 for file_path in folder.rglob("*"):
-                    if (
-                        file_path.is_file()
-                        and file_path.suffix.lower() in self.supported_extensions
-                    ):
+                    if file_path.is_file() and file_path.suffix.lower() in self.supported_extensions:
                         resolved_path = file_path.resolve()
                         if resolved_path not in self.seen_files:
                             self.seen_files.add(resolved_path)

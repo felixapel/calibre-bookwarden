@@ -1,0 +1,64 @@
+groups:
+  - name: bookaudit-production
+    rules:
+      - alert: BookAuditUnavailable
+        expr: up{job="bookaudit"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Calibre Metadata Auditor cannot be scraped
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditHighServerErrorRate
+        expr: |
+          sum(rate(bookaudit_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(bookaudit_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 5 percent of BookAudit requests return 5xx
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditSlowApi
+        expr: |
+          sum(rate(bookaudit_http_request_duration_seconds_sum[5m]))
+          /
+          clamp_min(sum(rate(bookaudit_http_request_duration_seconds_count[5m])), 0.001) > 2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Mean BookAudit API response time is above two seconds
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditWriterHeartbeatStale
+        expr: bookaudit_writer_heartbeat_fresh == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: The single metadata writer heartbeat is stale
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditOperationalMetricsCollectionFailed
+        expr: bookaudit_operational_metrics_collection_success == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: Writer or durable queue metrics cannot be collected
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditOutboxBacklog
+        expr: bookaudit_outbox_events{status=~"pending|processing"} > 100
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: Durable writer outbox backlog exceeds 100 operations
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditRollbackFailure
+        expr: bookaudit_changes{status="failed_rollback_failed"} > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: At least one metadata rollback failed
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts

@@ -74,9 +74,7 @@ async def probe_provider_connectivity(settings: Settings, provider_name: str) ->
             return {"provider": provider_name, "ok": False, "message": str(exc)}
 
     try:
-        candidates = await provider.fetch_candidates(
-            title=PROBE_TITLE, authors=PROBE_AUTHORS
-        )
+        candidates = await provider.fetch_candidates(title=PROBE_TITLE, authors=PROBE_AUTHORS)
         return {
             "provider": provider_name,
             "ok": True,

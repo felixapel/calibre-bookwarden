@@ -1,5 +1,11 @@
+import os
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy.engine import Engine
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import create_engine
 
 from calibre_ai_auditor.config.settings import Settings
 
@@ -12,6 +18,8 @@ def get_engine(settings: Settings) -> Engine:
         return _engine
 
     if settings.database.backend == "postgres":
+        if not settings.database.postgres_dsn:
+            raise ValueError("BOOKAUDIT_DATABASE__POSTGRES_DSN is required for the postgres backend")
         _engine = create_engine(settings.database.postgres_dsn)
     else:
         # Default to SQLite
@@ -22,19 +30,21 @@ def get_engine(settings: Settings) -> Engine:
     return _engine
 
 
-
 def init_db(settings: Settings) -> None:
+    """Upgrade the configured database to the repository's Alembic head."""
     engine = get_engine(settings)
-    SQLModel.metadata.create_all(engine)
+    repository_root = Path(os.environ.get("BOOKAUDIT_REPOSITORY_ROOT", Path(__file__).resolve().parents[3]))
+    config = Config(repository_root / "alembic.ini")
+    config.set_main_option("script_location", str(repository_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False).replace("%", "%%"))
+    command.upgrade(config, "head")
 
-    # Perform runtime migrations for added columns
-    from sqlalchemy import inspect, text
-    inspector = inspect(engine)
-    if "bookrecord" in inspector.get_table_names():
-        columns = [c["name"] for c in inspector.get_columns("bookrecord")]
-        if "paperless_document_id" not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE bookrecord ADD COLUMN paperless_document_id INTEGER"))
-        if "field_locks" not in columns:
-            with engine.begin() as conn:
-                conn.execute(text("ALTER TABLE bookrecord ADD COLUMN field_locks JSON"))
+
+def expected_schema_revision() -> str:
+    repository_root = Path(os.environ.get("BOOKAUDIT_REPOSITORY_ROOT", Path(__file__).resolve().parents[3]))
+    config = Config(repository_root / "alembic.ini")
+    config.set_main_option("script_location", str(repository_root / "migrations"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    if head is None:
+        raise RuntimeError("Alembic repository has no schema head")
+    return head

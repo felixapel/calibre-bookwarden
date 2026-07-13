@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -21,7 +21,7 @@ async def list_providers() -> Any:
 @router.post("/test", response_model=APIResponse)
 async def test_provider(
     name: str,
-    settings: Settings = Depends(get_settings),
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> Any:
     try:
         result = await probe_provider_connectivity(settings, name)

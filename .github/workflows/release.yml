@@ -1,0 +1,233 @@
+name: Release production image
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
+        env:
+          POSTGRES_USER: bookaudit
+          POSTGRES_PASSWORD: release-test-password
+          POSTGRES_DB: bookaudit_release_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bookaudit -d bookaudit_release_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        image: valkey/valkey:8.1.3-alpine@sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:release-test-password@127.0.0.1:5432/bookaudit_release_test
+      TEST_VALKEY_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.11.15"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20.19.4"
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: Install Calibre integration dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y calibre
+      - name: Verify tag matches package version
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
+          git fetch --unshallow origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Backend release gates
+        run: |
+          uv sync --frozen --extra dev
+          BOOKAUDIT_DATABASE__BACKEND=postgres \
+            BOOKAUDIT_DATABASE__POSTGRES_DSN="$TEST_POSTGRES_DSN" \
+            uv run bookaudit migrate
+          test -n "$TEST_POSTGRES_DSN"
+          test -n "$TEST_VALKEY_URL"
+          uv run pytest tests/test_retention_postgres_valkey.py -q
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy src
+          uv run pytest -m "not benchmark and not ocr_live and not network"
+          uv run python scripts/benchmark_50k_metadata.py
+          uv export --frozen --no-hashes --no-emit-project --output-file requirements-audit.txt
+          uvx pip-audit==2.10.1 --requirement requirements-audit.txt
+          docker run --rm --entrypoint promtool -v "$PWD/ops/monitoring:/etc/prometheus:ro" \
+            prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 \
+            check config /etc/prometheus/prometheus.yml
+      - name: Frontend release gates
+        working-directory: webui
+        run: |
+          npm ci
+          npm run lint -- --max-warnings=0
+          npm run build
+          npm audit --audit-level=high
+          npx playwright install --with-deps chromium
+          npx playwright test --project=chromium --project=mobile-chromium --reporter=line
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: metadata
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.metadata.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+      - name: Install exact Trivy scanner
+        env:
+          TRIVY_IMAGE: aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293
+        run: |
+          set -euo pipefail
+          docker pull "$TRIVY_IMAGE"
+          container_id=$(docker create "$TRIVY_IMAGE")
+          trap 'docker rm -f "$container_id" >/dev/null' EXIT
+          install -d -m 0755 "$RUNNER_TEMP/trivy-bin"
+          docker cp "$container_id:/usr/local/bin/trivy" "$RUNNER_TEMP/trivy-bin/trivy"
+          test "$("$RUNNER_TEMP/trivy-bin/trivy" --version)" = "Version: 0.56.1"
+          printf '%s\n' "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"
+      - name: Reject high or critical vulnerabilities in the exact release digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          skip-setup-trivy: true
+          cache: "false"
+          image-ref: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          # Debian/Calibre currently carries vendor-unfixed findings. Fixed
+          # findings remain blocking; the time-bounded exception below forces
+          # a fresh review instead of silently becoming permanent.
+          ignore-unfixed: true
+          # google-auth 2.53.0 embeds parser test keys in this compiled module.
+          # Re-review on google-auth, Python ABI, Trivy, or bytecode-policy changes.
+          scanners: vuln,secret
+          skip-files: opt/venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc
+      - name: Boot the exact digest with empty production state
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          export COMPOSE_PROJECT_NAME=bookaudit_release_gate
+          export BOOKAUDIT_IMAGE="$IMAGE@$DIGEST"
+          export BOOKAUDIT_LIBRARY_HOST_PATH=/tmp/bookaudit-release-library
+          export BOOKAUDIT_PORT=18080
+          export POSTGRES_PASSWORD=release-admin-password-unique-2026
+          export POSTGRES_APP_PASSWORD=release-app-password-unique-2026
+          export POSTGRES_WRITER_PASSWORD=release-writer-password-unique-2026
+          export POSTGRES_MIGRATOR_PASSWORD=release-migrator-password-unique-2026
+          export BOOKAUDIT_APP_POSTGRES_DSN=postgresql+psycopg://bookaudit_app:release-app-password-unique-2026@postgres:5432/bookaudit
+          export BOOKAUDIT_WRITER_POSTGRES_DSN=postgresql+psycopg://bookaudit_writer:release-writer-password-unique-2026@postgres:5432/bookaudit
+          export BOOKAUDIT_MIGRATOR_POSTGRES_DSN=postgresql+psycopg://bookaudit_migrator:release-migrator-password-unique-2026@postgres:5432/bookaudit
+          export BOOKAUDIT_API_KEY=release-api-key-with-at-least-32-characters-9Z
+          export BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1
+          cleanup() { docker compose down -v --remove-orphans; }
+          trap cleanup EXIT
+          touch .env
+          install -d -m 0750 /tmp/bookaudit-release-library .state .artifacts .writer-artifacts user_library
+          docker pull "$BOOKAUDIT_IMAGE"
+          docker compose up -d --wait postgres valkey
+          docker compose --profile maintenance run --rm migrate
+          docker compose up -d --wait writer app
+          curl -fsS -H "X-API-Key: $BOOKAUDIT_API_KEY" -H 'Host: localhost' \
+            http://127.0.0.1:18080/api/health/ready
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: localhost' \
+            http://127.0.0.1:18080/api/health/ready)" = 401
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -H 'Host: invalid.example' \
+            -H "X-API-Key: $BOOKAUDIT_API_KEY" http://127.0.0.1:18080/api/health/ready)" = 400
+          set +e
+          acl_output=$(docker compose exec -T postgres sh -lc \
+            "PGPASSWORD='$POSTGRES_APP_PASSWORD' psql -v ON_ERROR_STOP=1 --set=VERBOSITY=verbose -U bookaudit_app -d bookaudit -c 'UPDATE operationledger SET state = state WHERE false'" 2>&1)
+          acl_status=$?
+          set -e
+          if [ "$acl_status" -eq 0 ]; then
+            echo 'app role unexpectedly updated the writer ledger' >&2
+            exit 1
+          fi
+          grep -F '42501' <<< "$acl_output"
+          grep -F 'permission denied for table operationledger' <<< "$acl_output"
+      - name: Generate downloadable SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-${{ github.ref_name }}
+          path: sbom.spdx.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Keyless-sign immutable image digest
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE"
+      - name: Enforce vendor-unfixed vulnerability exception expiry
+        run: |
+          if [[ "$(date -u +%F)" > "2026-08-11" ]]; then
+            echo 'Vendor-unfixed vulnerability exception expired; review the current image findings.' >&2
+            exit 1
+          fi
+      - name: Promote fully signed and attested digest to release tags
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          while IFS= read -r tag; do
+            test -n "$tag" && docker buildx imagetools create --tag "$tag" "$IMAGE@$DIGEST"
+          done <<< "$TAGS"

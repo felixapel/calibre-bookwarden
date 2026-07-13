@@ -12,6 +12,7 @@ class IngestWatcher:
     """
     Filesystem event watcher with fallback polling.
     """
+
     def __init__(
         self,
         folders: list[Path],
@@ -34,10 +35,10 @@ class IngestWatcher:
         try:
             import asyncio
 
-            from watchdog.events import FileSystemEventHandler
-            from watchdog.observers import Observer
+            from watchdog.events import FileSystemEventHandler  # type: ignore[import-not-found]
+            from watchdog.observers import Observer  # type: ignore[import-not-found]
 
-            class IngestHandler(FileSystemEventHandler):
+            class IngestHandler(FileSystemEventHandler):  # type: ignore[misc]
                 def __init__(
                     self,
                     loop: asyncio.AbstractEventLoop,
@@ -63,7 +64,7 @@ class IngestWatcher:
                     observer.schedule(handler, str(folder), recursive=True)
             observer.start()
             logger.info(f"Started watchdog directory observer on {self.folders}")
-            
+
             while observer.is_alive():
                 await asyncio.sleep(self.interval)
         except ImportError:

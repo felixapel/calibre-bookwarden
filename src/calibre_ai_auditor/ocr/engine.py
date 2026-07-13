@@ -48,7 +48,7 @@ class OCREngine:
                     return ""
 
                 if sidecar_txt.exists():
-                    return sidecar_txt.read_text(errors='replace')
+                    return sidecar_txt.read_text(errors="replace")
                 return ""
             except FileNotFoundError:
                 logger.error("ocrmypdf not found on PATH.")

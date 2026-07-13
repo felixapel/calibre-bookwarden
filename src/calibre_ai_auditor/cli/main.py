@@ -1,11 +1,16 @@
 import asyncio
+import hashlib
 import json as json_lib
+import logging
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
+from uuid import uuid4
 
 import typer
+from sqlalchemy import text
 from sqlmodel import Session, desc, select
 
 from calibre_ai_auditor.apply.engine import ApplyEngine
@@ -23,6 +28,7 @@ from calibre_ai_auditor.storage.models import (
 )
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
+logger = logging.getLogger(__name__)
 
 
 async def _audit_run(
@@ -48,9 +54,7 @@ async def _audit_run(
             final_run_id,
             judge=judge,
             save_evidence=save_evidence,
-            progress_callback=lambda current, total: typer.echo(
-                f"  Auditing book {current}/{total}"
-            ),
+            progress_callback=lambda current, total: typer.echo(f"  Auditing book {current}/{total}"),
         )
     typer.secho("Audit complete.", fg=typer.colors.GREEN)
 
@@ -58,9 +62,7 @@ async def _audit_run(
 @app.callback()
 def main(
     ctx: typer.Context,
-    config: Annotated[
-        Path | None, typer.Option("--config", "-c", help="Path to config.yml")
-    ] = None,
+    config: Annotated[Path | None, typer.Option("--config", "-c", help="Path to config.yml")] = None,
 ) -> None:
     """
     Calibre AI Auditor - Evidence-first metadata auditing.
@@ -79,15 +81,19 @@ def doctor(ctx: typer.Context) -> None:
     tools = ["calibredb", "ebook-meta", "fetch-ebook-metadata", "ocrmypdf"]
     for tool in tools:
         path = shutil.which(tool)
-        status = (
-            typer.style("FOUND", fg=typer.colors.GREEN)
-            if path
-            else typer.style("MISSING", fg=typer.colors.RED)
-        )
+        status = typer.style("FOUND", fg=typer.colors.GREEN) if path else typer.style("MISSING", fg=typer.colors.RED)
         typer.echo(f"  {tool:25} : {status} ({path or 'N/A'})")
 
     typer.echo(f"\nLibrary path: {settings.library.path}")
     typer.echo(f"DB path:      {settings.storage.sqlite_path}")
+
+
+@app.command()
+def migrate(ctx: typer.Context) -> None:
+    """Upgrade the configured database to the repository's Alembic head and exit."""
+    settings: Settings = ctx.obj
+    init_db(settings)
+    typer.secho("Database schema upgraded to head.", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -124,9 +130,7 @@ def scan(
             full_meta = cli.show_metadata(book_id)
 
             book_key = f"calibre:{book_id}"
-            existing = session.exec(
-                select(BookRecord).where(BookRecord.book_key == book_key)
-            ).first()
+            existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
             if existing:
                 existing.run_id = run_id
                 existing.current_metadata = full_meta
@@ -160,11 +164,11 @@ def scan(
             indexer = VectorIndexer(vclient, eclient)
             for b in books:
                 book_key = f"calibre:{b['id']}"
-                record = session.exec(
+                existing_book: BookRecord | None = session.exec(
                     select(BookRecord).where(BookRecord.book_key == book_key)
                 ).first()
-                if record:
-                    asyncio.run(indexer.index_book(record))
+                if existing_book:
+                    asyncio.run(indexer.index_book(existing_book))
 
     typer.secho(f"Scan complete. Found {len(books)} books.", fg=typer.colors.GREEN)
 
@@ -173,9 +177,7 @@ def scan(
 def inspect(
     ctx: typer.Context,
     path: Annotated[Path, typer.Option("--path", help="Path to ebook file")],
-    no_providers: Annotated[
-        bool, typer.Option("--no-providers", help="Skip external fetch")
-    ] = False,
+    no_providers: Annotated[bool, typer.Option("--no-providers", help="Skip external fetch")] = False,
 ) -> None:
     """
     standalone inspection of a single file.
@@ -201,12 +203,8 @@ def inspect(
 def audit(
     ctx: typer.Context,
     run: Annotated[str, typer.Option("--run", help="Run ID or 'latest'")] = "latest",
-    judge: Annotated[
-        bool, typer.Option("--judge/--no-judge", help="Enable or skip LLM judgment")
-    ] = True,
-    save_evidence: Annotated[
-        bool, typer.Option("--save-evidence", help="Persist evidence JSON")
-    ] = True,
+    judge: Annotated[bool, typer.Option("--judge/--no-judge", help="Enable or skip LLM judgment")] = True,
+    save_evidence: Annotated[bool, typer.Option("--save-evidence", help="Persist evidence JSON")] = True,
 ) -> None:
     """
     Build evidence packages and optionally call the judge model.
@@ -228,6 +226,12 @@ def apply(
     Apply approved fixes after backup.
     """
     settings: Settings = ctx.obj
+    if settings.profile == "production":
+        typer.secho(
+            "Direct CLI apply is disabled in production; queue through the authenticated API",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
     engine = get_engine(settings)
     cli = CalibreCLI(settings.library.path)
     apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
@@ -291,6 +295,12 @@ def undo(
     Revert one applied change.
     """
     settings: Settings = ctx.obj
+    if settings.profile == "production":
+        typer.secho(
+            "Direct CLI undo is disabled in production; queue through the authenticated API",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
     engine = get_engine(settings)
     cli = CalibreCLI(settings.library.path)
     apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
@@ -311,6 +321,175 @@ def undo(
             typer.secho(f"Error: {e}", fg=typer.colors.RED)
 
 
+def _verify_backup_manifest(manifest_path: Path) -> str:
+    """Verify the paired database/artifact files named by a retention backup manifest."""
+    try:
+        absolute_manifest = manifest_path.absolute()
+        checked_component = Path(absolute_manifest.anchor)
+        for component in absolute_manifest.parts[1:]:
+            checked_component /= component
+            if checked_component.is_symlink():
+                raise ValueError("backup manifest path contains a symlink")
+        if not absolute_manifest.is_file():
+            raise ValueError("backup manifest must be a regular non-symlink file")
+        manifest_bytes = absolute_manifest.read_bytes()
+        manifest = json_lib.loads(manifest_bytes)
+        datetime.fromisoformat(manifest["created_at"])
+        root = absolute_manifest.parent
+        for file_key, digest_key in (
+            ("database_dump", "database_sha256"),
+            ("artifacts_archive", "artifacts_sha256"),
+        ):
+            relative = Path(manifest[file_key])
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"{file_key} must be relative to the backup manifest")
+            backup_file = root
+            for component in relative.parts:
+                backup_file /= component
+                if backup_file.is_symlink():
+                    raise ValueError(f"unsafe or missing {file_key}")
+            backup_file = backup_file.resolve()
+            if not backup_file.is_relative_to(root) or not backup_file.is_file():
+                raise ValueError(f"unsafe or missing {file_key}")
+            digest = hashlib.sha256()
+            with backup_file.open("rb") as backup_stream:
+                for chunk in iter(lambda: backup_stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            actual = digest.hexdigest()
+            if actual != manifest[digest_key]:
+                raise ValueError(f"checksum mismatch for {file_key}")
+        return hashlib.sha256(manifest_bytes).hexdigest()
+    except (OSError, KeyError, TypeError, ValueError, json_lib.JSONDecodeError) as exc:
+        typer.secho(f"Backup manifest verification failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+
+
+@app.command("retention")
+def retention(
+    ctx: typer.Context,
+    execute: Annotated[bool, typer.Option("--execute", help="Delete expired restore points")] = False,
+    recover_quarantine: Annotated[
+        str | None,
+        typer.Option("--recover-quarantine", help="Resume exactly one journaled transaction ID"),
+    ] = None,
+    backup_reference: Annotated[
+        Path | None,
+        typer.Option("--backup-reference", help="JSON manifest for the paired DB/artifact backup"),
+    ] = None,
+) -> None:
+    """Preview or explicitly delete restore points past their recorded retention target."""
+    settings: Settings = ctx.obj
+    from calibre_ai_auditor.verification.restore import RestorePointStore
+
+    store = RestorePointStore(settings.storage.artifacts_dir)
+    manifest = []
+    if recover_quarantine is not None:
+        if not execute:
+            typer.secho("--recover-quarantine requires --execute", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.echo(f"Recovering retention quarantine: {recover_quarantine}")
+    else:
+        try:
+            pending_quarantines = store.list_pending_quarantines()
+        except RuntimeError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from exc
+        if pending_quarantines:
+            transaction_ids = ", ".join(transaction.name for transaction in pending_quarantines)
+            typer.secho(
+                "Pending retention quarantine requires explicit recovery with "
+                f"--recover-quarantine TRANSACTION_ID: {transaction_ids}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        try:
+            manifest = store.build_deletion_manifest()
+        except RuntimeError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from exc
+        typer.echo(f"Expired restore points: {len(manifest)}")
+        for candidate in manifest:
+            typer.echo(f"  {candidate.path.relative_to(store.restore_root)}")
+        if not execute:
+            typer.echo("Dry run only; no restore points were deleted.")
+            return
+    if backup_reference is None:
+        typer.secho("--backup-reference is required with --execute", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    backup_manifest_sha256 = _verify_backup_manifest(backup_reference)
+
+    writer_guard = None
+    writer_guard_acquired = False
+    try:
+        if settings.profile == "production":
+            from sqlalchemy import text
+
+            from calibre_ai_auditor.apply.guard import acquire_writer_guard
+            from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+
+            engine = get_engine(settings)
+            if engine.dialect.name != "postgresql":
+                typer.secho("Production retention requires PostgreSQL", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            writer_guard = engine.connect()
+            writer_guard_acquired = acquire_writer_guard(writer_guard)
+            if not writer_guard_acquired:
+                typer.secho("Metadata writer is active; retention refused", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            nonterminal = writer_guard.execute(
+                text(
+                    "SELECT count(*) FROM operationledger "
+                    "WHERE state IN ('requested','claimed','writing','verifying','restoring')"
+                )
+            ).scalar_one()
+            heartbeat = read_writer_heartbeat(
+                settings.queue.valkey_url,
+                timeout=settings.queue.connect_timeout_seconds,
+            )
+            if nonterminal or heartbeat_is_fresh(
+                heartbeat,
+                max_age_seconds=settings.writer_heartbeat_max_age_seconds,
+            ):
+                typer.secho(
+                    "Writer heartbeat or non-terminal operations remain; retention refused",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(1)
+        deleted = (
+            store.recover_quarantine(
+                recover_quarantine,
+                backup_manifest_sha256=backup_manifest_sha256,
+            )
+            if recover_quarantine is not None
+            else store.quarantine_and_delete(
+                manifest,
+                backup_manifest_sha256=backup_manifest_sha256,
+            )
+        )
+    except (OSError, RuntimeError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    finally:
+        if writer_guard is not None:
+            from calibre_ai_auditor.apply.guard import release_writer_guard
+
+            try:
+                if writer_guard_acquired:
+                    release_writer_guard(writer_guard)
+            finally:
+                writer_guard.close()
+    if recover_quarantine is not None:
+        typer.secho(
+            f"Recovered deletion of {deleted} quarantined restore points after backup {backup_reference}.",
+            fg=typer.colors.GREEN,
+        )
+    else:
+        typer.secho(
+            f"Deleted {deleted} expired restore points after backup {backup_reference}.",
+            fg=typer.colors.GREEN,
+        )
+
+
 @app.command()
 def ingest_paperless(
     ctx: typer.Context,
@@ -328,15 +507,13 @@ def ingest_paperless(
 
     bridge = PaperlessBridge(settings)
 
-    async def run_ingest():
+    async def run_ingest() -> None:
         engine = get_engine(settings)
         init_db(settings)
 
         # Test connection first
         if not await bridge.test_connection():
-            typer.secho(
-                "Error: Could not connect to Paperless-ngx. Check logs.", fg=typer.colors.RED
-            )
+            typer.secho("Error: Could not connect to Paperless-ngx. Check logs.", fg=typer.colors.RED)
             raise typer.Exit(1)
 
         typer.echo("Fetching candidate documents from Paperless-ngx...")
@@ -375,9 +552,7 @@ def ingest_paperless(
                 book_key = f"paperless:{doc_id}"
 
                 # Check if already exists
-                existing = session.exec(
-                    select(BookRecord).where(BookRecord.book_key == book_key)
-                ).first()
+                existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
 
                 # Construct file and metadata info
                 file_info = {
@@ -447,6 +622,330 @@ def config(
     settings: Settings = ctx.obj
     out = settings.model_dump(exclude={"open_ai_api_key"})
     typer.echo(json_lib.dumps(out, indent=2, default=str))
+
+
+@app.command()
+def verify(
+    ctx: typer.Context,
+    limit: Annotated[int, typer.Option("--limit", help="Max books to verify (0 = unlimited)")] = 50,
+    library: Annotated[str | None, typer.Option("--library", help="Override library path")] = None,
+    use_llm: Annotated[bool, typer.Option("--use-llm/--no-llm", help="Call LLM for ambiguous fields")] = False,
+    format: Annotated[str, typer.Option("--format", help="Report format: text|json")] = "text",
+) -> None:
+    """
+    v1.0 ContentVerificationEngine: verify Calibre metadata against book content.
+
+    Runs the deterministic engine on every book in the library.  With --use-llm,
+    ambiguous fields are sent to the configured LLM for adjudication.  Outputs
+    a per-book report with field-level verdicts.
+    """
+    import time as _t
+
+    from calibre_ai_auditor.verification import (
+        ContentVerificationEngine,
+        DeclaredMetadata,
+        LLMWitness,
+        ObservationSet,
+        WitnessConfig,
+    )
+    from calibre_ai_auditor.verification.metrics import get_metrics
+
+    settings: Settings = ctx.obj
+    lib_path = Path(library) if library else settings.library.path
+    if not lib_path:
+        typer.secho("Error: No library path configured.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    cli = CalibreCLI(lib_path)
+    books = cli.list_books()
+    if limit:
+        books = books[:limit]
+    if not books:
+        typer.secho("No books found.", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+
+    engine = ContentVerificationEngine()
+    metrics = get_metrics()
+    run_id = f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    metrics.set_run_progress(run_id, total=len(books), completed=0)
+
+    # Optional LLM witness
+    witness = None
+    if use_llm:
+        from calibre_ai_auditor.llm.router import LLMRouter
+
+        router = LLMRouter(settings)
+        witness = LLMWitness(router, WitnessConfig(cache_responses=True))
+
+    typer.echo(f"Verifying {len(books)} books in {lib_path} (run_id={run_id})")
+    started = _t.monotonic()
+    verdicts: list[dict[str, Any]] = []
+    counts: dict[str, int] = {"no_change": 0, "suggest_fix": 0, "needs_review": 0, "defer": 0}
+
+    for i, book in enumerate(books, start=1):
+        book_key = f"calibre:{book['id']}"
+        title = book.get("title", "")
+        authors_str = book.get("authors", "")
+        authors_list = [a.strip() for a in authors_str.split("&") if a.strip()] if isinstance(authors_str, str) else []  # noqa: SIM108
+
+        # Extract real content from the first available format
+        formats = book.get("formats", [])
+        snippet_text = ""
+        for fmt in formats[:1]:
+            file_path = Path(fmt)
+            if file_path.exists():
+                snippets = extract_snippets(file_path, max_pages=3)
+                snippet_text = "\n".join(s.text for s in snippets)
+                break
+
+        heuristics = extract_heuristics([{"text": snippet_text, "source": "first_pages"}] if snippet_text else [])
+
+        declared = DeclaredMetadata(
+            title=title,
+            authors=authors_list,
+            publisher=book.get("publisher"),
+            published_date=book.get("pubdate"),
+            language=book.get("languages"),
+            series=book.get("series"),
+            isbn=(book.get("identifiers") or {}).get("isbn") if book.get("identifiers") else None,
+        )
+        observed = ObservationSet(
+            title_page_text=snippet_text[:5000] if snippet_text else None,
+            body_sample=snippet_text[:10000] if snippet_text else None,
+            title_extracted=heuristics.get("title"),
+            authors_extracted=heuristics.get("authors") or [],
+            isbn_extracted=(heuristics.get("identifiers") or {}).get("isbn"),
+            evidence_quality="high" if len(snippet_text) > 500 else "low",
+        )
+
+        verdict = engine.verify(book_key=book_key, run_id=run_id, declared=declared, observed=observed)
+
+        # Optionally call LLM witness for ambiguous fields
+        if witness:
+            book_title_observed = verdict.field_verdicts.get("title")
+            book_title_str = book_title_observed.observed_value if book_title_observed else None
+            book_authors_observed = verdict.field_verdicts.get("authors")
+            book_authors_list = book_authors_observed.observed_value if book_authors_observed else None
+
+            for fname, fv in list(verdict.field_verdicts.items()):
+                if fv.verdict.value == "ambiguous":
+                    result = asyncio.run(
+                        witness.witness_field(
+                            field_name=fname,
+                            current_fv=fv,
+                            book_title=book_title_str,
+                            book_authors=book_authors_list,
+                        )
+                    )
+                    if result.success and result.refined_verdict:
+                        verdict.field_verdicts[fname] = result.refined_verdict
+                        if result.judge_call:
+                            metrics.record_llm_call(
+                                provider=result.judge_call.provider,
+                                model=result.judge_call.model,
+                                duration_ms=result.judge_call.duration_ms,
+                                tokens_in=result.judge_call.tokens_in,
+                                tokens_out=result.judge_call.tokens_out,
+                            )
+
+        counts[verdict.action.value] = counts.get(verdict.action.value, 0) + 1
+        metrics.record_book_action(verdict.action.value, run_id)
+
+        if format == "json":
+            verdicts.append(verdict.model_dump())
+        else:
+            typer.echo(
+                f"  [{i:>3}/{len(books)}] {book_key:20s} "
+                f"action={verdict.action.value:12s} "
+                f"conf={verdict.overall_confidence:3d} "
+                f"flags={','.join(verdict.risk_flags) or '-':20s}  "
+                f"title={title[:60]!r}"
+            )
+
+        metrics.set_run_progress(run_id, total=len(books), completed=i)
+
+    elapsed = _t.monotonic() - started
+    typer.secho("", fg=typer.colors.WHITE)
+    typer.secho(f"Done in {elapsed:.1f}s ({len(books) / elapsed:.1f} books/s)", fg=typer.colors.CYAN)
+    for action, count in counts.items():
+        typer.echo(f"  {action:14s} {count}")
+
+    if format == "json":
+        typer.echo(
+            json_lib.dumps(
+                {"run_id": run_id, "elapsed_seconds": elapsed, "verdicts": verdicts},
+                indent=2,
+                default=str,
+            )
+        )
+
+
+@app.command()
+def hosts(
+    ctx: typer.Context,  # noqa: ARG001
+) -> None:
+    """
+    v1.0: Discover and report homelab inference hosts (Ollama, LM Studio, etc.).
+    """
+    import asyncio as _aio
+
+    from calibre_ai_auditor.verification.host_registry import (
+        HostRegistry,
+        HostRegistryConfig,
+        default_felix_homelab,
+    )
+
+    async def _run() -> dict[str, Any]:
+        cfg = HostRegistryConfig(hosts=default_felix_homelab())
+        reg = HostRegistry(cfg)
+        try:
+            await reg.health_check_all()
+            return reg.summary()
+        finally:
+            await reg.__aexit__(None, None, None)
+
+    summary = _aio.run(_run())
+    typer.echo(json_lib.dumps(summary, indent=2, default=str))
+
+
+@app.command()
+def mcp(
+    ctx: typer.Context,  # noqa: ARG001
+) -> None:
+    """
+    v1.2: Start the MCP server (STDIO) exposing read-only audit tools.
+
+    Tools: query_book_audit, list_problematic_books, get_run_metrics, list_recent_runs.
+    Requires the optional 'mcp' extra (fastmcp).
+
+    Intended for Hermes and other MCP clients. Run via: bookaudit mcp
+    """
+    try:
+        from calibre_ai_auditor.mcp_server import mcp as mcp_app
+    except ImportError as e:
+        typer.secho(
+            "MCP support not installed. Install with: uv pip install -e '.[mcp]' (or pip install fastmcp)",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1) from e
+
+    typer.echo("Starting calibre-audit MCP server (stdio)...")
+    mcp_app.run()
+
+
+@app.command()
+def writer_health(ctx: typer.Context) -> None:
+    """Exit successfully only when the production writer heartbeat is fresh."""
+    from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+
+    settings: Settings = ctx.obj
+    if settings.queue.backend != "valkey":
+        raise typer.Exit(1)
+    try:
+        heartbeat = read_writer_heartbeat(
+            settings.queue.valkey_url,
+            timeout=settings.queue.connect_timeout_seconds,
+        )
+    except Exception:
+        raise typer.Exit(1) from None
+    if not heartbeat_is_fresh(heartbeat, max_age_seconds=settings.writer_heartbeat_max_age_seconds):
+        raise typer.Exit(1)
+    typer.echo("writer heartbeat is fresh")
+
+
+@app.command()
+def writer(
+    ctx: typer.Context,
+    poll_seconds: Annotated[float, typer.Option("--poll-seconds", min=0.1)] = 1.0,
+    once: Annotated[bool, typer.Option("--once")] = False,
+) -> None:
+    """Run the dedicated durable metadata writer loop."""
+    import time
+
+    from sqlmodel import Session
+
+    from calibre_ai_auditor.apply.guard import acquire_writer_guard, release_writer_guard, writer_guard_is_held
+    from calibre_ai_auditor.apply.writer import (
+        MetadataWriter,
+        claim_next_operation,
+        fail_operation,
+        reconcile_incomplete_operations,
+    )
+
+    settings: Settings = ctx.obj
+    if not settings.library.path:
+        typer.secho("Writer requires BOOKAUDIT_LIBRARY_PATH", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not settings.library.path.is_dir() or not os.access(settings.library.path, os.R_OK | os.W_OK):
+        typer.secho("Writer requires a readable and writable Calibre library directory", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not settings.storage.artifacts_dir.is_dir() or not os.access(settings.storage.artifacts_dir, os.R_OK | os.W_OK):
+        typer.secho("Writer requires a readable and writable artifacts directory", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if shutil.which("calibredb") is None:
+        typer.secho("Writer requires calibredb on PATH", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    engine = get_engine(settings)
+    writer_guard = None
+    if engine.dialect.name == "postgresql":
+        writer_guard = engine.connect()
+        acquired = acquire_writer_guard(writer_guard)
+        if not acquired:
+            writer_guard.close()
+            typer.secho("Another metadata writer owns the production writer lock", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        current_user, revision = writer_guard.execute(
+            text("SELECT current_user, (SELECT version_num FROM alembic_version)")
+        ).one()
+        from calibre_ai_auditor.storage.db import expected_schema_revision
+
+        if current_user != "bookaudit_writer" or revision != expected_schema_revision():
+            writer_guard.close()
+            typer.secho("Writer database role or schema revision is invalid", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    cli = CalibreCLI(settings.library.path)
+    metadata_writer = MetadataWriter(cli, ApplyEngine(cli, settings.storage.artifacts_dir))
+    heartbeat_owner = str(uuid4())
+
+    # All claims and external writes use the same PostgreSQL connection that
+    # owns the session advisory lock. If that connection dies, the next query
+    # fails and the process exits instead of continuing unfenced on a new pool
+    # connection while another writer takes ownership.
+    session = Session(bind=writer_guard if writer_guard is not None else engine)
+    try:
+        reconciled = reconcile_incomplete_operations(session, cli)
+        if reconciled:
+            typer.echo(f"Reconciled {len(reconciled)} interrupted operations")
+
+        while True:
+            if writer_guard is not None and not writer_guard_is_held(writer_guard):
+                raise RuntimeError("Metadata writer lost its PostgreSQL advisory lock")
+            if settings.queue.backend == "valkey":
+                from calibre_ai_auditor.apply.heartbeat import publish_writer_heartbeat
+
+                publish_writer_heartbeat(
+                    settings.queue.valkey_url,
+                    heartbeat_owner,
+                    timeout=settings.queue.connect_timeout_seconds,
+                )
+            operation_id = claim_next_operation(session)
+            if operation_id:
+                try:
+                    metadata_writer.process(session, operation_id)
+                except Exception as exc:
+                    logger.exception("Writer operation %s failed", operation_id)
+                    session.rollback()
+                    fail_operation(session, operation_id, str(exc))
+            if once:
+                return
+            if operation_id is None:
+                time.sleep(poll_seconds)
+    finally:
+        session.close()
+        if writer_guard is not None:
+            if not writer_guard.invalidated and writer_guard_is_held(writer_guard):
+                release_writer_guard(writer_guard)
+            writer_guard.close()
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ class VectorClient:
             collection_names = [c.name for c in collections.collections]
             if self.collection not in collection_names:
                 from qdrant_client.models import Distance, VectorParams
+
                 await self._client.create_collection(
                     collection_name=self.collection,
                     vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
@@ -78,4 +79,3 @@ class VectorClient:
             return True
         except Exception:
             return False
-

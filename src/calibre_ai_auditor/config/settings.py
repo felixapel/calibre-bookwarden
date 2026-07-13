@@ -1,16 +1,13 @@
-import os
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import AliasChoices, BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, BaseModel, Field, SecretStr
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 class LibrarySettings(BaseModel):
-    path: Path | None = Field(
-        None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "library_path", "path")
-    )
+    path: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "library_path", "path"))
     read_only: bool = True
 
 
@@ -64,18 +61,21 @@ class ExtractorSettings(BaseModel):
 class DatabaseSettings(BaseModel):
     backend: str = "sqlite"  # sqlite | postgres
     sqlite_path: Path = Path("/state/bookaudit.db")
-    postgres_dsn: str = "postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit"
+    postgres_dsn: str | None = None
 
 
 class QueueSettings(BaseModel):
     backend: str = "memory"
     valkey_url: str = "redis://valkey:6379/0"
+    connect_timeout_seconds: float = 1.0
 
 
 class RateLimitSettings(BaseModel):
     enabled: bool = True
     backend: str = "memory"
     valkey_url: str = "redis://valkey:6379/1"
+    requests_per_window: int = Field(default=120, ge=1, le=10000)
+    window_seconds: int = Field(default=60, ge=1, le=3600)
 
 
 class VectorSettings(BaseModel):
@@ -122,22 +122,32 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],  # noqa: ARG003 - required by pydantic-settings
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Make environment and secret-file values override YAML/init data."""
+        return env_settings, file_secret_settings, init_settings, dotenv_settings
+
     profile: str = "default"
     library: LibrarySettings = Field(default_factory=_default_library)
     storage: StorageSettings = Field(default_factory=_default_storage)
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
-    queue: QueueSettings = Field(default_factory=QueueSettings)
-    rate_limits: RateLimitSettings = Field(default_factory=RateLimitSettings)
-    vectors: VectorSettings = Field(default_factory=VectorSettings)
-    providers: ProviderSettings = Field(default_factory=ProviderSettings)
-    privacy: PrivacySettings = Field(default_factory=PrivacySettings)
-    extractors: ExtractorSettings = Field(default_factory=ExtractorSettings)
-    paperless: PaperlessSettings = Field(default_factory=PaperlessSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)  # type: ignore[arg-type]
+    queue: QueueSettings = Field(default_factory=QueueSettings)  # type: ignore[arg-type]
+    rate_limits: RateLimitSettings = Field(default_factory=RateLimitSettings)  # type: ignore[arg-type]
+    vectors: VectorSettings = Field(default_factory=VectorSettings)  # type: ignore[arg-type]
+    providers: ProviderSettings = Field(default_factory=ProviderSettings)  # type: ignore[arg-type]
+    privacy: PrivacySettings = Field(default_factory=PrivacySettings)  # type: ignore[arg-type]
+    extractors: ExtractorSettings = Field(default_factory=ExtractorSettings)  # type: ignore[arg-type]
+    paperless: PaperlessSettings = Field(default_factory=PaperlessSettings)  # type: ignore[arg-type]
     preview: PreviewSettings = Field(default_factory=PreviewSettings)
     manga_mode: MangaSettings = Field(default_factory=MangaSettings)
-    model_config_path: Path = Field(
-        default=Path("config/models.yml"), alias="routing__model_config"
-    )
+    model_config_path: Path = Field(default=Path("config/models.yml"), alias="routing__model_config")
 
     open_ai_api_key: str | None = Field(
         None,
@@ -170,15 +180,22 @@ class Settings(BaseSettings):
     judge_model: str = "gemma4:e4b-it-q4_K_M"
     vision_model: str = "gemma4:e4b-it-q4_K_M"
     log_level: str = "INFO"
+    log_json: bool = False
+    api_key: SecretStr | None = Field(
+        None,
+        validation_alias=AliasChoices("BOOKAUDIT_API_KEY", "api_key"),
+    )
+    trusted_hosts: str = Field(
+        "localhost,127.0.0.1,testserver",
+        validation_alias=AliasChoices("BOOKAUDIT_TRUSTED_HOSTS", "trusted_hosts"),
+    )
+    require_writer_ready: bool = False
+    writer_heartbeat_max_age_seconds: int = Field(default=300, ge=10, le=3600)
 
     # Flat aliases for common Docker env vars
-    library_path_env: Path | None = Field(
-        None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH")
-    )
+    library_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH"))
     db_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_DB_PATH"))
-    artifacts_dir_env: Path | None = Field(
-        None, validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR")
-    )
+    artifacts_dir_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR"))
     read_only_env: bool | None = Field(
         None,
         validation_alias=AliasChoices("BOOKAUDIT_READ_ONLY"),
@@ -212,9 +229,5 @@ def load_settings(config_path: Path | None = None) -> Settings:
         settings.storage.artifacts_dir = settings.artifacts_dir_env
     if settings.read_only_env is not None:
         settings.library.read_only = settings.read_only_env
-
-    db_backend = os.environ.get("BOOKAUDIT_DATABASE__BACKEND")
-    if db_backend:
-        settings.database.backend = db_backend
 
     return settings

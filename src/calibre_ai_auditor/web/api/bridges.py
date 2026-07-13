@@ -24,6 +24,7 @@ def get_settings() -> Settings:
 
 async def do_paperless_webhook_audit(settings: Settings, document_id: int, run_id: str) -> None:
     from pathlib import Path
+
     from calibre_ai_auditor.audit.engine import run_audit
     from calibre_ai_auditor.integrations.paperless import PaperlessBridge
 
@@ -40,7 +41,7 @@ async def do_paperless_webhook_audit(settings: Settings, document_id: int, run_i
 
     title = doc.get("title", f"Paperless Document {document_id}")
     import_dir = Path(settings.storage.artifacts_dir) / "paperless_imports"
-    
+
     file_path = await bridge.download_document_file(document_id, import_dir)
     if not file_path:
         raise ValueError(f"Failed to download file for document {document_id}")
@@ -57,9 +58,7 @@ async def do_paperless_webhook_audit(settings: Settings, document_id: int, run_i
             session.add(run)
 
         # Check for existing BookRecord
-        existing = session.exec(
-            select(BookRecord).where(BookRecord.book_key == book_key)
-        ).first()
+        existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
 
         file_info = {
             "path": str(file_path),
@@ -111,7 +110,8 @@ async def paperless_webhook(
 ) -> Any:
     verify_paperless_webhook(request, settings)
 
-    doc_id = None
+    # doc_id can be int or str (parsed from JSON body, then int()'d later)
+    doc_id: int | str | None = None
 
     # Check queries first
     if document_id_query is not None:
@@ -127,6 +127,7 @@ async def paperless_webhook(
             body_bytes = await request.body()
             if body_bytes:
                 import json
+
                 payload = json.loads(body_bytes)
                 if isinstance(payload, dict):
                     if "document_id" in payload:
@@ -143,18 +144,12 @@ async def paperless_webhook(
             pass
 
     if doc_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not extract document ID from payload or query parameters"
-        )
-        
+        raise HTTPException(status_code=400, detail="Could not extract document ID from payload or query parameters")
+
     try:
         doc_id = int(doc_id)
     except (ValueError, TypeError):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid document ID type; must be an integer"
-        )
+        raise HTTPException(status_code=400, detail="Invalid document ID type; must be an integer") from None
 
     # Generate a run ID
     run_id = f"run_paperless_webhook_{doc_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -165,20 +160,9 @@ async def paperless_webhook(
     session.commit()
 
     # Trigger job
-    job_id = await start_job(
-        f"paperless_webhook:{doc_id}",
-        do_paperless_webhook_audit,
-        settings,
-        doc_id,
-        run_id
-    )
+    job_id = await start_job(f"paperless_webhook:{doc_id}", do_paperless_webhook_audit, settings, doc_id, run_id)
 
     return {
         "status": "success",
-        "data": {
-            "job_id": job_id,
-            "run_id": run_id,
-            "message": "Paperless webhook task scheduled"
-        }
+        "data": {"job_id": job_id, "run_id": run_id, "message": "Paperless webhook task scheduled"},
     }
-

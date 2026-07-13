@@ -1,13 +1,14 @@
 import asyncio
+import contextlib
 import logging
-import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
 from pydantic import BaseModel
 
-from calibre_ai_auditor.config.settings import load_settings, Settings
+from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.queue.valkey import ValkeyQueue
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ def deserialize_arg(arg_data: dict[str, Any], settings: Settings) -> Any:
         data = arg_data["data"]
         if model_name == "ScanRequest":
             from calibre_ai_auditor.web.api.runs import ScanRequest
+
             return ScanRequest(**data)
         raise ValueError(f"Unknown BaseModel model_name: {model_name}")
     elif t == "raw":
@@ -82,17 +84,16 @@ def deserialize_kwargs(kwargs_data: dict[str, Any], settings: Settings) -> dict[
 
 def make_progress_callback(job_id: str, queue: ValkeyQueue) -> Callable[[int, int], None]:
     def cb(current: int, total: int) -> None:
-        asyncio.create_task(
-            queue.update_job(job_id, {"progress": current, "total": total})
-        )
+        asyncio.create_task(queue.update_job(job_id, {"progress": current, "total": total}))
+
     return cb
 
 
 async def run_job_from_payload(job_id: str, job_data: dict[str, Any], settings: Settings, queue: ValkeyQueue) -> None:
-    from calibre_ai_auditor.web.api.runs import do_scan
     from calibre_ai_auditor.audit.engine import run_audit
     from calibre_ai_auditor.ingest.single_file import audit_ingested_file
     from calibre_ai_auditor.web.api.bridges import do_paperless_webhook_audit
+    from calibre_ai_auditor.web.api.runs import do_scan
 
     payload = job_data.get("payload", {})
     func_name = payload.get("func_name")
@@ -102,17 +103,16 @@ async def run_job_from_payload(job_id: str, job_data: dict[str, Any], settings: 
     # 1. Update status to running
     await queue.update_job(job_id, {"status": "running"})
 
-    # 2. Resolve function
-    if func_name == "do_scan":
-        func = do_scan
-    elif func_name == "run_audit":
-        func = run_audit
-    elif func_name == "do_paperless_webhook_audit":
-        func = do_paperless_webhook_audit
-    elif func_name == "audit_ingested_file":
-        func = audit_ingested_file
-    else:
-
+    # 2. Resolve function. The dispatch is dynamic (string → callable), so we
+    # use a dict + .get() and cast the result to Any. The runtime contract
+    # (func is one of these four) is enforced by the elif chain below.
+    func: Any = {
+        "do_scan": do_scan,
+        "run_audit": run_audit,
+        "do_paperless_webhook_audit": do_paperless_webhook_audit,
+        "audit_ingested_file": audit_ingested_file,
+    }.get(func_name)
+    if func is None:
         err_msg = f"Unknown function name in payload: {func_name}"
         logger.error(err_msg)
         await queue.update_job(job_id, {"status": "failed", "error": err_msg})
@@ -129,9 +129,8 @@ async def run_job_from_payload(job_id: str, job_data: dict[str, Any], settings: 
         return
 
     # Pass progress callback if it's run_audit
-    if func == run_audit:
+    if func is run_audit:
         kwargs["progress_callback"] = make_progress_callback(job_id, queue)
-
 
     # 4. Execute the function
     try:
@@ -140,16 +139,22 @@ async def run_job_from_payload(job_id: str, job_data: dict[str, Any], settings: 
         else:
             res = func(*args, **kwargs)
 
-        await queue.update_job(job_id, {
-            "status": "completed",
-            "result": res,
-        })
+        await queue.update_job(
+            job_id,
+            {
+                "status": "completed",
+                "result": res,
+            },
+        )
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}", exc_info=True)
-        await queue.update_job(job_id, {
-            "status": "failed",
-            "error": str(e),
-        })
+        await queue.update_job(
+            job_id,
+            {
+                "status": "failed",
+                "error": str(e),
+            },
+        )
 
 
 async def start_job(task: str, func: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
@@ -244,9 +249,7 @@ async def stop_worker_task() -> None:
     global _worker_task
     if _worker_task:
         _worker_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await _worker_task
-        except asyncio.CancelledError:
-            pass
         _worker_task = None
         logger.info("Valkey background worker task stopped.")

@@ -75,10 +75,12 @@ class LMStudioProvider(LLMProvider):
                 kwargs["response_format"] = {"type": "json_object"}
                 # Add schema context to messages
                 messages = list(request.messages)
-                messages.append({
-                    "role": "user",
-                    "content": f"Please ensure your output strictly follows this JSON schema:\n{json.dumps(schema)}"
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Follow JSON schema strictly:\n{json.dumps(schema)}",
+                    }
+                )
                 kwargs["messages"] = messages
                 response = await self.client.chat.completions.create(**kwargs)
                 content = response.choices[0].message.content or "{}"

@@ -133,9 +133,7 @@ class PaperlessBridge:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 # A simple request with limit=1 to verify authentication and connectivity
-                response = await client.get(
-                    url, headers=self._get_headers(), params={"page_size": 1}
-                )
+                response = await client.get(url, headers=self._get_headers(), params={"page_size": 1})
                 response.raise_for_status()
                 return True
         except Exception as e:

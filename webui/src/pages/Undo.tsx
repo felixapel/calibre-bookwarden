@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { History, RotateCcw, Loader2, CheckCircle2 } from 'lucide-react'
 import { fetchRuns, revertRun } from '../api/client'
 import { useToast } from '../context/ToastContext'
@@ -12,16 +12,12 @@ export default function Undo() {
   
   const { showToast } = useToast()
 
-  useEffect(() => {
-    load()
-  }, [])
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const data = await fetchRuns()
-      if (Array.isArray(data)) {
-        setRuns(data)
+      if (Array.isArray(data?.data)) {
+        setRuns(data.data)
       } else {
         console.error('Invalid runs data format:', data)
         setRuns([])
@@ -32,7 +28,11 @@ export default function Undo() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showToast])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   const handleRevert = async (runId: string) => {
     if (!window.confirm(`Are you sure you want to revert all changes for run ${runId}?`)) {

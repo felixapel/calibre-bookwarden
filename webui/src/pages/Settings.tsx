@@ -1,36 +1,39 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Settings as SettingsIcon, Save, Loader2, Database, Shield, Zap, Globe, Check, Key } from 'lucide-react'
 import { fetchConfig, updateConfig } from '../api/client'
+import { setApiKey } from '../api/auth'
 import { useToast } from '../context/ToastContext'
 
 export default function Settings() {
   const [config, setConfig] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
-  const [localApiKey, setLocalApiKey] = useState(localStorage.getItem('BOOKAUDIT_API_KEY') || '')
+  const [mutable, setMutable] = useState(false)
+  const [localApiKey, setLocalApiKey] = useState('')
 
   const { showToast } = useToast()
 
   const handleSaveLocalKey = () => {
-    localStorage.setItem('BOOKAUDIT_API_KEY', localApiKey)
-    showToast('Browser API key updated successfully', 'success')
+    setApiKey(localApiKey)
+    showToast('API key loaded into memory for this page session', 'success')
   }
 
-  useEffect(() => {
-    load()
-  }, [])
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const data = await fetchConfig()
-      setConfig(data)
+      setConfig(data.data.config)
+      setMutable(data.data.mutable)
     } catch (e) {
       showToast('Failed to load settings', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [showToast])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   const handleSave = async () => {
     try {
@@ -73,10 +76,12 @@ export default function Settings() {
           )}
           <button 
             onClick={handleSave}
+            disabled={!mutable}
+            title={mutable ? 'Save configuration' : 'Production configuration is managed by deployment inputs'}
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold rounded-xl transition-all duration-300 shadow-[0_0_12px_rgba(139,92,246,0.2)] text-sm cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            Save Changes
+            {mutable ? 'Save Changes' : 'Managed by deployment'}
           </button>
         </div>
       </header>
@@ -215,7 +220,7 @@ export default function Settings() {
                 </button>
               </div>
               <p className="text-[10px] text-slate-500 mt-1">
-                If the backend server has `BOOKAUDIT_API_KEY` enabled, you must match it here for the frontend to be allowed to communicate. This key is stored securely in your browser's local storage.
+                If the backend has `BOOKAUDIT_API_KEY` enabled, enter it here. The key remains only in memory and is cleared when the page reloads.
               </p>
             </div>
           </div>

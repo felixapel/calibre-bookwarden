@@ -2,11 +2,16 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 
-from calibre_ai_auditor.config.settings import load_settings
+from calibre_ai_auditor.config.settings import Settings, load_settings
+from calibre_ai_auditor.web.schemas import APIResponse
 
 router = APIRouter()
+
+
+def get_settings() -> Settings:
+    return load_settings()
 
 
 def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
@@ -15,36 +20,37 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
         "profile": settings_dict.get("profile"),
         "allow_remote_file_upload": settings_dict.get("allow_remote_file_upload"),
         "log_level": settings_dict.get("log_level"),
+        "log_json": settings_dict.get("log_json"),
         "judge_model": settings_dict.get("judge_model"),
         "vision_model": settings_dict.get("vision_model"),
     }
-    
+
     # Library
     if "library" in settings_dict:
         sanitized["library"] = {
             "path": settings_dict["library"].get("path"),
             "read_only": settings_dict["library"].get("read_only"),
         }
-        
+
     # Database
     if "database" in settings_dict:
         sanitized["database"] = {
             "backend": settings_dict["database"].get("backend"),
         }
-        
+
     # Queue
     if "queue" in settings_dict:
         sanitized["queue"] = {
             "backend": settings_dict["queue"].get("backend"),
         }
-        
+
     # Rate limits
     if "rate_limits" in settings_dict:
         sanitized["rate_limits"] = {
             "enabled": settings_dict["rate_limits"].get("enabled"),
             "backend": settings_dict["rate_limits"].get("backend"),
         }
-        
+
     # Vectors
     if "vectors" in settings_dict:
         sanitized["vectors"] = {
@@ -54,15 +60,15 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
             "embedding_model": settings_dict["vectors"].get("embedding_model"),
             "local_only": settings_dict["vectors"].get("local_only"),
         }
-        
+
     # Providers
     if "providers" in settings_dict:
         sanitized["providers"] = settings_dict["providers"].copy() if settings_dict["providers"] else {}
-        
+
     # Privacy
     if "privacy" in settings_dict:
         sanitized["privacy"] = settings_dict["privacy"].copy() if settings_dict["privacy"] else {}
-        
+
     # Extractors
     if "extractors" in settings_dict and "tika" in settings_dict["extractors"]:
         tika = settings_dict["extractors"]["tika"]
@@ -74,36 +80,46 @@ def sanitize_config(settings_dict: dict[str, Any]) -> dict[str, Any]:
                 "max_embedded_resources": tika.get("max_embedded_resources"),
             }
         }
-        
+
     # Paperless
     if "paperless" in settings_dict:
         sanitized["paperless"] = {
             "enabled": settings_dict["paperless"].get("enabled"),
             "import_document_types": settings_dict["paperless"].get("import_document_types"),
         }
-        
+
     # Preview
     if "preview" in settings_dict:
         sanitized["preview"] = {
             "gotenberg_enabled": settings_dict["preview"].get("gotenberg_enabled"),
             "timeout_seconds": settings_dict["preview"].get("timeout_seconds"),
         }
-        
+
     # Manga Mode
     if "manga_mode" in settings_dict:
         sanitized["manga_mode"] = settings_dict["manga_mode"].copy() if settings_dict["manga_mode"] else {}
-        
+
     return sanitized
 
 
-@router.get("/config")
-async def get_config() -> dict[str, Any]:
-    settings = load_settings()
-    return sanitize_config(settings.model_dump())
+@router.get("/config", response_model=APIResponse)
+async def get_config(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+    return {
+        "status": "success",
+        "data": {
+            "config": sanitize_config(settings.model_dump()),
+            "mutable": settings.profile != "production",
+        },
+    }
 
 
-@router.post("/config")
-async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+@router.post("/config", response_model=APIResponse)
+async def save_config(
+    payload: dict[str, Any] = Body(...),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    if settings.profile == "production":
+        raise HTTPException(status_code=403, detail="Production configuration is read-only; update deployment inputs")
     config_path = Path("config/config.yml")
     yaml_config: dict[str, Any] = {}
     if config_path.exists():
@@ -127,5 +143,8 @@ async def save_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     with open(config_path, "w") as f:
         yaml.safe_dump(yaml_config, f, default_flow_style=False)
 
-    settings = load_settings(config_path)
-    return sanitize_config(settings.model_dump())
+    updated = load_settings(config_path)
+    return {
+        "status": "success",
+        "data": {"config": sanitize_config(updated.model_dump()), "mutable": True},
+    }

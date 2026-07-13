@@ -17,8 +17,8 @@ function FileBrowserModal({ isOpen, onClose, onSelect }: { isOpen: boolean, onCl
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    if (isOpen && configData?.library?.path) {
-      setCurrentDir(configData.library.path)
+    if (isOpen && configData?.data?.config?.library?.path) {
+      setCurrentDir(configData.data.config.library.path)
     }
   }, [isOpen, configData])
 

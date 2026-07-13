@@ -1,17 +1,21 @@
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlmodel import Session, SQLModel, create_engine
 
+import calibre_ai_auditor.storage.db as db_module
 from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.extractors.cover_hashes import calculate_phash
 from calibre_ai_auditor.llm.schemas import LLMResponse
-from calibre_ai_auditor.ocr.vision import VisionVerifier
+from calibre_ai_auditor.ocr.vision import VisionVerifier, calculate_sha256
+from calibre_ai_auditor.storage.models import CoverVisionCache
 
 
 @pytest.mark.asyncio
 async def test_vision_verifier_success(tmp_path: Any) -> None:
-    import calibre_ai_auditor.storage.db as db_module
     db_module._engine = None
 
     settings = Settings()
@@ -60,7 +64,6 @@ async def test_vision_verifier_success(tmp_path: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_vision_verifier_unsupported(tmp_path: Any) -> None:
-    import calibre_ai_auditor.storage.db as db_module
     db_module._engine = None
 
     settings = Settings()
@@ -86,15 +89,8 @@ async def test_vision_verifier_unsupported(tmp_path: Any) -> None:
     db_module._engine = None
 
 
-
 @pytest.mark.asyncio
 async def test_vision_verifier_cache(tmp_path: Any) -> None:
-    from sqlmodel import create_engine, SQLModel, Session
-    from calibre_ai_auditor.storage.models import CoverVisionCache
-    from calibre_ai_auditor.ocr.vision import calculate_sha256
-    from calibre_ai_auditor.extractors.cover_hashes import calculate_phash
-    import calibre_ai_auditor.storage.db as db_module
-
     # Reset engine
     db_module._engine = None
 
@@ -123,11 +119,7 @@ async def test_vision_verifier_cache(tmp_path: Any) -> None:
     }
 
     with Session(engine) as session:
-        cache_entry = CoverVisionCache(
-            sha256=sha256,
-            phash=phash,
-            response=cached_data
-        )
+        cache_entry = CoverVisionCache(sha256=sha256, phash=phash, response=cached_data)
         session.add(cache_entry)
         session.commit()
 
@@ -142,4 +134,3 @@ async def test_vision_verifier_cache(tmp_path: Any) -> None:
 
     # Reset engine after test
     db_module._engine = None
-

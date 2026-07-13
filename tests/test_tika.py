@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -21,7 +21,7 @@ async def test_tika_extract_text(tmp_path: Path) -> None:
     test_file.write_text("dummy")
 
     with patch("httpx.AsyncClient.put") as mock_put:
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.text = "extracted text"
         mock_put.return_value = mock_response
 

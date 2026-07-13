@@ -2,8 +2,12 @@ import json
 import logging
 from typing import Any
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None  # type: ignore
+    types = None  # type: ignore
 
 from calibre_ai_auditor.llm.base import LLMProvider
 from calibre_ai_auditor.llm.schemas import LLMRequest, LLMResponse
@@ -47,8 +51,7 @@ class GoogleProvider(LLMProvider):
                     system_instruction = content
                 elif isinstance(content, list):
                     system_instruction = "\n".join(
-                        part.get("text", "") if isinstance(part, dict) else str(part)
-                        for part in content
+                        part.get("text", "") if isinstance(part, dict) else str(part) for part in content
                     )
             elif role in ("user", "assistant"):
                 parts = []
@@ -66,16 +69,15 @@ class GoogleProvider(LLMProvider):
                                 image_url = part.get("image_url", {}).get("url", "")
                                 if image_url.startswith("data:image"):
                                     import base64
+
                                     try:
                                         header, base64_str = image_url.split(",", 1)
                                         mime_type = header.split(";")[0].split(":")[1]
                                         img_bytes = base64.b64decode(base64_str)
-                                        parts.append(
-                                            types.Part.from_bytes(data=img_bytes, mime_type=mime_type)
-                                        )
+                                        parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
                                     except Exception as e:
                                         logger.warning(f"Failed to parse base64 image: {e}")
-                
+
                 gemini_role = "user" if role == "user" else "model"
                 contents.append(types.Content(role=gemini_role, parts=parts))
 
@@ -83,7 +85,7 @@ class GoogleProvider(LLMProvider):
 
     async def chat(self, request: LLMRequest) -> LLMResponse:
         contents, system_instruction = self._map_messages(request.messages)
-        config = types.GenerateContentConfig(
+        config = types.GenerateContentConfig(  # type: ignore[call-overload]
             system_instruction=system_instruction,
             temperature=request.temperature,
         )
@@ -92,7 +94,7 @@ class GoogleProvider(LLMProvider):
 
         model = request.model or "gemini-2.5-flash"
         try:
-            response = await self.client.aio.models.generate_content(
+            response = await self.client.aio.models.generate_content(  # type: ignore[attr-defined]
                 model=model,
                 contents=contents,
                 config=config,
@@ -105,7 +107,7 @@ class GoogleProvider(LLMProvider):
 
     async def structured(self, request: LLMRequest, schema: dict[str, Any]) -> LLMResponse:
         contents, system_instruction = self._map_messages(request.messages)
-        config = types.GenerateContentConfig(
+        config = types.GenerateContentConfig(  # type: ignore[call-overload]
             system_instruction=system_instruction,
             temperature=request.temperature,
             response_mime_type="application/json",
@@ -131,7 +133,8 @@ class GoogleProvider(LLMProvider):
     async def test_connection(self) -> bool:
         try:
             # We list models to check credentials/api connection
-            async for _ in self.client.aio.models.list(config=types.ListModelsConfig(page_size=1)):
+            pager = await self.client.aio.models.list(config=types.ListModelsConfig(page_size=1))  # type: ignore[attr-defined]
+            async for _ in pager:  # type: ignore[attr-defined]
                 break
             return True
         except Exception as e:

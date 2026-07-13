@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from calibre_ai_auditor.queue.base import CacheBackend, JobQueue
@@ -16,7 +16,7 @@ class MemoryQueue(JobQueue):
             "task": task,
             "status": "pending",
             "payload": payload,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         # In a real async worker environment, we would trigger the task here.
         # For memory fallback, we just record it.

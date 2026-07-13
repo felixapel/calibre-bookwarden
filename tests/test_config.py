@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 
 from calibre_ai_auditor.config.settings import load_settings
+from calibre_ai_auditor.storage.db import get_engine
 
 
 def test_load_settings_default(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -26,3 +27,26 @@ def test_load_settings_yaml(tmp_path: Any) -> None:
     settings = load_settings(config_path)
     assert settings.profile == "custom"
     assert str(settings.library.path) == "/tmp/lib"
+
+
+def test_nested_environment_overrides_yaml(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "config.yml"
+    config_path.write_text("database:\n  backend: sqlite\n  postgres_dsn: postgresql+psycopg://yaml.invalid/db\n")
+    monkeypatch.setenv("BOOKAUDIT_DATABASE__BACKEND", "postgres")
+    monkeypatch.setenv("BOOKAUDIT_DATABASE__POSTGRES_DSN", "postgresql+psycopg://env.invalid/db")
+
+    settings = load_settings(config_path)
+
+    assert settings.database.backend == "postgres"
+    assert settings.database.postgres_dsn == "postgresql+psycopg://env.invalid/db"
+
+
+def test_postgres_backend_requires_dsn(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("BOOKAUDIT_DATABASE__POSTGRES_DSN", raising=False)
+    settings = load_settings()
+    settings.database.backend = "postgres"
+    settings.database.postgres_dsn = None
+
+    with pytest.raises(ValueError, match="POSTGRES_DSN"):
+        get_engine(settings)

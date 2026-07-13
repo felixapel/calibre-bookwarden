@@ -2,7 +2,8 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.config.settings import Settings, load_settings
@@ -30,10 +31,19 @@ def get_settings() -> Settings:
 
 
 @router.get("", response_model=APIResponse)
-async def list_books(session: Session = Depends(get_session)) -> Any:
-    statement = select(BookRecord).limit(100)
+async def list_books(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+) -> Any:
+    statement = select(BookRecord).order_by(BookRecord.book_key).offset(offset).limit(limit)
     books = session.exec(statement).all()
-    return {"status": "success", "data": [b.model_dump() for b in books]}
+    total = session.exec(select(func.count()).select_from(BookRecord)).one()
+    return {
+        "status": "success",
+        "data": [b.model_dump() for b in books],
+        "meta": {"total": total, "limit": limit, "offset": offset},
+    }
 
 
 @router.get("/all/duplicates", response_model=APIResponse)
@@ -43,7 +53,7 @@ async def get_duplicates(
 ) -> Any:
     # 1. Fetch all books from database
     statement = select(BookRecord)
-    books = session.exec(statement).all()
+    books = list(session.exec(statement).all())
 
     # 2. Get direct duplicates (fuzzy matching and ISBN matching)
     from calibre_ai_auditor.rules.duplicates import find_duplicates
@@ -119,6 +129,81 @@ async def get_resolution(book_key: str, session: Session = Depends(get_session))
     return {"status": "success", "data": package.decision}
 
 
+@router.get("/{book_key}/verdict", response_model=APIResponse)
+async def get_book_verdict(
+    book_key: str,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> Any:
+    """Run the v1.0 ContentVerificationEngine on a book and return the BookVerdict.
+
+    Reads the latest EvidencePackage for the book, extracts deterministic
+    observations from its `extracted` and `snippets` fields, and produces
+    per-field verdicts via the engine.  No LLM calls — pure deterministic rules.
+    """
+    from calibre_ai_auditor.extractors.heuristics import (
+        extract_heuristics,
+    )
+    from calibre_ai_auditor.verification import (
+        ContentVerificationEngine,
+        DeclaredMetadata,
+        ObservationSet,
+    )
+
+    statement = select(BookRecord).where(BookRecord.book_key == book_key)
+    book = session.exec(statement).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    pkg_stmt = (
+        select(EvidencePackage).where(EvidencePackage.book_key == book_key).order_by(EvidencePackage.created_at.desc())  # type: ignore[attr-defined]
+    )
+    package = session.exec(pkg_stmt).first()
+
+    # Build declared metadata from the book record
+    cm = book.current_metadata or {}
+    declared = DeclaredMetadata(
+        title=cm.get("title"),
+        authors=cm.get("authors") or [],
+        publisher=cm.get("publisher"),
+        published_date=cm.get("published_date"),
+        language=cm.get("language"),
+        series=cm.get("series"),
+        series_index=cm.get("series_index"),
+        isbn=(cm.get("identifiers") or {}).get("isbn"),
+    )
+
+    # Build observations from the evidence package (deterministic only)
+    snippets_text = ""
+    if package and package.snippets:
+        snippets_text = "\n".join(s.get("text", "") for s in package.snippets)
+    extracted = (package.extracted if package else {}) or {}
+    heuristic_obs = extract_heuristics(package.snippets if package else []) if package else {}
+
+    obs = ObservationSet(
+        title_page_text=snippets_text[:5000] if snippets_text else None,
+        copyright_page_text=snippets_text[:5000] if snippets_text else None,
+        body_sample=snippets_text[:10000] if snippets_text else None,
+        isbn_extracted=(extracted.get("identifiers") or {}).get("isbn")
+        or heuristic_obs.get("identifiers", {}).get("isbn"),
+        title_extracted=extracted.get("title"),
+        authors_extracted=extracted.get("authors"),
+        publisher_extracted=extracted.get("publisher"),
+        date_extracted=extracted.get("published_date"),
+        language_detected=extracted.get("language"),
+    )
+
+    engine = ContentVerificationEngine()
+    verdict = engine.verify(
+        book_key=book_key,
+        run_id=book.run_id or "live",
+        declared=declared,
+        observed=obs,
+    )
+
+    return {"status": "success", "data": verdict.model_dump()}
+
+
 @router.get("/{book_key}/similar", response_model=APIResponse)
 async def get_similar_books(
     book_key: str,
@@ -147,6 +232,3 @@ async def get_similar_books(
 
     results = await searcher.find_similar(title)
     return {"status": "success", "data": results}
-
-
-

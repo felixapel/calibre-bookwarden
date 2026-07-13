@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { getAuthRevision, getUnauthorized, setApiKey, subscribeAuth } from './api/auth'
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileSearch, Search, Settings, ShieldAlert, History, BookOpen, KeyRound, ShieldCheck, X, Copy } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { LayoutDashboard, FileSearch, Search, Settings, ShieldAlert, History, BookOpen, KeyRound, ShieldCheck, Copy, Sparkles } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchHealth } from './api/client'
 import clsx from 'clsx'
 
@@ -12,6 +13,7 @@ import Review from './pages/Review'
 import Undo from './pages/Undo'
 import SettingsPage from './pages/Settings'
 import Duplicates from './pages/Duplicates'
+import Verify from './pages/Verify'
 
 
 function NavItem({ to, icon: Icon, children }: { to: string, icon: any, children: React.ReactNode }) {
@@ -38,10 +40,10 @@ function NavItem({ to, icon: Icon, children }: { to: string, icon: any, children
 
 function Sidebar() {
   const { data: health } = useQuery({ queryKey: ['health'], queryFn: fetchHealth, refetchInterval: 10000 })
-  const isOk = health?.status === 'ok'
+  const isOk = health?.status === 'ready'
 
   return (
-    <div className="w-64 bg-[#070b13]/90 border-r border-slate-800/40 flex flex-col h-full backdrop-blur-xl relative z-10">
+    <div className="hidden md:flex w-64 shrink-0 bg-[#070b13]/90 border-r border-slate-800/40 flex-col h-full backdrop-blur-xl relative z-10">
       {/* Glow Effects */}
       <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-purple-500/5 to-transparent pointer-events-none" />
       
@@ -55,6 +57,7 @@ function Sidebar() {
 
       <nav className="flex-1 px-4 py-2 space-y-1.5 overflow-y-auto">
         <NavItem to="/" icon={LayoutDashboard}>Dashboard</NavItem>
+        <NavItem to="/verify" icon={Sparkles}>Verify (v1.0)</NavItem>
         <NavItem to="/scan" icon={Search}>Scan Library</NavItem>
         <NavItem to="/inspect" icon={FileSearch}>Inspect File</NavItem>
         <NavItem to="/duplicates" icon={Copy}>Duplicates</NavItem>
@@ -80,7 +83,7 @@ function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-slate-300">System Status</p>
-            <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
               {isOk ? 'Auditor Online' : 'Connecting...'}
             </p>
           </div>
@@ -90,24 +93,63 @@ function Sidebar() {
   )
 }
 
+const mobileNavigation = [
+  ['/', LayoutDashboard, 'Dashboard'],
+  ['/verify', Sparkles, 'Verify'],
+  ['/scan', Search, 'Scan'],
+  ['/inspect', FileSearch, 'Inspect'],
+  ['/duplicates', Copy, 'Duplicates'],
+  ['/review', ShieldAlert, 'Review'],
+  ['/undo', History, 'Undo'],
+  ['/settings', Settings, 'Settings'],
+] as const
+
+function MobileNavigation() {
+  const location = useLocation()
+  return (
+    <nav aria-label="Primary navigation" className="md:hidden fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-slate-800 bg-[#070b13]/95 px-2 py-2 backdrop-blur-xl">
+      {mobileNavigation.map(([to, Icon, label]) => (
+        <Link
+          key={to}
+          to={to}
+          aria-label={label}
+          title={label}
+          className={clsx(
+            'flex min-w-12 flex-1 items-center justify-center rounded-lg p-3',
+            location.pathname === to ? 'bg-purple-500/20 text-purple-300' : 'text-slate-400',
+          )}
+        >
+          <Icon aria-hidden="true" className="h-5 w-5" />
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
 export default function App() {
-  const [showAuthModal, setShowAuthModal] = useState(false)
-  const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('BOOKAUDIT_API_KEY') || '')
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const showAuthModal = useSyncExternalStore(subscribeAuth, getUnauthorized, getUnauthorized)
+  const authRevision = useSyncExternalStore(subscribeAuth, getAuthRevision, getAuthRevision)
+  const apiKeyInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
-    const handleUnauthorized = () => {
-      setShowAuthModal(true)
+    const handleAuthenticated = () => {
+      void queryClient.resetQueries()
     }
-    window.addEventListener('bookaudit-unauthorized', handleUnauthorized)
+    window.addEventListener('bookaudit-authenticated', handleAuthenticated)
     return () => {
-      window.removeEventListener('bookaudit-unauthorized', handleUnauthorized)
+      window.removeEventListener('bookaudit-authenticated', handleAuthenticated)
     }
-  }, [])
+  }, [queryClient])
+
+  useEffect(() => {
+    if (showAuthModal) apiKeyInputRef.current?.focus()
+  }, [showAuthModal])
 
   const handleSaveApiKey = () => {
-    localStorage.setItem('BOOKAUDIT_API_KEY', apiKeyInput)
-    setShowAuthModal(false)
-    window.location.reload()
+    setApiKey(apiKeyInput)
+    setApiKeyInput('')
   }
 
   return (
@@ -115,14 +157,15 @@ export default function App() {
       <div className="flex h-screen bg-[#090d16] overflow-hidden text-slate-100">
         {/* Background Ambient Glows */}
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-purple-900/10 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-900/10 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[40%] h-[40%] rounded-full bg-cyan-900/10 blur-[120px] pointer-events-none" />
         
         <Sidebar />
         
-        <main className="flex-1 overflow-y-auto relative z-0 flex flex-col">
+        <main className="min-w-0 flex-1 overflow-y-auto relative z-0 flex flex-col pb-16 md:pb-0">
           <div className="flex-1">
-            <Routes>
+            <Routes key={authRevision}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/verify" element={<Verify />} />
               <Route path="/scan" element={<Scan />} />
               <Route path="/inspect" element={<Inspect />} />
               <Route path="/duplicates" element={<Duplicates />} />
@@ -133,28 +176,30 @@ export default function App() {
             </Routes>
           </div>
         </main>
+        <MobileNavigation />
       </div>
 
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#0b0f19] border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="api-key-dialog-title"
+            className="bg-[#0b0f19] border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4"
+          >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-200 flex items-center gap-2">
+              <h3 id="api-key-dialog-title" className="text-lg font-bold text-slate-200 flex items-center gap-2">
                 <KeyRound className="w-5 h-5 text-purple-400" />
                 API Key Authentication
               </h3>
-              <button 
-                onClick={() => setShowAuthModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
             <p className="text-xs text-slate-400">
               The server returned an authentication failure (401 Unauthorized). Please provide the valid `BOOKAUDIT_API_KEY` below to resume requests.
             </p>
             <div className="space-y-2">
               <input
+                ref={apiKeyInputRef}
+                aria-label="API key"
                 type="password"
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
@@ -164,17 +209,12 @@ export default function App() {
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => setShowAuthModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
                 onClick={handleSaveApiKey}
+                disabled={!apiKeyInput.trim()}
                 className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold rounded-xl transition-all duration-300 shadow-[0_0_10px_rgba(139,92,246,0.2)] cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4" />
-                Save & Reload
+                Save and retry
               </button>
             </div>
           </div>

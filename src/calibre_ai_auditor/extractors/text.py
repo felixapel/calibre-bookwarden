@@ -41,9 +41,7 @@ def extract_snippets(file_path: Path, max_pages: int = 5) -> list[Snippet]:
         try:
             # pymupdf4llm.to_markdown returns the whole document as markdown usually.
             md_text = pymupdf4llm.to_markdown(str(file_path), pages=list(range(max_pages)))
-            snippets.append(
-                Snippet(source="first_pages", text=md_text, page_range=f"0-{max_pages - 1}")
-            )
+            snippets.append(Snippet(source="first_pages", text=md_text, page_range=f"0-{max_pages - 1}"))
         except Exception as e:
             logger.error(f"Failed to extract text from PDF {file_path}: {e}")
     elif suffix == ".epub":
@@ -53,9 +51,7 @@ def extract_snippets(file_path: Path, max_pages: int = 5) -> list[Snippet]:
             with zipfile.ZipFile(file_path, "r") as z:
                 # Find all html-like files
                 file_list = sorted(z.namelist())
-                html_files = [
-                    f for f in file_list if f.lower().endswith((".xhtml", ".html", ".htm"))
-                ]
+                html_files = [f for f in file_list if f.lower().endswith((".xhtml", ".html", ".htm"))]
 
                 for html_file in html_files:
                     with z.open(html_file) as f:
@@ -67,9 +63,7 @@ def extract_snippets(file_path: Path, max_pages: int = 5) -> list[Snippet]:
                         break
 
             if text_content.strip():
-                snippets.append(
-                    Snippet(source="first_pages", text=text_content[:10000], page_range="start")
-                )
+                snippets.append(Snippet(source="first_pages", text=text_content[:10000], page_range="start"))
         except Exception as e:
             logger.error(f"Fast EPUB extraction failed for {file_path}: {e}")
 

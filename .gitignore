@@ -148,6 +148,7 @@ cython_debug/
 # calibre-ai-auditor specific
 .state/
 .artifacts/
+.writer-artifacts/
 artifacts/
 reports/
 scratch/
@@ -165,3 +166,10 @@ fake_library/*
 *.pdf
 *.cbz
 *.cbr
+
+# Test artifacts
+test-results/
+playwright-report/
+.benchmarks/baseline.json
+webui/test-results/
+webui/playwright-report/

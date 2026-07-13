@@ -1,4 +1,5 @@
 profile: default
+log_json: false
 
 library:
   path: null          # overridden by BOOKAUDIT_LIBRARY_PATH env var
@@ -7,7 +8,7 @@ library:
 # ─── Storage ────────────────────────────────────────────────────────────────
 database:
   backend: postgres
-  postgres_dsn: "postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit"
+  # Required via BOOKAUDIT_DATABASE__POSTGRES_DSN; never store credentials here.
 
 queue:
   backend: valkey
@@ -25,7 +26,7 @@ storage:
 # ─── Extraction Sidecars ────────────────────────────────────────────────────
 extractors:
   tika:
-    enabled: true
+    enabled: false
     base_url: "http://tika:9998"
     timeout_seconds: 60
     write_limit: 200000
@@ -42,7 +43,7 @@ vectors:
 
 # ─── Preview / PDF rendering ────────────────────────────────────────────────
 preview:
-  gotenberg_enabled: true
+  gotenberg_enabled: false
   gotenberg_url: "http://gotenberg:3000"
   timeout_seconds: 30
 
@@ -70,7 +71,7 @@ privacy:
 routing:
   model_config: "config/models.yml"
 
-ollama_enabled: true
-ollama_base_url: "http://192.168.0.122:11434/v1"
+ollama_enabled: false
+ollama_base_url: "http://ollama:11434/v1"
 judge_model: "gemma4:e4b-it-q4_K_M"
 vision_model: "gemma4:e4b-it-q4_K_M"

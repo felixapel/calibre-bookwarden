@@ -3,18 +3,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlmodel import Session, desc, select
+from sqlalchemy import func
+from sqlmodel import Session, col, desc, select
 
-from calibre_ai_auditor.apply.engine import ApplyEngine
+from calibre_ai_auditor.apply.coordinator import queue_undo_operation
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.storage.db import get_engine
 from calibre_ai_auditor.storage.models import BookRecord, Change, Run
 from calibre_ai_auditor.web.jobs import get_job_status, start_job
-from calibre_ai_auditor.web.safety import require_write_confirmation
-from calibre_ai_auditor.web.schemas import RevertRequest
+from calibre_ai_auditor.web.schemas import APIResponse, RevertRequest
 
 router = APIRouter()
 
@@ -37,7 +37,7 @@ class ScanRequest(BaseModel):
     limit: int | None = None
 
 
-async def do_scan(settings: Settings, req: ScanRequest) -> dict:
+async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
     library_path = Path(req.library) if req.library else settings.library.path
     if not library_path:
         raise ValueError("Library path not set.")
@@ -56,10 +56,7 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict:
 
         for book in books:
             authors_str = book.get("authors", "")
-            if isinstance(authors_str, str):
-                authors = [a.strip() for a in authors_str.split("&")]
-            else:
-                authors = []
+            authors = [a.strip() for a in authors_str.split("&")] if isinstance(authors_str, str) else []  # noqa: SIM108
 
             book_key = f"calibre:{book['id']}"
             existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
@@ -70,10 +67,7 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict:
                     "authors": authors,
                     "identifiers": book.get("identifiers", {}),
                 }
-                existing.files = [
-                    {"path": f, "format": Path(f).suffix[1:].lower()}
-                    for f in book.get("formats", [])
-                ]
+                existing.files = [{"path": f, "format": Path(f).suffix[1:].lower()} for f in book.get("formats", [])]
                 existing.status = "scanned"
                 book_record = existing
             else:
@@ -87,18 +81,11 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict:
                         "authors": authors,
                         "identifiers": book.get("identifiers", {}),
                     },
-                    files=[
-                        {"path": f, "format": Path(f).suffix[1:].lower()}
-                        for f in book.get("formats", [])
-                    ],
+                    files=[{"path": f, "format": Path(f).suffix[1:].lower()} for f in book.get("formats", [])],
                 )
             try:
                 full_metadata = cli.show_metadata(book["id"])
-                lang = (
-                    full_metadata.get("languages", [None])[0]
-                    if full_metadata.get("languages")
-                    else None
-                )
+                lang = full_metadata.get("languages", [None])[0] if full_metadata.get("languages") else None
                 book_record.current_metadata.update(
                     {
                         "publisher": full_metadata.get("publisher"),
@@ -138,72 +125,64 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict:
     return {"run_id": run_id, "books_found": len(books)}
 
 
-@router.get("/runs")
-async def list_runs(session: Annotated[Session, Depends(get_session)]) -> Any:
-    runs = session.exec(select(Run).order_by(desc(Run.created_at))).all()
-    return runs
+@router.get("/runs", response_model=APIResponse)
+async def list_runs(
+    session: Annotated[Session, Depends(get_session)],
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> Any:
+    runs = session.exec(select(Run).order_by(desc(Run.created_at)).offset(offset).limit(limit)).all()
+    total = session.exec(select(func.count()).select_from(Run)).one()
+    return {
+        "status": "success",
+        "data": [run.model_dump() for run in runs],
+        "meta": {"total": total, "limit": limit, "offset": offset},
+    }
 
 
-@router.post("/runs/scan")
-async def scan(
-    req: ScanRequest, settings: Annotated[Settings, Depends(get_settings)]
-) -> dict[str, str]:
+@router.post("/runs/scan", response_model=APIResponse)
+async def scan(req: ScanRequest, settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Any]:
     job_id = await start_job("scan", do_scan, settings, req)
-    return {"job_id": job_id}
+    return {"status": "success", "data": {"job_id": job_id}}
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", response_model=APIResponse)
 async def get_job(job_id: str) -> dict[str, Any]:
     job = await get_job_status(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job.model_dump()
-
+    return {"status": "success", "data": job.model_dump()}
 
 
 @router.post("/runs/{run_id}/revert")
 async def revert_run(
     run_id: str,
     session: Annotated[Session, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
     req: RevertRequest = Body(default_factory=RevertRequest),
 ) -> dict[str, Any]:
-    require_write_confirmation(settings, force=req.force)
-
-    if not settings.library.path:
-        raise HTTPException(status_code=400, detail="Library path not set")
+    if not req.force:
+        raise HTTPException(status_code=400, detail="Revert requires explicit confirmation with force=true")
 
     # Find all changes for this run
-    changes_stmt = select(Change).where(Change.run_id == run_id).where(Change.status != "undone")
+    changes_stmt = (
+        select(Change)
+        .where(Change.run_id == run_id)
+        .where(col(Change.status).in_(("pending_apply", "applied", "failed_rollback_failed")))
+    )
     changes = session.exec(changes_stmt).all()
 
     if not changes:
-        return {"status": "success", "data": {"message": f"No active changes found to revert for run {run_id}"}}
+        return {
+            "status": "success",
+            "data": {"message": f"No active changes found to revert for run {run_id}"},
+        }
 
-    cli = CalibreCLI(settings.library.path)
-    apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
+    operation_ids = [queue_undo_operation(session, change) for change in changes]
 
-    reverted_count = 0
-    errors = []
-
-    for change in changes:
-        try:
-            apply_engine.undo_change(session, change)
-            
-            # Reset book record status back to suggest_fix
-            book_stmt = select(BookRecord).where(BookRecord.book_key == change.book_key)
-            book = session.exec(book_stmt).first()
-            if book:
-                book.status = "suggest_fix"
-                session.add(book)
-                
-            reverted_count += 1
-        except Exception as e:
-            errors.append(f"Failed to revert change {change.id} for book {change.book_key}: {e}")
-
-    session.commit()
-
-    if errors:
-        raise HTTPException(status_code=500, detail=f"Revert completed with errors: {'; '.join(errors)}")
-
-    return {"status": "success", "data": {"message": f"Successfully reverted {reverted_count} changes for run {run_id}"}}
+    return {
+        "status": "success",
+        "data": {
+            "message": f"Queued {len(operation_ids)} undo operations for run {run_id}",
+            "operation_ids": operation_ids,
+        },
+    }

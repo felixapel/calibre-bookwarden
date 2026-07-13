@@ -1,0 +1,32 @@
+{
+  "name": "author_witness_author_swap",
+  "description": "LLM witness detects real author swap, flags author_swap risk",
+  "input": {
+    "field_name": "authors",
+    "declared_value": ["F. Scott Fitzgerald"],
+    "observed_value": ["Herman Melville"],
+    "evidence": [
+      {
+        "source": "title_page",
+        "text": "Moby-Dick; or, The Whale. By Herman Melville.",
+        "page_range": "1",
+        "confidence": 95
+      }
+    ],
+    "deterministic_verdict": "ambiguous",
+    "deterministic_confidence": 50
+  },
+  "recorded_response": {
+    "field": "authors",
+    "verdict": "mismatch",
+    "confidence": 96,
+    "selected_value": ["Herman Melville"],
+    "reasons": [
+      "Title page byline is Herman Melville, not Fitzgerald.",
+      "Disjoint author sets indicate a real author_swap."
+    ],
+    "evidence_quote": "By Herman Melville",
+    "evidence_page": "1",
+    "risk_flags": ["author_swap"]
+  }
+}

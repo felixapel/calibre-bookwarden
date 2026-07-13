@@ -69,9 +69,7 @@ class OpenLibraryProvider(BaseProvider):
             metadata.identifiers = {k: v for k, v in metadata.identifiers.items() if v}
 
             cover_id = doc.get("cover_i")
-            cover_url = (
-                f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg" if cover_id else None
-            )
+            cover_url = f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg" if cover_id else None
 
             candidates.append(
                 Candidate(

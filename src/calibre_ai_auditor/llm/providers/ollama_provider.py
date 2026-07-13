@@ -69,9 +69,7 @@ class OllamaProvider(LLMProvider):
         messages.append(
             {
                 "role": "user",
-                "content": (
-                    f"Please ensure your output strictly follows this JSON schema:\n{schema_str}"
-                ),
+                "content": (f"Please ensure your output strictly follows this JSON schema:\n{schema_str}"),
             }
         )
 

@@ -1,0 +1,33 @@
+{
+  "name": "title_witness_confirms_match",
+  "description": "LLM witness sees fuzzy ratio 0.62 (ambiguous) and agrees with observed value",
+  "input": {
+    "field_name": "title",
+    "declared_value": "The Hunchback of Notre Dame",
+    "observed_value": "The Hunchback of Notre-Dame",
+    "evidence": [
+      {
+        "source": "title_page",
+        "text": "The Hunchback of Notre-Dame by Victor Hugo",
+        "page_range": "1",
+        "confidence": 70
+      }
+    ],
+    "deterministic_verdict": "ambiguous",
+    "deterministic_confidence": 60
+  },
+  "recorded_response": {
+    "field": "title",
+    "verdict": "confirmed",
+    "confidence": 92,
+    "selected_value": "The Hunchback of Notre-Dame",
+    "reasons": [
+      "Title page explicitly reads 'The Hunchback of Notre-Dame'.",
+      "The dash vs no-dash difference is a trivial transliteration.",
+      "No mismatch detected."
+    ],
+    "evidence_quote": "The Hunchback of Notre-Dame by Victor Hugo",
+    "evidence_page": "1",
+    "risk_flags": []
+  }
+}

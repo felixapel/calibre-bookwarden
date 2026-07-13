@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: calibre-ai-auditor:v0.1
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     env_file:
@@ -11,45 +11,146 @@ services:
       BOOKAUDIT_DB_PATH: /state/bookaudit.db
       BOOKAUDIT_ARTIFACTS_DIR: /artifacts
       BOOKAUDIT_DATABASE__BACKEND: postgres
-      BOOKAUDIT_DATABASE__POSTGRES_DSN: postgresql+psycopg://bookaudit:bookaudit@postgres:5432/bookaudit
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_APP_POSTGRES_DSN:?set app role DSN in .env}
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_LOG_JSON: "true"
+      BOOKAUDIT_API_KEY: ${BOOKAUDIT_API_KEY:?set in .env}
+      BOOKAUDIT_TRUSTED_HOSTS: ${BOOKAUDIT_TRUSTED_HOSTS:-localhost,127.0.0.1}
+      BOOKAUDIT_RATE_LIMITS__ENABLED: "true"
+      BOOKAUDIT_RATE_LIMITS__BACKEND: valkey
+      BOOKAUDIT_RATE_LIMITS__VALKEY_URL: redis://valkey:6379/1
+      BOOKAUDIT_REQUIRE_WRITER_READY: ${BOOKAUDIT_REQUIRE_WRITER_READY:-true}
       BOOKAUDIT_READ_ONLY: "true"
     volumes:
-      - ./fake_library:/library:ro
+      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:ro
       - ./user_library:/input_files:ro
       - ./.state:/state
       - ./.artifacts:/artifacts
       - ./config:/app/config:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${BOOKAUDIT_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
       valkey:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
+      test:
+        ["CMD-SHELL", "curl -sf -H 'X-API-Key: '$$BOOKAUDIT_API_KEY http://localhost:8080/api/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
 
-  tika:
-    image: apache/tika:latest
+  writer:
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
+    user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
-    ports:
-      - "9998:9998"
+    command: ["writer"]
+    env_file:
+      - .env
+    environment:
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_LIBRARY_PATH: /library
+      BOOKAUDIT_ARTIFACTS_DIR: /writer-artifacts
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_WRITER_POSTGRES_DSN:?set writer role DSN in .env}
+      BOOKAUDIT_QUEUE__BACKEND: valkey
+      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
+      BOOKAUDIT_READ_ONLY: "false"
+      BOOKAUDIT_LOG_JSON: "true"
+    volumes:
+      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:rw
+      - ./.writer-artifacts:/writer-artifacts
+      - ./config:/app/config:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "bookaudit", "writer-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  migrate:
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
+    command: ["migrate"]
+    profiles: ["maintenance"]
+    restart: "no"
+    environment:
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_MIGRATOR_POSTGRES_DSN:?set migrator role DSN in .env}
+    volumes:
+      - ./config:/app/config:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  retention:
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
+    command: ["retention"]
+    profiles: ["maintenance"]
+    restart: "no"
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_ARTIFACTS_DIR: /writer-artifacts
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_WRITER_POSTGRES_DSN:?set writer role DSN in .env}
+      BOOKAUDIT_QUEUE__BACKEND: valkey
+      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
+    volumes:
+      - ./.writer-artifacts:/writer-artifacts
+      - ${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}:/backups:ro
+      - ./config:/app/config:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+
+  tika:
+    image: apache/tika@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973
+    restart: unless-stopped
+    profiles: ["optional"]
 
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
     restart: unless-stopped
     environment:
       POSTGRES_USER: bookaudit
-      POSTGRES_PASSWORD: bookaudit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
       POSTGRES_DB: bookaudit
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set app database password in .env}
+      POSTGRES_WRITER_PASSWORD: ${POSTGRES_WRITER_PASSWORD:?set writer database password in .env}
+      POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?set migrator database password in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "15432:5432"
+      - ./scripts/postgres-init-roles.sh:/docker-entrypoint-initdb.d/10-bookaudit-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bookaudit -d bookaudit"]
       interval: 10s
@@ -57,26 +158,22 @@ services:
       retries: 5
 
   valkey:
-    image: valkey/valkey:latest
+    image: valkey/valkey:8.1.3-alpine@sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773
     restart: unless-stopped
-    ports:
-      - "16379:6379"
     volumes:
       - valkey-data:/data
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.14.1@sha256:419d72603f5346ee22ffc4606bdb7beb52fcb63077766fab678e6622ba247366
     restart: unless-stopped
-    ports:
-      - "6333:6333"
+    profiles: ["optional"]
     volumes:
       - qdrant-data:/qdrant/storage
 
   gotenberg:
-    image: gotenberg/gotenberg:8
+    image: gotenberg/gotenberg:8@sha256:67097317623a503ba2a6a7e9ae8db6929a1f7e1bbd88077bacf2d325fbdab923
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    profiles: ["optional"]
 
 volumes:
   postgres-data:

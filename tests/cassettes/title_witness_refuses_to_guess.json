@@ -1,0 +1,25 @@
+{
+  "name": "title_witness_refuses_to_guess",
+  "description": "LLM witness sees insufficient evidence and returns still_ambiguous",
+  "input": {
+    "field_name": "title",
+    "declared_value": "???",
+    "observed_value": null,
+    "evidence": [],
+    "deterministic_verdict": "ambiguous",
+    "deterministic_confidence": 0
+  },
+  "recorded_response": {
+    "field": "title",
+    "verdict": "still_ambiguous",
+    "confidence": 15,
+    "selected_value": null,
+    "reasons": [
+      "No evidence was provided to the witness.",
+      "Cannot adjudicate without book content."
+    ],
+    "evidence_quote": null,
+    "evidence_page": null,
+    "risk_flags": []
+  }
+}

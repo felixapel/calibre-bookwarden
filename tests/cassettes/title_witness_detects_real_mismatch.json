@@ -1,0 +1,32 @@
+{
+  "name": "title_witness_detects_real_mismatch",
+  "description": "LLM witness sees declared title differs from real title and returns mismatch",
+  "input": {
+    "field_name": "title",
+    "declared_value": "Moby Dick",
+    "observed_value": "Moby-Dick; or, The Whale",
+    "evidence": [
+      {
+        "source": "title_page",
+        "text": "Moby-Dick; or, The Whale. By Herman Melville.",
+        "page_range": "1",
+        "confidence": 95
+      }
+    ],
+    "deterministic_verdict": "ambiguous",
+    "deterministic_confidence": 65
+  },
+  "recorded_response": {
+    "field": "title",
+    "verdict": "mismatch",
+    "confidence": 88,
+    "selected_value": "Moby-Dick; or, The Whale",
+    "reasons": [
+      "Title page explicitly reads 'Moby-Dick; or, The Whale'.",
+      "The declared 'Moby Dick' is the common short form but the canonical title per the book is the longer form."
+    ],
+    "evidence_quote": "Moby-Dick; or, The Whale",
+    "evidence_page": "1",
+    "risk_flags": []
+  }
+}
