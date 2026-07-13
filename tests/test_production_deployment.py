@@ -114,9 +114,8 @@ def test_browser_gate_bootstraps_and_launches_backend_portably() -> None:
     assert "uv sync --frozen --extra dev" in frontend
 
 
-def test_image_gates_keep_secret_scanning_with_one_exact_dependency_exclusion() -> None:
+def test_github_image_gates_keep_secret_scanning_with_one_exact_dependency_exclusion() -> None:
     workflows = (
-        ROOT / ".gitea" / "workflows" / "v1-tests.yml",
         ROOT / ".github" / "workflows" / "ci.yml",
         ROOT / ".github" / "workflows" / "release.yml",
     )
@@ -132,3 +131,28 @@ def test_image_gates_keep_secret_scanning_with_one_exact_dependency_exclusion() 
         assert [line for line in settings if line.startswith("skip-files:")] == [f"skip-files: {excluded_file}"]
         assert [line for line in settings if line.startswith("exit-code:")] == ['exit-code: "1"']
         assert [line for line in settings if line.startswith("severity:")] == ["severity: HIGH,CRITICAL"]
+        assert [line for line in settings if line.startswith("ignore-unfixed:")] == ["ignore-unfixed: true"]
+
+
+def test_gitea_image_gate_bootstraps_docker_and_runs_pinned_trivy() -> None:
+    content = (ROOT / ".gitea" / "workflows" / "v1-tests.yml").read_text()
+    container = content.split("\n  container:\n", 1)[1]
+    excluded_file = "opt/venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc"
+    trivy_image = "aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293"
+
+    assert 'DOCKER_BUILDKIT: "1"' in container
+    assert "apt-get install -y --no-install-recommends docker.io docker-compose" in container
+    assert "docker/setup-buildx-action@" not in container
+    assert "aquasecurity/trivy-action@" not in container
+    assert "docker-compose --profile maintenance --profile optional config -q" in container
+    assert '-v "$PWD/ops/monitoring:/etc/prometheus:ro"' not in container
+    assert "docker cp ops/monitoring/." in container
+
+    scan = container.split("      - name: Scan image for high vulnerabilities\n", 1)[1]
+    settings = [line.strip().removesuffix("\\").strip() for line in scan.splitlines()]
+    assert [line for line in settings if line.startswith("aquasec/trivy@sha256:")] == [f"{trivy_image} image"]
+    assert [line for line in settings if line.startswith("--scanners ")] == ["--scanners vuln,secret"]
+    assert [line for line in settings if line.startswith("--skip-files ")] == [f"--skip-files {excluded_file}"]
+    assert [line for line in settings if line.startswith("--exit-code ")] == ["--exit-code 1"]
+    assert [line for line in settings if line.startswith("--severity ")] == ["--severity HIGH,CRITICAL"]
+    assert [line for line in settings if line.startswith("--ignore-unfixed")] == ["--ignore-unfixed"]

@@ -35,6 +35,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   locked Python environment inside its isolated frontend job.
 - Container gates retain vulnerability and image-secret scanning while narrowly
   excluding the known `google-auth` compiled-parser test-key false positive.
+- Gitea's production-image job now bootstraps Docker and Compose clients inside
+  `act_runner` and invokes the pinned Trivy container directly.
 
 ## [1.2.0] - 2026-07-12
 
