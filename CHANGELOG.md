@@ -28,6 +28,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   active writer locks, fresh heartbeats, and non-terminal ledger operations.
 - Undo now clears optional metadata fields absent from the full backup OPF, so a
   field introduced by an apply operation cannot survive the restore.
+- The release lock replaces vulnerable Pillow/pi-heif builds and removes the
+  yanked pikepdf 10.7.0 build from the production OCR dependency chain.
 
 ## [1.2.0] - 2026-07-12
 
