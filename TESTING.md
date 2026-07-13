@@ -1,7 +1,9 @@
 # Testing Guide
 
-`calibre-ai-auditor` v1.0 uses a 4-layer testing strategy: unit, integration,
-E2E, and benchmark. **197 tests passing** across all layers.
+`calibre-ai-auditor` v1.2.1 uses a 4-layer testing strategy: unit,
+integration, E2E, and benchmark. The release-candidate gate currently covers
+218 selected backend/integration tests plus the separate Komf integration gate,
+and 42 desktop/mobile browser scenarios.
 
 ```
 tests/
@@ -48,8 +50,8 @@ Verify the v1.0 engine against realistic book corpora.
 
 ## 3. End-to-end tests (Playwright)
 
-The WebUI is tested via Playwright with a real FastAPI test client and a
-mocked frontend build. Every page has its own spec file.
+The WebUI is tested via Playwright against the real FastAPI application serving
+the production frontend build. Every page has its own spec file.
 
 - **Specs** (in `webui/e2e/`):
   - `dashboard.spec.ts` — health card, homelab host count
@@ -59,9 +61,14 @@ mocked frontend build. Every page has its own spec file.
   - `verify.spec.ts` — the new v1.0 Verify page (6 tests)
 - **Run**:
   ```bash
+  # From the repository root
+  uv sync --python 3.12.13 --frozen --extra dev
+
   cd webui
-  pnpm exec playwright install --with-deps chromium
-  pnpm e2e
+  npm ci
+  npm run build
+  npx playwright install --with-deps chromium
+  npm run e2e
   ```
 - **Speed**: ~10s for the full suite.
 - **Helpers** (in `webui/e2e/helpers/`): `api-mock.ts`, `auth.ts`,
@@ -120,35 +127,39 @@ that simulate real LLM responses. No API calls in CI.
 
 ## 7. CI integration
 
-The `.github/workflows/v1-tests.yml` workflow runs 4 jobs in parallel:
+`.github/workflows/ci.yml` is the automatic GitHub gate:
 
-| Job | Time | What it does |
-|---|---|---|
-| `backend` | ~5 min | `ruff check` + `mypy src/` + `pytest` (no benchmarks) + coverage |
-| `benchmarks` | ~2 min | `pytest --benchmark-only` on `push:main` only, uploads JSON |
-| `webui-lint-build` | ~3 min | `pnpm install` + `pnpm lint` + `pnpm build` |
-| `webui-e2e` | ~15 min | `playwright install` + `pnpm e2e` + Playwright report artifact |
+| Job | What it does |
+|---|---|
+| `backend` | Locked Python quality, PostgreSQL/Valkey integration, coverage, 50k metadata and dependency gates |
+| `frontend` | Isolated backend bootstrap plus npm lint/build/audit and desktop/mobile Playwright |
+| `container` | Production image, runtime, Compose, Prometheus and vulnerability contracts after backend/frontend pass |
 
-A parallel `.gitea/workflows/v1-tests.yml` does the same for self-hosted
-Gitea act_runner on Unraid.
+`.gitea/workflows/v1-tests.yml` runs Backend, Benchmarks, WebUI and Production
+image contract jobs on the homelab runner. `.github/workflows/v1-tests.yml` is
+only a manually dispatched legacy compatibility gate; it is not part of normal
+PR or push CI.
 
 ## 8. Test quality gates (before any commit)
 
 ```bash
-# Lint
-ruff check .
-ruff format --check .
+# Locked environment and lint
+uv sync --python 3.12.13 --frozen --extra dev
+uv run ruff check .
+uv run ruff format --check .
 
 # Type check (v1.0 subsystem is fully strict)
-mypy src/calibre_ai_auditor/verification/
-mypy src/calibre_ai_auditor/web/
+uv run mypy src
 
 # Fast tests (unit + integration + web)
-pytest -m "not benchmark and not ocr_live and not network"
-pytest tests/web/
+uv run pytest -m "not benchmark and not ocr_live and not network"
 
 # WebUI E2E
-cd webui && pnpm e2e
+cd webui
+npm ci
+npm run build
+npm run lint -- --max-warnings=0
+npm run e2e
 ```
 
 All four gates must pass before opening a PR.

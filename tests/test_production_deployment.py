@@ -99,3 +99,16 @@ def test_all_production_gates_force_real_retention_services() -> None:
         assert "valkey/valkey:8.1.3-alpine@sha256:" in content
         assert "uv run bookaudit migrate" in content
         assert "uv run pytest tests/test_retention_postgres_valkey.py -q" in content
+
+
+def test_browser_gate_bootstraps_and_launches_backend_portably() -> None:
+    playwright = (ROOT / "webui" / "playwright.config.ts").read_text()
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    frontend = ci.split("  frontend:\n", 1)[1].split("\n  container:\n", 1)[0]
+
+    assert "source .venv/bin/activate" not in playwright
+    assert "cwd: ROOT_DIR" in playwright
+    assert "BOOKAUDIT_STATIC_DIR: STATIC_DIR" in playwright
+    assert "astral-sh/setup-uv@" in frontend
+    assert 'python-version: "3.12.13"' in frontend
+    assert "uv sync --frozen --extra dev" in frontend

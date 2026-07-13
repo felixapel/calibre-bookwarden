@@ -30,6 +30,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   field introduced by an apply operation cannot survive the restore.
 - The release lock replaces vulnerable Pillow/pi-heif builds and removes the
   yanked pikepdf 10.7.0 build from the production OCR dependency chain.
+- Playwright launches its FastAPI backend with the project interpreter instead
+  of Bash-only environment activation, and GitHub WebUI CI now provisions that
+  locked Python environment inside its isolated frontend job.
 
 ## [1.2.0] - 2026-07-12
 

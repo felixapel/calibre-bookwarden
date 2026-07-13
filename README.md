@@ -180,7 +180,12 @@ Baseline numbers are tracked in [tests/benchmarks/BASELINE.md](tests/benchmarks/
 ### WebUI E2E (Playwright)
 
 ```bash
+# From the repository root, prepare the backend used by Playwright
+uv sync --python 3.12.13 --frozen --extra dev
+
 cd webui
+npm ci
+npm run build
 
 # Install Playwright browser (one-time)
 npx playwright install --with-deps chromium

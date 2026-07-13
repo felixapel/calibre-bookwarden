@@ -4,9 +4,15 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const ROOT_DIR = resolve(__dirname, '..')
+const PYTHON = resolve(
+  ROOT_DIR,
+  '.venv',
+  process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+)
 
 /**
- * Playwright config for calibre-ai-auditor v1.0 WebUI E2E.
+ * Playwright config for calibre-ai-auditor WebUI E2E.
  *
  * Strategy:
  *  - FastAPI serves BOTH the Vite-built static files AND the /api/* endpoints
@@ -48,7 +54,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `cd .. && source .venv/bin/activate && BOOKAUDIT_STATIC_DIR=${STATIC_DIR} python -m calibre_ai_auditor.cli.main web --port ${PORT} --host 127.0.0.1`,
+    command: `${JSON.stringify(PYTHON)} -m calibre_ai_auditor.cli.main web --port ${PORT} --host 127.0.0.1`,
+    cwd: ROOT_DIR,
     port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
@@ -59,6 +66,7 @@ export default defineConfig({
       BOOKAUDIT_READ_ONLY: 'true',
       BOOKAUDIT_LIBRARY_PATH: '/dev/null',
       BOOKAUDIT_LOG_LEVEL: 'WARNING',
+      BOOKAUDIT_STATIC_DIR: STATIC_DIR,
     },
   },
 })
