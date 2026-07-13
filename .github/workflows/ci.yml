@@ -165,10 +165,22 @@ jobs:
           docker run --rm --entrypoint promtool -v "$PWD/ops/monitoring:/etc/prometheus:ro" \
             prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 \
             check config /etc/prometheus/prometheus.yml
+      - name: Install exact Trivy scanner
+        env:
+          TRIVY_IMAGE: aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293
+        run: |
+          set -euo pipefail
+          docker pull "$TRIVY_IMAGE"
+          container_id=$(docker create "$TRIVY_IMAGE")
+          trap 'docker rm -f "$container_id" >/dev/null' EXIT
+          install -d -m 0755 "$RUNNER_TEMP/trivy-bin"
+          docker cp "$container_id:/usr/local/bin/trivy" "$RUNNER_TEMP/trivy-bin/trivy"
+          test "$("$RUNNER_TEMP/trivy-bin/trivy" --version)" = "Version: 0.56.1"
+          printf '%s\n' "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"
       - name: Scan image for high vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.56.1
+          skip-setup-trivy: true
           cache: "false"
           image-ref: calibre-ai-auditor:ci
           format: table

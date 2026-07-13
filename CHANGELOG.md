@@ -33,9 +33,10 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Playwright launches its FastAPI backend with the project interpreter instead
   of Bash-only environment activation, and GitHub WebUI CI now provisions that
   locked Python environment inside its isolated frontend job.
-- GitHub image gates use the pinned `trivy-action` v0.36.0 wrapper while
-  retaining Trivy v0.56.1, vulnerability and image-secret scanning, and the
-  narrow `google-auth` compiled-parser test-key false-positive exclusion.
+- GitHub image gates use the pinned `trivy-action` v0.36.0 wrapper with the
+  exact Trivy v0.56.1 binary extracted from an immutable scanner image, avoiding
+  the retired installer download while retaining vulnerability and image-secret
+  scanning plus the narrow `google-auth` compiled-parser test-key exclusion.
 - GitHub CI's locally loaded image omits unsupported attestations so it can run
   runtime and scanner checks; the release workflow still publishes max-level
   provenance and an SBOM with the registry image.

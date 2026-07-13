@@ -120,10 +120,19 @@ def test_github_image_gates_keep_secret_scanning_with_one_exact_dependency_exclu
         ROOT / ".github" / "workflows" / "release.yml",
     )
     action = "uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25"
+    trivy_image = "aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293"
     excluded_file = "opt/venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc"
 
     for workflow in workflows:
         content = workflow.read_text()
+        assert content.count(trivy_image) == 1
+        install = content.split("      - name: Install exact Trivy scanner\n", 1)[1].split("\n      - ", 1)[0]
+        assert f"TRIVY_IMAGE: {trivy_image}" in install
+        assert 'docker pull "$TRIVY_IMAGE"' in install
+        assert 'container_id=$(docker create "$TRIVY_IMAGE")' in install
+        assert 'docker cp "$container_id:/usr/local/bin/trivy" "$RUNNER_TEMP/trivy-bin/trivy"' in install
+        assert 'test "$("$RUNNER_TEMP/trivy-bin/trivy" --version)" = "Version: 0.56.1"' in install
+        assert 'printf \'%s\\n\' "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"' in install
         assert content.count(action) == 1
         scan = content.split(action, 1)[1].split("\n      - ", 1)[0]
         settings = [line.strip() for line in scan.splitlines()]
@@ -132,7 +141,8 @@ def test_github_image_gates_keep_secret_scanning_with_one_exact_dependency_exclu
         assert [line for line in settings if line.startswith("exit-code:")] == ['exit-code: "1"']
         assert [line for line in settings if line.startswith("severity:")] == ["severity: HIGH,CRITICAL"]
         assert [line for line in settings if line.startswith("ignore-unfixed:")] == ["ignore-unfixed: true"]
-        assert [line for line in settings if line.startswith("version:")] == ["version: v0.56.1"]
+        assert [line for line in settings if line.startswith("skip-setup-trivy:")] == ["skip-setup-trivy: true"]
+        assert not [line for line in settings if line.startswith("version:")]
         assert [line for line in settings if line.startswith("cache:")] == ['cache: "false"']
 
 
