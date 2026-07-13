@@ -75,13 +75,6 @@ jobs:
           uv export --frozen --no-hashes --no-emit-project --output-file requirements-audit.txt
           uvx pip-audit==2.10.1 --requirement requirements-audit.txt
 
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: coverage-xml
-          path: coverage.xml
-
   benchmarks:
     name: Benchmarks
     runs-on: ubuntu-latest
@@ -101,12 +94,6 @@ jobs:
           mkdir -p .benchmarks
           uv run pytest --benchmark-only --benchmark-json=.benchmarks/baseline.json \
                  -m "not ocr_live and not network"
-      - name: Upload benchmark baseline
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: benchmark-baseline
-          path: .benchmarks/baseline.json
-
   webui:
     name: WebUI E2E (Playwright)
     runs-on: ubuntu-latest
@@ -148,13 +135,6 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
         run: npx playwright test --project=chromium --project=mobile-chromium --reporter=line
-
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: playwright-report
-          path: webui/playwright-report
 
   container:
     name: Production image contract

@@ -140,7 +140,7 @@ Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invok
   provenance, signing, and tag publication only after verification.
 - CI and release verification force the real PostgreSQL/Valkey retention gate;
   the PostgreSQL/Calibre crash path is also executed with its real dependencies.
-- The `v1.2.1` local release-candidate gate passed 217 selected tests plus the
+- The `v1.2.1` local release-candidate gate passed 218 selected tests plus the
   separate Komf integration; the real PostgreSQL/Valkey retention gate also
   passed against disposable services.
 - Independent adversarial review approved supervised and unattended internal

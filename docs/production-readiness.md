@@ -16,7 +16,7 @@ revocation is an account-side action and cannot be proven by repository tests.
 ## Acceptance evidence
 
 - `scripts/verify-calibre-gate.sh` exited 0 for the `v1.2.1` release candidate.
-- 217 selected backend and integration tests passed, followed by the separate
+- 218 selected backend and integration tests passed, followed by the separate
   Komf integration gate.
 - The Komf integration test passed.
 - Seven conditional local skips remain limited to unavailable optional integrations;

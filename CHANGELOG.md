@@ -26,6 +26,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Interrupted retention can resume deletion without manual quarantine removal,
   while rejecting ambiguous paths, replaced inodes, forged journals, symlinks,
   active writer locks, fresh heartbeats, and non-terminal ledger operations.
+- Undo now clears optional metadata fields absent from the full backup OPF, so a
+  field introduced by an apply operation cannot survive the restore.
 
 ## [1.2.0] - 2026-07-12
 
