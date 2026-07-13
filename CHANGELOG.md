@@ -38,6 +38,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Gitea's production-image job now bootstraps Docker and Compose clients inside
   `act_runner`, validates Compose from a clean checkout with an ephemeral empty
   environment file, and invokes the pinned Trivy container directly.
+- GitHub CI treats coverage and Playwright report uploads as one-day,
+  best-effort diagnostics, so an exhausted artifact quota cannot mask the
+  result of the required quality, test, audit, and image gates.
 
 ## [1.2.0] - 2026-07-12
 

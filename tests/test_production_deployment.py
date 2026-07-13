@@ -172,3 +172,15 @@ def test_ci_image_contracts_supply_an_ephemeral_compose_env_file() -> None:
         assert cleanup in container
         assert create in container
         assert container.index(cleanup) < container.index(create) < container.index(validate)
+
+
+def test_github_diagnostic_artifacts_cannot_mask_quality_gate_results() -> None:
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    upload = "uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+
+    assert ci.count(upload) == 2
+    for block in ci.split(upload)[1:]:
+        step = block.split("\n      - ", 1)[0]
+        assert "continue-on-error: true" in step
+        assert "if: always()" in step
+        assert "retention-days: 1" in step
