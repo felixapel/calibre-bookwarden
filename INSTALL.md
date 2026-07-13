@@ -182,4 +182,3 @@ already bundled in the Docker image).
 ### All tests pass but real library shows many false positives
 Calibrate the thresholds following
 [docs/calibration/v1.0_calibration_runbook.md](docs/calibration/v1.0_calibration_runbook.md).
-
