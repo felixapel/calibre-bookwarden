@@ -149,6 +149,10 @@ whose embedded test keys trigger the secret heuristic. Re-review that exact
 exception whenever `google-auth`, the Python ABI, Trivy/action version, or the
 Docker bytecode policy changes.
 
+Both automatic CI image jobs create a mode-`0600`, empty `.env` only for
+Compose validation and remove it when the step exits. Production still requires
+a fully populated and validated operator-owned `.env`.
+
 ## 8. Test quality gates (before any commit)
 
 ```bash

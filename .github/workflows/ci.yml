@@ -153,6 +153,8 @@ jobs:
           test "$(docker image inspect calibre-ai-auditor:ci --format '{{.Config.User}}')" = "10001:10001"
           docker run --rm --entrypoint sh calibre-ai-auditor:ci -c '! python -c "import pytest" && bookaudit --help >/dev/null'
           docker run --rm calibre-ai-auditor:ci retention | grep -F 'Dry run only'
+          trap 'rm -f .env' EXIT
+          install -m 0600 /dev/null .env
           docker compose --profile maintenance --profile optional config -q
           docker run --rm --entrypoint promtool -v "$PWD/ops/monitoring:/etc/prometheus:ro" \
             prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 \

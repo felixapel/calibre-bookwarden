@@ -167,6 +167,8 @@ jobs:
           test "$(docker image inspect calibre-ai-auditor:gitea-ci --format '{{.Config.User}}')" = "10001:10001"
           docker run --rm --entrypoint sh calibre-ai-auditor:gitea-ci -c '! python -c "import pytest" && bookaudit --help >/dev/null'
           docker run --rm calibre-ai-auditor:gitea-ci retention | grep -F 'Dry run only'
+          trap 'rm -f .env' EXIT
+          install -m 0600 /dev/null .env
           docker-compose --profile maintenance --profile optional config -q
           prometheus_container="$(
             docker create --rm --entrypoint promtool \

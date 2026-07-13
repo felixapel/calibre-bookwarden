@@ -156,3 +156,19 @@ def test_gitea_image_gate_bootstraps_docker_and_runs_pinned_trivy() -> None:
     assert [line for line in settings if line.startswith("--exit-code ")] == ["--exit-code 1"]
     assert [line for line in settings if line.startswith("--severity ")] == ["--severity HIGH,CRITICAL"]
     assert [line for line in settings if line.startswith("--ignore-unfixed")] == ["--ignore-unfixed"]
+
+
+def test_ci_image_contracts_supply_an_ephemeral_compose_env_file() -> None:
+    workflows = (
+        (ROOT / ".gitea" / "workflows" / "v1-tests.yml", "docker-compose"),
+        (ROOT / ".github" / "workflows" / "ci.yml", "docker compose"),
+    )
+
+    for workflow, compose in workflows:
+        container = workflow.read_text().split("\n  container:\n", 1)[1]
+        cleanup = "trap 'rm -f .env' EXIT"
+        create = "install -m 0600 /dev/null .env"
+        validate = f"{compose} --profile maintenance --profile optional config -q"
+        assert cleanup in container
+        assert create in container
+        assert container.index(cleanup) < container.index(create) < container.index(validate)
