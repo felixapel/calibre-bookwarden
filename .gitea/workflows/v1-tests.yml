@@ -111,10 +111,10 @@ jobs:
       - name: Install Python deps
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y calibre
-          python -m pip install --upgrade pip
-          pip install uv==0.11.15
-          uv sync --frozen --extra dev
+          DEBIAN_FRONTEND=noninteractive apt-get install -y calibre curl ca-certificates
+          curl -LsSf https://astral.sh/uv/0.11.15/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          uv python install 3.12.13
+          uv sync --python 3.12.13 --frozen --extra dev
 
       - name: Install webui deps
         working-directory: webui
