@@ -111,7 +111,7 @@ jobs:
       - name: Install Python deps
         run: |
           apt-get update
-          apt-get install -y calibre
+          DEBIAN_FRONTEND=noninteractive apt-get install -y calibre
           python -m pip install --upgrade pip
           pip install uv==0.11.15
           uv sync --frozen --extra dev
