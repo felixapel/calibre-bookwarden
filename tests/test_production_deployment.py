@@ -112,3 +112,23 @@ def test_browser_gate_bootstraps_and_launches_backend_portably() -> None:
     assert "astral-sh/setup-uv@" in frontend
     assert 'python-version: "3.12.13"' in frontend
     assert "uv sync --frozen --extra dev" in frontend
+
+
+def test_image_gates_keep_secret_scanning_with_one_exact_dependency_exclusion() -> None:
+    workflows = (
+        ROOT / ".gitea" / "workflows" / "v1-tests.yml",
+        ROOT / ".github" / "workflows" / "ci.yml",
+        ROOT / ".github" / "workflows" / "release.yml",
+    )
+    action = "uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2"
+    excluded_file = "opt/venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc"
+
+    for workflow in workflows:
+        content = workflow.read_text()
+        assert content.count(action) == 1
+        scan = content.split(action, 1)[1].split("\n      - ", 1)[0]
+        settings = [line.strip() for line in scan.splitlines()]
+        assert [line for line in settings if line.startswith("scanners:")] == ["scanners: vuln,secret"]
+        assert [line for line in settings if line.startswith("skip-files:")] == [f"skip-files: {excluded_file}"]
+        assert [line for line in settings if line.startswith("exit-code:")] == ['exit-code: "1"']
+        assert [line for line in settings if line.startswith("severity:")] == ["severity: HIGH,CRITICAL"]

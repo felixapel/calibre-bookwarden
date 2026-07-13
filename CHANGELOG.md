@@ -33,6 +33,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Playwright launches its FastAPI backend with the project interpreter instead
   of Bash-only environment activation, and GitHub WebUI CI now provisions that
   locked Python environment inside its isolated frontend job.
+- Container gates retain vulnerability and image-secret scanning while narrowly
+  excluding the known `google-auth` compiled-parser test-key false positive.
 
 ## [1.2.0] - 2026-07-12
 

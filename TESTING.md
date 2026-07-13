@@ -140,6 +140,12 @@ image contract jobs on the homelab runner. `.github/workflows/v1-tests.yml` is
 only a manually dispatched legacy compatibility gate; it is not part of normal
 PR or push CI.
 
+All production-image gates explicitly run both Trivy vulnerability and secret
+scanners. They exclude only the locked `google-auth` 2.53.0 RSA parser bytecode,
+whose embedded test keys trigger the secret heuristic. Re-review that exact
+exception whenever `google-auth`, the Python ABI, Trivy/action version, or the
+Docker bytecode policy changes.
+
 ## 8. Test quality gates (before any commit)
 
 ```bash
