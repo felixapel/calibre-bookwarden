@@ -140,8 +140,10 @@ jobs:
           tags: calibre-ai-auditor:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
-          provenance: mode=max
-          sbom: true
+          # Docker's local exporter cannot load images with attestations.
+          # The release workflow publishes max provenance and an SBOM.
+          provenance: false
+          sbom: false
       - name: Verify runtime and Compose contract
         env:
           BOOKAUDIT_LIBRARY_HOST_PATH: /tmp

@@ -194,3 +194,13 @@ def test_github_image_cache_export_cannot_mask_the_build_result() -> None:
 
     assert "cache-from: type=gha" in container
     assert "cache-to: type=gha,mode=max,ignore-error=true" in container
+
+
+def test_github_local_image_gate_does_not_request_unloadable_attestations() -> None:
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    container = ci.split("\n  container:\n", 1)[1]
+    build = container.split("      - name: Build production image from locks\n", 1)[1].split("\n      - ", 1)[0]
+
+    assert "load: true" in build
+    assert "provenance: false" in build
+    assert "sbom: false" in build

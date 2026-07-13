@@ -36,6 +36,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - GitHub image gates use the pinned `trivy-action` v0.36.0 wrapper while
   retaining Trivy v0.56.1, vulnerability and image-secret scanning, and the
   narrow `google-auth` compiled-parser test-key false-positive exclusion.
+- GitHub CI's locally loaded image omits unsupported attestations so it can run
+  runtime and scanner checks; the release workflow still publishes max-level
+  provenance and an SBOM with the registry image.
 - Gitea's production-image job now bootstraps Docker and Compose clients inside
   `act_runner`, validates Compose from a clean checkout with an ephemeral empty
   environment file, and invokes the pinned Trivy container directly.
