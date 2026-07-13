@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,6 +10,7 @@ from click.exceptions import Exit
 from typer.testing import CliRunner
 
 from calibre_ai_auditor.cli.main import _verify_backup_manifest, app
+from calibre_ai_auditor.verification.restore import RestorePointStore
 
 runner = CliRunner()
 
@@ -248,6 +250,86 @@ def test_production_retention_closes_connection_when_lock_acquisition_errors(tmp
 
     assert result.exit_code == 1
     engine.connect.return_value.close.assert_called_once()
+
+
+def test_retention_recovery_is_explicit_and_requires_verified_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    artifacts = tmp_path / "artifacts"
+    restore_point = artifacts / "restore" / "run-old" / "calibre-1"
+    restore_point.mkdir(parents=True)
+    (restore_point / "restore.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-old",
+                "book_key": "calibre:1",
+                "applied_at": (datetime.now(UTC) - timedelta(days=31)).isoformat(),
+                "ttl_seconds": 30 * 24 * 3600,
+            }
+        )
+    )
+    database_dump = tmp_path / "database.dump"
+    database_dump.write_bytes(b"database backup")
+    archive = tmp_path / "artifacts.tar"
+    archive.write_bytes(b"artifact backup")
+    backup_manifest = tmp_path / "backup.json"
+    backup_manifest.write_text(
+        json.dumps(
+            {
+                "created_at": datetime.now(UTC).isoformat(),
+                "database_dump": database_dump.name,
+                "database_sha256": hashlib.sha256(database_dump.read_bytes()).hexdigest(),
+                "artifacts_archive": archive.name,
+                "artifacts_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+            }
+        )
+    )
+    backup_digest = hashlib.sha256(backup_manifest.read_bytes()).hexdigest()
+    store = RestorePointStore(artifacts)
+    manifest = store.build_deletion_manifest()
+    real_rmtree = shutil.rmtree
+    monkeypatch.setattr(shutil, "rmtree", MagicMock(side_effect=OSError("interrupted")))
+    with pytest.raises(OSError, match="interrupted"):
+        store.quarantine_and_delete(manifest, backup_manifest_sha256=backup_digest)
+    monkeypatch.setattr(shutil, "rmtree", real_rmtree)
+    transaction_id = store.list_pending_quarantines()[0].name
+    config = tmp_path / "config.yml"
+    config.write_text(f"storage:\n  artifacts_dir: {artifacts}\n")
+
+    normal = runner.invoke(app, ["-c", str(config), "retention"])
+    assert normal.exit_code == 1
+    assert "Pending retention quarantine" in normal.stdout
+
+    preview_recovery = runner.invoke(
+        app,
+        ["-c", str(config), "retention", "--recover-quarantine", transaction_id],
+    )
+    assert preview_recovery.exit_code == 1
+    assert "--recover-quarantine requires --execute" in preview_recovery.stdout
+
+    missing_backup = runner.invoke(
+        app,
+        ["-c", str(config), "retention", "--recover-quarantine", transaction_id, "--execute"],
+    )
+    assert missing_backup.exit_code == 1
+    assert "--backup-reference is required" in missing_backup.stdout
+
+    recovered = runner.invoke(
+        app,
+        [
+            "-c",
+            str(config),
+            "retention",
+            "--recover-quarantine",
+            transaction_id,
+            "--execute",
+            "--backup-reference",
+            str(backup_manifest),
+        ],
+    )
+    assert recovered.exit_code == 0
+    assert "Recovered deletion of 1 quarantined restore points" in recovered.stdout
+    assert store.list_pending_quarantines() == []
 
 
 def test_ingest_paperless_disabled() -> None:

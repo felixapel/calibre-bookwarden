@@ -321,7 +321,7 @@ def undo(
             typer.secho(f"Error: {e}", fg=typer.colors.RED)
 
 
-def _verify_backup_manifest(manifest_path: Path) -> None:
+def _verify_backup_manifest(manifest_path: Path) -> str:
     """Verify the paired database/artifact files named by a retention backup manifest."""
     try:
         absolute_manifest = manifest_path.absolute()
@@ -332,7 +332,8 @@ def _verify_backup_manifest(manifest_path: Path) -> None:
                 raise ValueError("backup manifest path contains a symlink")
         if not absolute_manifest.is_file():
             raise ValueError("backup manifest must be a regular non-symlink file")
-        manifest = json_lib.loads(absolute_manifest.read_text())
+        manifest_bytes = absolute_manifest.read_bytes()
+        manifest = json_lib.loads(manifest_bytes)
         datetime.fromisoformat(manifest["created_at"])
         root = absolute_manifest.parent
         for file_key, digest_key in (
@@ -357,6 +358,7 @@ def _verify_backup_manifest(manifest_path: Path) -> None:
             actual = digest.hexdigest()
             if actual != manifest[digest_key]:
                 raise ValueError(f"checksum mismatch for {file_key}")
+        return hashlib.sha256(manifest_bytes).hexdigest()
     except (OSError, KeyError, TypeError, ValueError, json_lib.JSONDecodeError) as exc:
         typer.secho(f"Backup manifest verification failed: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from exc
@@ -366,6 +368,10 @@ def _verify_backup_manifest(manifest_path: Path) -> None:
 def retention(
     ctx: typer.Context,
     execute: Annotated[bool, typer.Option("--execute", help="Delete expired restore points")] = False,
+    recover_quarantine: Annotated[
+        str | None,
+        typer.Option("--recover-quarantine", help="Resume exactly one journaled transaction ID"),
+    ] = None,
     backup_reference: Annotated[
         Path | None,
         typer.Option("--backup-reference", help="JSON manifest for the paired DB/artifact backup"),
@@ -376,21 +382,41 @@ def retention(
     from calibre_ai_auditor.verification.restore import RestorePointStore
 
     store = RestorePointStore(settings.storage.artifacts_dir)
-    try:
-        manifest = store.build_deletion_manifest()
-    except RuntimeError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED)
-        raise typer.Exit(1) from exc
-    typer.echo(f"Expired restore points: {len(manifest)}")
-    for candidate in manifest:
-        typer.echo(f"  {candidate.path.relative_to(store.restore_root)}")
-    if not execute:
-        typer.echo("Dry run only; no restore points were deleted.")
-        return
+    manifest = []
+    if recover_quarantine is not None:
+        if not execute:
+            typer.secho("--recover-quarantine requires --execute", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.echo(f"Recovering retention quarantine: {recover_quarantine}")
+    else:
+        try:
+            pending_quarantines = store.list_pending_quarantines()
+        except RuntimeError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from exc
+        if pending_quarantines:
+            transaction_ids = ", ".join(transaction.name for transaction in pending_quarantines)
+            typer.secho(
+                "Pending retention quarantine requires explicit recovery with "
+                f"--recover-quarantine TRANSACTION_ID: {transaction_ids}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        try:
+            manifest = store.build_deletion_manifest()
+        except RuntimeError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from exc
+        typer.echo(f"Expired restore points: {len(manifest)}")
+        for candidate in manifest:
+            typer.echo(f"  {candidate.path.relative_to(store.restore_root)}")
+        if not execute:
+            typer.echo("Dry run only; no restore points were deleted.")
+            return
     if backup_reference is None:
         typer.secho("--backup-reference is required with --execute", fg=typer.colors.RED)
         raise typer.Exit(1)
-    _verify_backup_manifest(backup_reference)
+    backup_manifest_sha256 = _verify_backup_manifest(backup_reference)
 
     writer_guard = None
     writer_guard_acquired = False
@@ -429,8 +455,18 @@ def retention(
                     fg=typer.colors.RED,
                 )
                 raise typer.Exit(1)
-        deleted = store.quarantine_and_delete(manifest)
-    except RuntimeError as exc:
+        deleted = (
+            store.recover_quarantine(
+                recover_quarantine,
+                backup_manifest_sha256=backup_manifest_sha256,
+            )
+            if recover_quarantine is not None
+            else store.quarantine_and_delete(
+                manifest,
+                backup_manifest_sha256=backup_manifest_sha256,
+            )
+        )
+    except (OSError, RuntimeError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
     finally:
@@ -442,7 +478,16 @@ def retention(
                     release_writer_guard(writer_guard)
             finally:
                 writer_guard.close()
-    typer.secho(f"Deleted {deleted} expired restore points after backup {backup_reference}.", fg=typer.colors.GREEN)
+    if recover_quarantine is not None:
+        typer.secho(
+            f"Recovered deletion of {deleted} quarantined restore points after backup {backup_reference}.",
+            fg=typer.colors.GREEN,
+        )
+    else:
+        typer.secho(
+            f"Deleted {deleted} expired restore points after backup {backup_reference}.",
+            fg=typer.colors.GREEN,
+        )
 
 
 @app.command()
