@@ -83,3 +83,19 @@ def test_release_workflow_publishes_only_after_full_gates() -> None:
     assert "TEST_POSTGRES_DSN" in ci
     assert "benchmark_50k_metadata.py" in ci
     assert "|| true" not in legacy_gate
+
+
+def test_all_production_gates_force_real_retention_services() -> None:
+    workflows = (
+        ROOT / ".gitea" / "workflows" / "v1-tests.yml",
+        ROOT / ".github" / "workflows" / "ci.yml",
+        ROOT / ".github" / "workflows" / "release.yml",
+    )
+
+    for workflow in workflows:
+        content = workflow.read_text()
+        assert "TEST_POSTGRES_DSN" in content
+        assert "TEST_VALKEY_URL" in content
+        assert "valkey/valkey:8.1.3-alpine@sha256:" in content
+        assert "uv run bookaudit migrate" in content
+        assert "uv run pytest tests/test_retention_postgres_valkey.py -q" in content
