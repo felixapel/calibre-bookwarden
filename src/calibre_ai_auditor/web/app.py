@@ -93,7 +93,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Calibre AI Auditor API",
     description="Backend API for Calibre AI Auditor WebUI",
-    version="1.2.0",
+    version="1.2.1",
     lifespan=lifespan,
 )
 app.add_middleware(GZipMiddleware, minimum_size=1_000)

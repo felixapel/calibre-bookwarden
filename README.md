@@ -6,7 +6,7 @@ ground truth and LLMs are witnesses, not generators.
 
 ## Status
 
-- **Version**: v1.2.0 (Content-Ground Verification + Comics Vision + MCP Server)
+- **Version**: v1.2.1 (Content-Ground Verification + Comics Vision + MCP Server)
 - **Interface**: Full-stack WebUI (React 19 / FastAPI) + CLI
 - **Default Mode**: Read-Only
 - **Runtime**: Docker (Linux/macOS recommended); native works with `uv`

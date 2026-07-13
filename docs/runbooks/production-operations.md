@@ -147,9 +147,32 @@ maintenance-window practice, but it is not a human-supplied safety assertion.
 The backup manifest and every referenced path component must be regular files
 or directories, never symlinks. Retention holds the advisory lock through all
 ledger, heartbeat, revalidation, quarantine, and deletion work. Record the exit
-status and deleted count, then check artifact disk usage. An interrupted process
-can leave data in the owned hidden quarantine; preserve it for incident review
-rather than deleting it manually.
+status and deleted count, then check artifact disk usage.
+
+If the process is interrupted after the transaction is published, normal
+retention fails closed and prints the pending transaction ID. Preserve the
+original paired backup and inspect the incident before resuming exactly that
+transaction:
+
+```bash
+docker compose --profile maintenance run --rm retention retention \
+  --recover-quarantine "<transaction-id>" \
+  --execute \
+  --backup-reference "/backups/<original-backup-directory>/manifest.json"
+```
+
+Recovery accepts only the same still-verifiable backup manifest whose SHA-256
+digest was bound to the original deletion. It re-acquires the advisory lock and
+re-runs the heartbeat and ledger guards. It then validates the journal,
+transaction and payload inodes, path-location state, and candidate manifest
+digests before mutation. Recovery resumes deletion; it does not roll candidates
+back into the live restore tree.
+
+Never rename, restore, or delete files inside `.retention-quarantine` manually.
+Completed transactions intentionally retain a small `state=deleted` journal as
+a durable tombstone and do not block later retention. Pre-publication staging
+contains no moved candidates and is removed automatically only after its shape
+has been validated as an abandoned empty staging transaction.
 
 ## Monitoring alerts
 

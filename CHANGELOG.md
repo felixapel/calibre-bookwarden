@@ -4,6 +4,29 @@ All notable changes to `calibre-ai-auditor` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-07-13
+
+### Added
+
+- Journaled restore-point retention with explicit, single-transaction recovery
+  through `bookaudit retention --recover-quarantine TRANSACTION_ID --execute`.
+- Real PostgreSQL and Valkey retention gates in Gitea CI, GitHub CI, and the
+  release verification workflow.
+
+### Changed
+
+- Retention now binds every transaction to the exact verified paired-backup
+  manifest, durably records each namespace transition, and retains a terminal
+  tombstone so recovery remains classifiable across crash boundaries.
+- Gitea CI bootstraps pinned uv/Python inside the Node-capable runner image and
+  addresses service containers through their internal network aliases.
+
+### Fixed
+
+- Interrupted retention can resume deletion without manual quarantine removal,
+  while rejecting ambiguous paths, replaced inodes, forged journals, symlinks,
+  active writer locks, fresh heartbeats, and non-terminal ledger operations.
+
 ## [1.2.0] - 2026-07-12
 
 ### Added — v1.2 MCP Server (read-only, STDIO)

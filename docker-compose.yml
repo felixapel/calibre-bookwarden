@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     env_file:
@@ -48,7 +48,7 @@ services:
       start_period: 10s
 
   writer:
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     command: ["writer"]
@@ -86,7 +86,7 @@ services:
       start_period: 10s
 
   migrate:
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
     command: ["migrate"]
     profiles: ["maintenance"]
     restart: "no"
@@ -106,7 +106,7 @@ services:
         condition: service_healthy
 
   retention:
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
     command: ["retention"]
     profiles: ["maintenance"]
     restart: "no"

@@ -121,7 +121,7 @@ Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invok
 - Hermes usage: `hermes mcp add calibre_auditor --command python3 --args /path/to/hermes-agent/mcp_servers/calibre_auditor_mcp.py` (FastMCP stdio wrapper over /api + direct surfaces; see agentic-workflows/hermes-agent/mcp_servers/calibre_auditor_mcp.py and config.example.yaml)
 - Cross-project: combined with gemma_translator_mcp.py for audit → context-aware translate flows (WS3)
 
-## v1.2.x — Production hardening (DONE 2026-07-12)
+## v1.2.x — Production hardening (DONE 2026-07-13)
 
 - PostgreSQL runtime roles and explicit Alembic migration service are enforced.
 - The sole Calibre writer uses a durable operation ledger, advisory lock,
@@ -132,11 +132,17 @@ Done: 2026-07-10. All v1.1 items complete (vision wired via pipeline, Komf invok
   database/artifact backup, holds the writer advisory lock, rejects live or
   non-terminal work, revalidates immutable inode/digest identities, and moves
   only that set into same-filesystem quarantine before deletion.
+- Interrupted retention is journaled across atomic publication, rename, partial
+  deletion, and terminal boundaries. Recovery explicitly selects one transaction,
+  requires the same verified backup manifest, and resumes deletion under the
+  production guards.
 - Release publication is digest-first with vulnerability gates, SBOM,
   provenance, signing, and tag publication only after verification.
-- The final local gate at `32d3525` passed 203 selected tests plus the Komf
-  integration. Six environment-dependent tests were skipped locally; the real
-  PostgreSQL/Calibre crash path was also executed separately and passed.
+- CI and release verification force the real PostgreSQL/Valkey retention gate;
+  the PostgreSQL/Calibre crash path is also executed with its real dependencies.
+- The `v1.2.1` local release-candidate gate passed 217 selected tests plus the
+  separate Komf integration; the real PostgreSQL/Valkey retention gate also
+  passed against disposable services.
 - Independent adversarial review approved supervised and unattended internal
   production use. Operator-owned credential revocation and deployment-secret
   rotation remain deployment prerequisites, not repository-controlled gates.

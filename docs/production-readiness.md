@@ -2,8 +2,8 @@
 
 ## Current decision
 
-At commit `32d3525` (2026-07-12), the repository is approved for supervised and
-unattended **internal** production operation. This decision covers the shipped
+Release `v1.2.1` (2026-07-13) is approved for supervised and unattended
+**internal** production operation. This decision covers the shipped
 application, writer, database protocol, maintenance commands, Compose contract,
 and release pipeline. It does not certify the surrounding host or operator
 accounts.
@@ -15,16 +15,22 @@ revocation is an account-side action and cannot be proven by repository tests.
 
 ## Acceptance evidence
 
-- `scripts/verify-calibre-gate.sh` exited 0 at `32d3525`.
-- 203 selected backend and integration tests passed.
+- `scripts/verify-calibre-gate.sh` exited 0 for the `v1.2.1` release candidate.
+- 217 selected backend and integration tests passed, followed by the separate
+  Komf integration gate.
 - The Komf integration test passed.
-- Six tests were conditionally skipped in the local gate because optional MCP,
-  Calibre, or `TEST_POSTGRES_DSN` dependencies were unavailable in that process.
+- Seven conditional local skips remain limited to unavailable optional integrations;
+  CI and release verification explicitly require the PostgreSQL/Valkey retention
+  test and cannot silently skip it.
 - The PostgreSQL/Calibre SIGKILL reconciliation test was executed separately
   with both dependencies present and passed.
 - A disposable production-mode PostgreSQL/Valkey drill proved that retention
-  exits non-zero and preserves the restore point while the writer advisory lock
-  is held, then deletes exactly that restore point after the lock is released.
+  exits non-zero and preserves the restore point for an advisory-lock owner, a
+  fresh heartbeat, and a non-terminal ledger row, then deletes exactly that
+  restore point only when all three guards are clear.
+- Fault injection covers journal creation, atomic transaction publication,
+  candidate rename, journal advancement, partial payload deletion, and terminal
+  tombstone recovery boundaries.
 - Independent adversarial review returned GO for both supervised and unattended
   internal production operation after the retention and lock-cleanup fixes.
 
@@ -39,12 +45,15 @@ revocation is an account-side action and cannot be proven by repository tests.
 - Retention records and revalidates each expired restore directory's device,
   inode, and manifest digest before moving the exact set into a same-filesystem
   quarantine.
+- Recovery is explicit per transaction ID, requires the same verified backup,
+  resumes deletion under the production writer guard, and retains a durable
+  terminal journal. It never guesses between rollback and deletion.
 - The advisory lock protects against application-mediated concurrency. A
   privileged host process that mutates bind-mounted paths concurrently is
   outside this trust boundary; restrict host access during maintenance.
-- If retention is interrupted after quarantine begins, preserve the hidden
-  quarantine for investigation. Automatic recovery of incomplete quarantine
-  transactions is future hardening, not permission for manual deletion.
+- If retention is interrupted after publication, preserve the hidden quarantine
+  for investigation and use only the documented `--recover-quarantine` command.
+  Manual deletion remains outside the supported recovery contract.
 
 ## Deployment checklist
 

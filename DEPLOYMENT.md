@@ -8,7 +8,7 @@ The application uses a multi-stage build process:
 1.  **Frontend Builder**: Compiles the React + Vite SPA.
 2.  **Runtime**: A Python-based container that serves the static assets and the FastAPI backend.
 
-**Image**: `${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}`
+**Image**: `${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}`
 
 Release tags matching `v<pyproject version>` publish a signed GHCR image with
 provenance and SPDX SBOM. For production, set `BOOKAUDIT_IMAGE` to the immutable

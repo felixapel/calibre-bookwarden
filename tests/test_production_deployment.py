@@ -19,7 +19,7 @@ def test_compose_bootstraps_least_privilege_database_roles() -> None:
 def test_compose_uses_current_configurable_image_reference() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 
-    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.0}") == 4
+    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}") == 4
     assert "calibre-ai-auditor:v0.1" not in compose
 
 
