@@ -139,7 +139,7 @@ jobs:
           load: true
           tags: calibre-ai-auditor:ci
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
           provenance: mode=max
           sbom: true
       - name: Verify runtime and Compose contract
@@ -164,8 +164,10 @@ jobs:
             prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 \
             check config /etc/prometheus/prometheus.yml
       - name: Scan image for high vulnerabilities
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.56.1
+          cache: "false"
           image-ref: calibre-ai-auditor:ci
           format: table
           exit-code: "1"

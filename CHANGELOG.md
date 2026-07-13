@@ -33,14 +33,16 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Playwright launches its FastAPI backend with the project interpreter instead
   of Bash-only environment activation, and GitHub WebUI CI now provisions that
   locked Python environment inside its isolated frontend job.
-- Container gates retain vulnerability and image-secret scanning while narrowly
-  excluding the known `google-auth` compiled-parser test-key false positive.
+- GitHub image gates use the pinned `trivy-action` v0.36.0 wrapper while
+  retaining Trivy v0.56.1, vulnerability and image-secret scanning, and the
+  narrow `google-auth` compiled-parser test-key false-positive exclusion.
 - Gitea's production-image job now bootstraps Docker and Compose clients inside
   `act_runner`, validates Compose from a clean checkout with an ephemeral empty
   environment file, and invokes the pinned Trivy container directly.
 - GitHub CI treats coverage and Playwright report uploads as one-day,
-  best-effort diagnostics, so an exhausted artifact quota cannot mask the
-  result of the required quality, test, audit, and image gates.
+  best-effort diagnostics and makes build-cache export non-blocking, so an
+  exhausted storage quota cannot mask required quality, test, audit, and image
+  gates.
 
 ## [1.2.0] - 2026-07-12
 
