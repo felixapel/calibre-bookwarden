@@ -65,7 +65,35 @@ privacy:
   allow_remote_text: false
   allow_remote_images: false
   max_remote_chars: 4000
-  max_images_per_book: 2
+  max_remote_images: 1
+
+# ─── Manifestation V2 Recognition ─────────────────────────────────────────
+recognition_v2:
+  ocr:
+    enabled: true
+    # One engine can seed an exact lookup but stays non-authoritative. Configure
+    # a second installed engine only when real cross-engine consensus is wanted.
+    backends: [tesseract]
+    max_pages: 6
+    language: en
+    paddleocr_use_gpu: false
+    surya_device: cuda
+  vision:
+    # Per-run --use-vision is also required. Remote vision additionally needs
+    # both privacy.allow_remote_images and --allow-remote-images.
+    enabled: false
+
+# ─── Manifestation V2 Advisory Calibration (cannot enable writes) ───────────
+manifestation_v2:
+  auto_apply:
+    # Reserved for a future authenticated gate. The current runtime rejects
+    # tier_a_auto even if this is true and a report passes.
+    enabled: false
+    calibration_report: null
+    min_sample_size: 100
+    min_tier_a_decisions: 50
+    max_false_positive_rate: 0.0
+    max_report_age_days: 30
 
 # ─── LLM / AI ───────────────────────────────────────────────────────────────
 routing:

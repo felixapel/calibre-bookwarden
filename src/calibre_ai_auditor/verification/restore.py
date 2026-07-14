@@ -28,6 +28,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -35,6 +36,11 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+from calibre_ai_auditor.security.files import (
+    copy_file_replacing_beneath,
+    ensure_secure_directory,
+    replace_bytes_beneath,
+)
 from calibre_ai_auditor.verification.verdict import HIGH_RISK_FLAGS, BookVerdict
 
 logger = logging.getLogger(__name__)
@@ -109,14 +115,16 @@ class RestorePointStore:
     """Manages on-disk restore points under <artifacts_dir>/restore/."""
 
     def __init__(self, artifacts_dir: Path, default_ttl: timedelta = timedelta(days=30)):
-        self.artifacts_dir = artifacts_dir
-        self.restore_root = artifacts_dir / "restore"
-        self.restore_root.mkdir(parents=True, exist_ok=True)
+        self.artifacts_dir = Path(artifacts_dir).absolute()
+        self.restore_root = self.artifacts_dir / "restore"
+        ensure_secure_directory(self.restore_root)
         self.default_ttl = default_ttl
 
     def path_for(self, run_id: str, book_key: str) -> Path:
-        safe_key = book_key.replace(":", "_").replace("/", "_")
-        safe_run = run_id.replace("/", "_")
+        safe_key = re.sub(r"[^A-Za-z0-9._-]", "_", book_key)
+        safe_run = re.sub(r"[^A-Za-z0-9._-]", "_", run_id)
+        if safe_key in {"", ".", ".."} or safe_run in {"", ".", ".."}:
+            raise ValueError("restore point identifiers do not produce a safe path")
         return self.restore_root / safe_run / safe_key
 
     def create(
@@ -138,43 +146,64 @@ class RestorePointStore:
         original_file: hardlink or copy of the original book file.
         original_cover: copy of the original cover (if cover was modified).
         """
-        rp_dir = self.path_for(run_id, book_key)
-        rp_dir.mkdir(parents=True, exist_ok=True)
+        rp_dir = ensure_secure_directory(self.path_for(run_id, book_key))
 
         # 1. Original OPF (always; this is the cheapest, most reliable restore)
-        if original_opf and original_opf.exists():
+        if original_opf:
             target = rp_dir / "original.opf"
             try:
-                shutil.copy2(original_opf, target)
+                copy_file_replacing_beneath(
+                    original_opf.parent,
+                    original_opf,
+                    self.artifacts_dir,
+                    target,
+                    max_bytes=32 * 1024 * 1024,
+                )
             except OSError as e:
                 logger.warning("Failed to copy original OPF: %s", e)
 
         # 2. Original book file (only if small enough; otherwise hardlink)
-        if original_file and original_file.exists():
+        if original_file:
             target = rp_dir / ("original" + original_file.suffix)
             try:
-                # Try hardlink first (instant, no extra disk)
-                target.hardlink_to(original_file)
-            except OSError:
-                # Fall back to copy (slow for large files but always works)
-                try:
-                    shutil.copy2(original_file, target)
-                except OSError as e:
-                    logger.warning("Failed to backup original file: %s", e)
+                copy_file_replacing_beneath(
+                    original_file.parent,
+                    original_file,
+                    self.artifacts_dir,
+                    target,
+                )
+            except OSError as e:
+                logger.warning("Failed to backup original file: %s", e)
 
         # 3. Original cover (if changed)
-        if original_cover and original_cover.exists():
+        if original_cover:
             target = rp_dir / ("original.cover" + original_cover.suffix)
             try:
-                shutil.copy2(original_cover, target)
+                copy_file_replacing_beneath(
+                    original_cover.parent,
+                    original_cover,
+                    self.artifacts_dir,
+                    target,
+                    max_bytes=20 * 1024 * 1024,
+                )
             except OSError as e:
                 logger.warning("Failed to backup original cover: %s", e)
 
         # 4. Metadata snapshots
         now = datetime.now(UTC)
-        (rp_dir / "before.json").write_text(json.dumps(before_metadata, indent=2, default=str))
-        (rp_dir / "after.json").write_text(json.dumps(after_metadata, indent=2, default=str))
-        (rp_dir / "restore.json").write_text(
+        replace_bytes_beneath(
+            self.artifacts_dir,
+            rp_dir / "before.json",
+            json.dumps(before_metadata, indent=2, default=str).encode(),
+        )
+        replace_bytes_beneath(
+            self.artifacts_dir,
+            rp_dir / "after.json",
+            json.dumps(after_metadata, indent=2, default=str).encode(),
+        )
+        replace_bytes_beneath(
+            self.artifacts_dir,
+            rp_dir / "restore.json",
             json.dumps(
                 {
                     "run_id": run_id,
@@ -185,7 +214,7 @@ class RestorePointStore:
                     "ttl_seconds": int(self.default_ttl.total_seconds()),
                 },
                 indent=2,
-            )
+            ).encode(),
         )
 
         return RestorePoint(

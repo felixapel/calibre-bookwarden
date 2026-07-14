@@ -1,7 +1,7 @@
 # CLI Reference
 
 `bookaudit` is the primary command-line tool for managing the
-calibre-ai-auditor v1.0 engine. All commands run from the project root
+calibre-ai-auditor. `verify` defaults to the Manifestation V2 engine. All commands run from the project root
 with the venv activated (`source .venv/bin/activate`) or inside the Docker
 container (`docker compose exec app bookaudit ...`).
 
@@ -11,38 +11,67 @@ container (`docker compose exec app bookaudit ...`).
 |---|---|---|
 | `--config` / `-c` | PATH | Path to `config.yml` |
 
-## v1.0 commands (recommended)
+## Manifestation V2 commands (recommended)
 
 ### `bookaudit verify`
 
-Run the v1.0 content-ground verification engine across a Calibre library.
-For each book, the engine produces per-field `FieldVerdict`s (title, authors,
-ISBN, publisher, date, language, series, series_index) and aggregates them
-into a `BookVerdict` with an action (`no_change` / `suggest_fix` /
-`needs_review` / `defer`).
+Run an exact-manifestation audit across a Calibre library. V2 freezes the run
+membership, processes one book at a time, inspects all attached formats, and
+persists a sealed Tier A/B/C evidence package. `--pipeline v1` selects the
+legacy `BookVerdict` engine.
 
 ```bash
-bookaudit verify [--limit N] [--library PATH] [--use-llm] [--format text|json]
+bookaudit verify [--pipeline v2|v1] [--limit N] [--library PATH]
+                 [--use-ocr|--no-ocr] [--use-vision] [--use-llm]
+                 [--allow-remote-text] [--allow-remote-images]
+                 [--run-id ID] [--format text|json]
 ```
 
 | Flag | Default | Description |
 |---|---|---|
 | `--limit` | 50 | Maximum number of books to verify. Set to `0` for the full library. |
 | `--library` | configured | Override the library path. |
-| `--use-llm` | `false` | Send ambiguous fields to the configured LLM witness. Adds latency + cost but improves accuracy. |
+| `--pipeline` | `v2` | `v2` exact-manifestation contract or legacy `v1`. |
+| `--use-ocr` / `--no-ocr` | enabled | OCR bounded PDF front matter when native identity evidence is absent. One engine remains non-authoritative. |
+| `--use-vision` / `--no-vision` | disabled | Analyze bounded covers as non-authoritative evidence. Requires `recognition_v2.vision.enabled`. |
+| `--use-llm` / `--no-llm` | disabled | Transcribe bounded evidence with the configured model. LLM observations never promote Tier A. |
+| `--allow-remote-text` | denied | Per-run consent; global `privacy.allow_remote_text` must also be true. Body text is never included. |
+| `--allow-remote-images` | denied | Per-run consent; global image permission and `--use-vision` are also required. |
+| `--run-id` | generated | Resume the same V2 run and frozen membership. Terminal books are skipped. |
 | `--format` | `text` | `text` for human-readable per-book output; `json` for parseable output (pipe to `> pilot.json`). |
 
 **Examples**:
 ```bash
-# Pilot: 100 books, deterministic only
-bookaudit verify --limit 100
+# Pilot: 100 books, native extraction + local OCR + exact providers
+bookaudit verify --pipeline v2 --limit 100 --use-ocr
 
-# Pilot with LLM witness for ambiguous fields
+# Add a bounded LLM transcription witness
 bookaudit verify --limit 100 --use-llm
 
 # Full library as JSON for analysis
-bookaudit verify --limit 0 --format json > v1_audit.json
+bookaudit verify --limit 0 --format json > manifestation-v2-audit.json
 ```
+
+V2 `verify` never writes to Calibre. Supervised V2 changes use the authenticated
+`/api/review/v2/{evidence_id}/authorize` and `/api/apply/v2` endpoints; the sole
+writer performs the mutation.
+
+### `bookaudit calibrate-v2`
+
+Derive an integrity-checksummed, advisory calibration report from unique
+human-reviewed V2 package labels. It cannot enable writes:
+
+```bash
+bookaudit calibrate-v2 \
+  --corpus /secure/reviewed-manifestations.json \
+  --output /secure/manifestation-v2-calibration.json \
+  --valid-days 30
+```
+
+The command computes the corpus hash, sample/Tier A counts, false-positive
+count, and false-auto-apply count. It rejects malformed/duplicate labels and
+atomically writes a mode-0600 report. See the
+[V2 calibration runbook](docs/calibration/manifestation-v2-runbook.md).
 
 ### `bookaudit hosts`
 
@@ -73,11 +102,11 @@ bookaudit hosts
 }
 ```
 
-### `bookaudit apply` (v1.0 path)
+### `bookaudit apply` (retired)
 
-Apply approved fixes to the Calibre library. The v1.0 conservative auto-apply
-gate (≥80% confidence AND no high-risk flags AND per-book restore point
-already created) decides which books can be applied without manual approval.
+This command is retained only to give old automation an explicit nonzero failure.
+It never writes, in any profile. Use exact V2 package authorization and
+`POST /api/apply/v2`.
 
 ```bash
 bookaudit apply [--safe-only] [--yes]
@@ -85,12 +114,10 @@ bookaudit apply [--safe-only] [--yes]
 
 | Flag | Default | Description |
 |---|---|---|
-| `--safe-only` | `True` | Only apply books marked `auto_apply_eligible: true` by the v1.0 engine. |
-| `--yes` / `-y` | `False` | Skip the confirmation prompt. |
+| `--safe-only` | `True` | Retained for command-line compatibility; ignored. |
+| `--yes` / `-y` | `False` | Retained for command-line compatibility; ignored. |
 
-**Effect**: For each auto-eligible book, the v1.0 `RestorePointStore` first
-writes a per-book restore point (OPF + cover + hardlinked file + JSON
-snapshot), then `calibredb set_metadata` applies the patch.
+**Effect**: exits with status 1 and explains the supervised V2 replacement.
 
 ### `bookaudit undo`
 

@@ -52,7 +52,7 @@ def test_sigkill_after_partial_calibre_write_is_restored_on_restart(tmp_path: Pa
     backup = tmp_path / "before.opf"
     partial = tmp_path / "partial.opf"
     cli.export_opf(1, backup)
-    ApplyEngine(cli, tmp_path / "artifacts")._build_target_opf(backup, partial, {"title": "Partial Title"})
+    ApplyEngine(cli, tmp_path)._build_target_opf(backup, partial, {"title": "Partial Title"})
 
     suffix = uuid4().hex
     operation_id = f"crash-{suffix}"
@@ -128,7 +128,7 @@ def test_sigkill_after_partial_calibre_write_is_restored_on_restart(tmp_path: Pa
 
     try:
         with Session(engine) as session:
-            assert reconcile_incomplete_operations(session, cli) == [operation_id]
+            assert reconcile_incomplete_operations(session, cli, tmp_path) == [operation_id]
             operation = session.exec(select(OperationLedger).where(OperationLedger.operation_id == operation_id)).one()
             change = session.exec(select(Change).where(Change.operation_id == operation_id)).one()
             event = session.exec(select(OutboxEvent).where(OutboxEvent.aggregate_id == operation_id)).one()

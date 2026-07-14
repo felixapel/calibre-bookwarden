@@ -1,9 +1,8 @@
 # Pushing to self-hosted Gitea
 
-The `.gitea/workflows/v1-tests.yml` workflow file is in place but the
-sandbox dev container doesn't have network access to your homelab Gitea
-(verified during the v1.0 release push — SSH connection to
-`192.168.0.122:22` fails with "Too many authentication failures").
+The canonical development remote is the homelab Gitea repository. The local
+checkout currently names it `gitea` and uses
+`http://192.168.0.122:3010/felix/calibre-ai-auditor.git`.
 
 **You need to push the branch from a machine that has access to your
 homelab Gitea** (the Unraid box itself, or any machine with the right
@@ -12,16 +11,16 @@ SSH key in its agent).
 ## One-time setup (from a machine with Gitea access)
 
 ```bash
-# 1. Clone the repo (if not already cloned)
-git clone git@github.com:felixapel/calibre-ai-auditor.git
+# 1. Clone the Gitea repo (if not already cloned)
+git clone http://192.168.0.122:3010/felix/calibre-ai-auditor.git
 cd calibre-ai-auditor
 
-# 2. Fetch the v1.0 branch
-git fetch origin feat/v1-content-verification
-git checkout feat/v1-content-verification
+# 2. Fetch and check out the intended Gitea branch
+git fetch origin
+git checkout <branch>
 
-# 3. Add the Gitea remote (use your actual Gitea URL)
-git remote add gitea <your-gitea-url>
+# 3. Existing checkouts can add the canonical Gitea remote
+git remote add gitea http://192.168.0.122:3010/felix/calibre-ai-auditor.git
 
 # Examples (adjust to your actual setup):
 # git remote add gitea git@192.168.0.122:felix/calibre-ai-auditor.git
@@ -31,8 +30,8 @@ git remote add gitea <your-gitea-url>
 # 4. Verify the remote URL by listing it
 git remote -v
 
-# 5. Push the v1.0 branch
-git push -u gitea feat/v1-content-verification
+# 5. Push only when explicitly authorized
+git push -u gitea <branch>
 ```
 
 ## What happens after the push
@@ -64,7 +63,7 @@ curl -X POST "$GITEA_URL/api/v1/repos/felix/calibre-ai-auditor/pulls" \
     "head": "feat/v1-content-verification",
     "base": "main",
     "title": "release(v1.0): Content-Ground Verification",
-    "body": "See PR #1 on github.com/felixapel/calibre-ai-auditor for the full description."
+    "body": "Implementation details, verification evidence, migration notes, and rollback plan."
   }'
 ```
 
@@ -79,21 +78,9 @@ curl -H "Authorization: token $GITEA_TOKEN" \
   "$GITEA_URL/api/v1/repos/felix/calibre-ai-auditor/actions/runs?labels=v1-tests"
 ```
 
-## Why I couldn't do this in the sandbox
-
-The dev container running this Claude session has no network route
-to `192.168.0.122` (the homelab Gitea host). The push attempt produced:
-
-```
-ssh_askpass: exec(/usr/lib/ssh/ssh-askpass): No such file or directory
-Permission denied, please try again.
-Received disconnect from 192.168.0.122 port 22:2: Too many authentication failures
-```
-
-This is a network isolation constraint of the dev environment, not a
-config issue. The branch is fully ready on `origin/feat/v1-content-verification`
-(GitHub); you can fetch + push to Gitea from any machine with proper
-access.
+Do not assume push authorization from implementation work. Inspect the exact
+branch, status, diff, commits, remote, and existing Gitea Actions first. Never
+manually rerun Gitea Actions unless the operator explicitly requests it.
 
 ## Alternative: bundle transfer (no network setup needed)
 
@@ -101,18 +88,18 @@ If you don't want to set up SSH agent forwarding or HTTPS tokens,
 you can transfer the branch as a single file:
 
 ```bash
-# From this dev container (already done):
-git bundle create /tmp/v1.0.bundle main..feat/v1-content-verification
+# From the source checkout:
+git bundle create /tmp/calibre-ai-auditor.bundle main..<branch>
 
 # Then transfer /tmp/v1.0.bundle to your Unraid box by any means
 # (scp, USB stick, Syncthing, etc.) — it's a single ~5 MB file.
 
 # On Unraid:
-git clone v1.0.bundle calibre-ai-auditor
+git clone calibre-ai-auditor.bundle calibre-ai-auditor
 cd calibre-ai-auditor
 git remote set-url origin <your-gitea-url>
-git push -u origin feat/v1-content-verification:main
+git push -u origin <branch>
 ```
 
-The bundle contains the full branch history including all 8 commits
-with full message bodies and the same tree hash as GitHub.
+The bundle preserves the selected branch history and can be verified locally
+before any Gitea push.

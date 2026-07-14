@@ -24,6 +24,36 @@ the primary source of truth; LLMs are witnesses, not generators.
 | `v1.1` | **Comics/Manga Vision**: Cover identification + Komf | [DONE] |
 | `v1.2` | **MCP Server**: Expose audit tools to Hermes | [DONE] |
 | `v1.2.x` | **Production hardening**: release integrity, writer recovery, retention, operations | [DONE] |
+| `Manifestation V2` | **Exact edition audit**: all formats, evidence tiers, supervised correction | [IMPLEMENTED; PILOT REQUIRED] |
+
+---
+
+## Manifestation V2 development head
+
+The V2 backend is implemented behind a versioned contract and defaults to
+shadow verification. It freezes Calibre membership, processes one book at a
+time, hashes and inspects every attached format, runs bounded recognition,
+queries structured providers only by one checksum-valid ISBN, resolves Tier
+A/B/C identity, and persists a sealed evidence package.
+
+Supervised correction is implemented through exact package authorization and
+the sole writer with OPF, custom-column, and cover rollback evidence. Promotion
+to unattended operation additionally requires a future signed calibration and
+authorization design; the current advisory report, regardless of metrics,
+cannot unlock it. External Calibre, PostgreSQL, Valkey, OCR, and browser gates
+must also pass in the target environment.
+
+Current deliberate limits:
+
+- Google Books and Open Library are the implemented structured adapters.
+- Vision and LLM observations are review context, never Tier A authority.
+- Provider cover URLs are not downloaded automatically; a V2 cover patch must
+  reference a locally materialized, hashed artifact bound to the exact ISBN.
+- The WebUI still consumes the legacy V1 verdict shape; V2 review/apply is API
+  driven until a dedicated UI is implemented.
+
+See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) and the
+[V2 calibration runbook](docs/calibration/manifestation-v2-runbook.md).
 
 ---
 

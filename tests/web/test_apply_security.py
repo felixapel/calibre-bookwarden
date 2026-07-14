@@ -1,14 +1,93 @@
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from calibre_ai_auditor.apply.coordinator import create_manual_authorization
+from calibre_ai_auditor.apply.coordinator import create_manual_authorization, queue_approved_operations
 from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, ManualAuthorization, OperationLedger
 from calibre_ai_auditor.verification.verdict import BookVerdict
 from calibre_ai_auditor.web.api import apply as apply_module
+from calibre_ai_auditor.web.api.apply import V2ApplyRequest
 from calibre_ai_auditor.web.schemas import ApplyRequest, ManualAuthorizationRequest
+
+
+def _sealed_v2_package() -> Any:
+    from calibre_ai_auditor.verification.identity_v2 import IdentityTier, ManifestationResolution
+    from calibre_ai_auditor.verification.pipeline_v2 import BookAuditState, BookSnapshot, EvidencePackageV2
+
+    snapshot = BookSnapshot(
+        book_key="calibre:9",
+        calibre_book_id=9,
+        current_metadata={"title": "Wrong"},
+        files=[],
+        snapshot_sha256="0" * 64,
+    )
+    snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})
+    return EvidencePackageV2(
+        evidence_id="evidence-v2-api",
+        run_id="run-v2-api",
+        book_key="calibre:9",
+        created_at=datetime.now(UTC),
+        state=BookAuditState.shadowed,
+        snapshot=snapshot,
+        identity=ManifestationResolution(
+            tier=IdentityTier.tier_a,
+            manifestation_ids={"isbn": "9780306406157"},
+            auto_patch={"title": "Exact"},
+        ),
+    ).seal()
+
+
+@pytest.mark.asyncio
+async def test_v2_api_authorizes_and_queues_only_the_exact_sealed_package() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    package = _sealed_v2_package()
+    with Session(engine) as session:
+        session.add(
+            BookRecord(
+                book_key=package.book_key,
+                run_id=package.run_id,
+                calibre_book_id=9,
+                status="shadowed",
+                current_metadata=package.snapshot.current_metadata,
+            )
+        )
+        session.add(
+            EvidencePackage(
+                evidence_id=package.evidence_id,
+                book_key=package.book_key,
+                run_id=package.run_id,
+                schema_version=2,
+                current=package.snapshot.current_metadata,
+                extracted=package.identity.model_dump(mode="json"),
+                observations=package.model_dump(mode="json"),
+            )
+        )
+        session.commit()
+
+        authorized = await apply_module.authorize_v2_patch(
+            package.evidence_id,
+            ManualAuthorizationRequest(reason="Compared the exact manifestation"),
+            session,
+        )
+        authorization_id = authorized["data"]["authorization_id"]
+        queued = await apply_module.apply_v2_patches(
+            V2ApplyRequest(
+                force=True,
+                evidence_ids=[package.evidence_id],
+                authorization_ids={package.evidence_id: authorization_id},
+            ),
+            session,
+        )
+        operation = session.exec(select(OperationLedger)).one()
+
+    assert queued["data"]["queued_count"] == 1
+    assert operation.evidence_id == package.evidence_id
+    assert operation.policy_version == "manifestation-v2"
 
 
 @pytest.mark.asyncio
@@ -42,30 +121,30 @@ async def test_apply_skips_approved_book_without_eligible_persisted_verdict() ->
         )
         session.commit()
 
-        result = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=["calibre:1"]), session)
+        result = queue_approved_operations(session, book_keys=["calibre:1"], authorization_ids={})
 
-    assert result["data"]["queued_count"] == 0
+    assert result.queued_operation_ids == []
 
 
 @pytest.mark.asyncio
-async def test_apply_requires_explicit_durable_write_confirmation() -> None:
+async def test_legacy_apply_endpoint_is_retired() -> None:
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session, pytest.raises(HTTPException) as exc_info:
-        await apply_module.apply_patches(ApplyRequest(force=False), session)
+        await apply_module.apply_patches(ApplyRequest(force=True, book_keys=["calibre:1"]), session)
 
-    assert getattr(exc_info.value, "status_code", None) == 400
+    assert getattr(exc_info.value, "status_code", None) == 410
+    assert "Manifestation V2" in str(getattr(exc_info.value, "detail", ""))
 
 
 @pytest.mark.asyncio
-async def test_apply_requires_an_explicit_book_selection() -> None:
+async def test_legacy_apply_cannot_be_reenabled_with_force() -> None:
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session, pytest.raises(HTTPException) as exc_info:
         await apply_module.apply_patches(ApplyRequest(force=True), session)
 
-    assert getattr(exc_info.value, "status_code", None) == 400
-    assert "book" in str(getattr(exc_info.value, "detail", "")).lower()
+    assert getattr(exc_info.value, "status_code", None) == 410
 
 
 @pytest.mark.asyncio
@@ -103,11 +182,48 @@ async def test_apply_uses_eligible_persisted_verdict_and_honors_field_locks() ->
         )
         session.commit()
 
-        result = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=["calibre:1"]), session)
+        result = queue_approved_operations(session, book_keys=["calibre:1"], authorization_ids={})
         operation = session.exec(select(OperationLedger)).one()
 
-    assert result["data"]["queued_count"] == 1
+    assert len(result.queued_operation_ids) == 1
     assert operation.requested_patch == {"title": "Verified Title"}
+
+
+@pytest.mark.asyncio
+async def test_legacy_apply_translates_field_aliases_at_writer_boundary() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            BookRecord(
+                book_key="calibre:2",
+                run_id="run-2",
+                calibre_book_id=2,
+                status="suggest_fix",
+                current_metadata={"pubdate": None, "languages": []},
+            )
+        )
+        session.add(
+            EvidencePackage(
+                evidence_id="evidence-2",
+                book_key="calibre:2",
+                run_id="run-2",
+                decision={
+                    "book_key": "calibre:2",
+                    "run_id": "run-2",
+                    "action": "suggest_fix",
+                    "auto_apply_eligible": True,
+                    "overall_confidence": 99,
+                    "proposed_patch": {"published_date": "2024-01-02", "language": "eng"},
+                },
+            )
+        )
+        session.commit()
+
+        queue_approved_operations(session, book_keys=["calibre:2"], authorization_ids={})
+        operation = session.exec(select(OperationLedger)).one()
+
+    assert operation.requested_patch == {"pubdate": "2024-01-02", "languages": ["eng"]}
 
 
 def test_only_one_session_can_claim_a_book_for_apply(tmp_path: Path) -> None:
@@ -171,16 +287,13 @@ async def test_exact_manual_authorization_allows_ineligible_verdict() -> None:
             reason="Verified against the title page",
         )
         session.commit()
-        result = await apply_module.apply_patches(
-            ApplyRequest(
-                force=True,
-                book_keys=[book.book_key],
-                authorization_ids={book.book_key: authorization.authorization_id},
-            ),
+        result = queue_approved_operations(
             session,
+            book_keys=[book.book_key],
+            authorization_ids={book.book_key: authorization.authorization_id},
         )
 
-    assert result["data"]["queued_count"] == 1
+    assert len(result.queued_operation_ids) == 1
 
 
 @pytest.mark.asyncio
@@ -241,7 +354,7 @@ async def test_idempotent_retry_does_not_regress_completed_book_status() -> None
         session.add(book)
         session.add(EvidencePackage(evidence_id="evidence-4", book_key="calibre:4", run_id="run-4", decision=decision))
         session.commit()
-        first = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=[book.book_key]), session)
+        first = queue_approved_operations(session, book_keys=[book.book_key], authorization_ids={})
         operation = session.exec(select(OperationLedger)).one()
         operation.state = "succeeded"
         book.status = "suggest_fix"
@@ -249,9 +362,9 @@ async def test_idempotent_retry_does_not_regress_completed_book_status() -> None
         session.add(book)
         session.commit()
 
-        second = await apply_module.apply_patches(ApplyRequest(force=True, book_keys=[book.book_key]), session)
+        second = queue_approved_operations(session, book_keys=[book.book_key], authorization_ids={})
         session.refresh(book)
 
-    assert first["data"]["queued_count"] == 1
-    assert second["data"]["queued_count"] == 0
+    assert len(first.queued_operation_ids) == 1
+    assert second.queued_operation_ids == []
     assert book.status == "suggest_fix"

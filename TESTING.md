@@ -1,13 +1,13 @@
 # Testing Guide
 
-`calibre-ai-auditor` v1.2.1 uses a 4-layer testing strategy: unit,
-integration, E2E, and benchmark. The release-candidate gate currently covers
-218 selected backend/integration tests plus the separate Komf integration gate,
-and 42 desktop/mobile browser scenarios.
+`calibre-ai-auditor` retains the tagged v1.2.1 unit, integration, E2E, and
+benchmark suites and adds Manifestation V2 contract, pipeline, persistence,
+security, writer, calibration, and migration coverage. Exact test totals are
+reported by each run instead of being treated as a permanent contract.
 
 ```
 tests/
-├── (root)             # 23 unit + integration tests
+├── (root)             # Unit, integration, migration, and V2 security tests
 ├── test_comics.py     # ComicInfo.xml parsing
 ├── fixtures/
 │   ├── synthetic_library/   # 30 hand-crafted bad-metadata fixtures (gold truth)
@@ -17,6 +17,38 @@ tests/
 ├── web/               # 23 FastAPI test-client tests
 └── cassettes/         # Recorded LLM responses for the witness tests
 ```
+
+## Manifestation V2 gates
+
+The V2 tests prove strict evidence/provenance contracts, one-book-at-a-time
+processing, all-format extraction, OCR-to-exact-provider ordering, non-authority
+of vision/LLM output, privacy consent, SSRF and response limits, sealed resume
+state, exact authorization, writer rollback, calibration, and migrations.
+
+```bash
+pytest -q \
+  tests/test_identity_v2.py \
+  tests/test_multiformat_extraction.py \
+  tests/test_recognition_v2.py \
+  tests/test_provider_evidence_v2.py \
+  tests/test_library_pipeline_v2.py \
+  tests/test_persistence_v2.py \
+  tests/test_v2_apply_coordinator.py \
+  tests/test_calibration_v2.py \
+  tests/test_migrations.py \
+  tests/web/test_apply_security.py \
+  tests/web/test_verify_api.py
+```
+
+The hermetic backend gate excludes benchmarks, live OCR, and network tests:
+
+```bash
+pytest -q -m "not benchmark and not ocr_live and not network"
+```
+
+Tests requiring `calibredb`, PostgreSQL, Valkey, optional FastMCP, or live OCR
+skip when that dependency is genuinely absent. Those skips must be rerun in the
+Gitea target environment before production promotion.
 
 ## 1. Unit tests (pytest)
 
@@ -127,7 +159,7 @@ that simulate real LLM responses. No API calls in CI.
 
 ## 7. CI integration
 
-`.github/workflows/ci.yml` is the automatic GitHub gate:
+`.gitea/workflows/v1-tests.yml` is the canonical development gate:
 
 | Job | What it does |
 |---|---|
@@ -135,13 +167,13 @@ that simulate real LLM responses. No API calls in CI.
 | `frontend` | Isolated backend bootstrap plus npm lint/build/audit and desktop/mobile Playwright |
 | `container` | Production image, runtime, Compose, Prometheus and vulnerability contracts after backend/frontend pass |
 
-`.gitea/workflows/v1-tests.yml` runs Backend, Benchmarks, WebUI and Production
-image contract jobs on the homelab runner. Its production-image job bootstraps
+It runs Backend, Benchmarks, WebUI and Production image contract jobs on the
+homelab runner. Its production-image job bootstraps
 Docker and Compose clients inside the runner's `node:22-bookworm` job container
 and invokes the digest-pinned Trivy 0.56.1 container through the mounted Docker
 socket.
-`.github/workflows/v1-tests.yml` is only a manually dispatched legacy
-compatibility gate; it is not part of normal PR or push CI.
+Files under `.github/workflows/` are mirror/release compatibility assets; they
+are not part of the normal Gitea development workflow.
 
 All production-image gates explicitly run both Trivy vulnerability and secret
 scanners. They exclude only the locked `google-auth` 2.53.0 RSA parser bytecode,
@@ -161,7 +193,7 @@ uv sync --python 3.12.13 --frozen --extra dev
 uv run ruff check .
 uv run ruff format --check .
 
-# Type check (v1.0 subsystem is fully strict)
+# Type check
 uv run mypy src
 
 # Fast tests (unit + integration + web)
@@ -202,3 +234,8 @@ Before merging any change to the v1.0 **Apply Engine** or **RestorePointStore**:
    a run.
 4. Ensure the library remains read-only unless `BOOKAUDIT_READ_ONLY=false`
    is explicitly set.
+5. Exercise parent-directory symlink substitution after validation for both
+   library files and artifact trees; the operation must fail before egress or
+   mutation.
+6. Replace an OPF/cover pathname after its checksum is verified and prove the
+   Calibre adapter still consumes the original immutable descriptor bytes.

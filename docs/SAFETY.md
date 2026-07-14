@@ -1,10 +1,10 @@
 # Safety First
 
-This project adheres to a strict "read-only by default" philosophy to
-protect your Calibre libraries and metadata files. v1.0 adds an additional
-layer of safety through **per-book restore points** and a **conservative
-auto-apply gate** — but the principle is the same: nothing changes
-your library unless you explicitly opt in.
+This project adheres to a strict "read-only by default" philosophy to protect
+Calibre libraries and metadata files. Manifestation V2 verifies in shadow mode
+by default and adds sealed evidence, exact authorization, a sole privileged
+writer, and reversible per-book artifacts. Nothing changes the library unless
+the operator explicitly opts in.
 
 ## Production Trust Boundary
 
@@ -27,7 +27,10 @@ By default, the application operates in a completely read-only mode:
 
 - **Scan**: Reads library database to discover books.
 - **Inspect**: Reads file content (PDF, EPUB) and cover images.
-- **Verify** (v1.0): Reads book content, runs deterministic rules + LLM witness.
+- **Verify** (V2 default): Hashes and inspects every attached format, optionally
+  runs bounded OCR/vision/LLM recognition, and persists sealed evidence.
+- **Verify** (legacy v1.0): Reads book content and runs deterministic rules plus
+  the optional LLM witness.
 - **Audit** (legacy v0.9): Fetches candidate metadata from external providers.
 
 **The default Docker configuration mounts the `library` directory as read-only (`:ro`).**
@@ -44,12 +47,54 @@ the user. The primary write actions are:
 **WebUI and API endpoints that modify data require `{"force": true}` in the
 request body after explicit user confirmation.**
 
-Affected endpoints: `POST /api/apply`, `POST /api/undo/{change_id}`,
-`POST /api/runs/{run_id}/revert`.
+Affected write endpoints: `POST /api/apply/v2`,
+`POST /api/undo/{change_id}`, `POST /api/runs/{run_id}/revert`.
+`POST /api/apply` is retired and always returns HTTP 410.
+
+## Manifestation V2 write boundary
+
+V2 verification is shadow-only through the current CLI and verify API. A V2
+package cannot enter the legacy apply path because it is stored as sealed
+`observations` with no V1 `decision`.
+
+A supervised V2 correction requires all of the following:
+
+1. Tier A exact-manifestation identity with a non-empty canonical patch.
+2. A valid package checksum whose run ID, book key, snapshot, evidence ID, and patch
+   still match durable storage.
+3. `POST /api/review/v2/{evidence_id}/authorize` with a non-empty reason. The
+   authorization records the server principal and hashes the exact package and
+   field-lock-filtered patch.
+4. `POST /api/apply/v2` with `force=true`, the explicit evidence ID, and its
+   exact authorization ID.
+5. Revalidation by the sole privileged writer, including unchanged live Calibre
+   values, the exact library root sealed into the package, attached-format
+   membership/order, and the SHA-256 of every ebook before and after write.
+   Every path component is opened relative to a descriptor-anchored root with
+   no symlink following; checking only the final component is insufficient.
+6. A hashed OPF backup and restore point before the metadata command. `#edition`
+   changes additionally preserve the previous custom-column value; cover
+   changes preserve and hash the previous cover. Artifact directories are also
+   created with descriptor-relative no-follow operations. Before Calibre reads
+   an OPF or cover, the verified bytes are copied into an immutable sealed
+   descriptor and passed to the child process; a pathname replacement after
+   validation cannot alter the consumed bytes.
+7. Read-back verification. A partial write is restored; missing or inconsistent
+   recovery evidence becomes an error/unknown state instead of being guessed.
+
+Allowed V2 fields are `title`, `authors`, namespaced `identifiers`, `languages`,
+`publisher`, `pubdate`, `series`, `series_index`, `edition_statement` (Calibre
+`#edition`), and a local sealed `cover` artifact. Legacy aliases and unknown
+fields are rejected before backup or mutation.
+
+Tier A automatic mode is disabled unconditionally. Calibration reports remain
+useful advisory measurements, but their checksum is not an authenticated
+attestation and cannot unlock a writer. `bookaudit apply` and the legacy
+`POST /api/apply` route are disabled in every profile.
 
 ---
 
-## v1.0: Conservative Auto-Apply Gate
+## Legacy v1.0: Conservative Auto-Apply Gate
 
 v1.0 introduced an **auto-apply gate** that decides which books are safe
 to apply without human approval. A book is `auto_apply_eligible` iff:
@@ -78,8 +123,8 @@ Every apply creates a **restore point** at
 `<artifacts_dir>/restore/<run_id>/<book_key>/` containing:
 
 - `original.opf` — original OPF (calibredb export)
-- `original.<ext>` — hardlink to the original book file (instant; falls back
-  to copy if the filesystem doesn't support hardlinks)
+- `original.<ext>` — descriptor-anchored streamed copy of the original book
+  file when that optional backup is requested
 - `original.cover.<ext>` — original cover image (if cover was modified)
 - `before.json` — full metadata snapshot before the apply
 - `after.json` — full metadata snapshot after the apply

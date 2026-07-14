@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import AliasChoices, BaseModel, Field, SecretStr
@@ -36,6 +36,37 @@ class PrivacySettings(BaseModel):
         validation_alias=AliasChoices("max_remote_chars", "max_snippet_chars"),
     )
     max_remote_images: int = 1
+
+
+class OCRRecognitionV2Settings(BaseModel):
+    enabled: bool = True
+    backends: list[Literal["tesseract", "paddleocr", "surya"]] = Field(default_factory=lambda: ["tesseract"])
+    max_pages: int = Field(default=6, ge=1, le=12)
+    language: str = Field(default="en", pattern=r"^[a-z]{2,3}$")
+    paddleocr_use_gpu: bool = False
+    surya_device: str = "cuda"
+
+
+class VisionRecognitionV2Settings(BaseModel):
+    enabled: bool = False
+
+
+class RecognitionV2Settings(BaseModel):
+    ocr: OCRRecognitionV2Settings = Field(default_factory=OCRRecognitionV2Settings)
+    vision: VisionRecognitionV2Settings = Field(default_factory=VisionRecognitionV2Settings)
+
+
+class AutoApplyV2Settings(BaseModel):
+    enabled: bool = False
+    calibration_report: Path | None = None
+    min_sample_size: int = Field(default=100, ge=1)
+    min_tier_a_decisions: int = Field(default=50, ge=1)
+    max_false_positive_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    max_report_age_days: int = Field(default=30, ge=1, le=365)
+
+
+class ManifestationV2Settings(BaseModel):
+    auto_apply: AutoApplyV2Settings = Field(default_factory=AutoApplyV2Settings)
 
 
 def _default_library() -> LibrarySettings:
@@ -143,6 +174,8 @@ class Settings(BaseSettings):
     vectors: VectorSettings = Field(default_factory=VectorSettings)  # type: ignore[arg-type]
     providers: ProviderSettings = Field(default_factory=ProviderSettings)  # type: ignore[arg-type]
     privacy: PrivacySettings = Field(default_factory=PrivacySettings)  # type: ignore[arg-type]
+    recognition_v2: RecognitionV2Settings = Field(default_factory=RecognitionV2Settings)
+    manifestation_v2: ManifestationV2Settings = Field(default_factory=ManifestationV2Settings)
     extractors: ExtractorSettings = Field(default_factory=ExtractorSettings)  # type: ignore[arg-type]
     paperless: PaperlessSettings = Field(default_factory=PaperlessSettings)  # type: ignore[arg-type]
     preview: PreviewSettings = Field(default_factory=PreviewSettings)

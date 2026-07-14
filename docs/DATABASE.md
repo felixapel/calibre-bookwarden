@@ -40,3 +40,27 @@ Regardless of the backend, the database serves as the system-of-record for:
 - Evidence packages
 - Resolved metadata and proposed patches
 - Audit log of applied changes and undo events
+
+## Manifestation V2 records
+
+Alembic head `e91a7f42c6b4` adds the V2 contract without reinterpreting legacy
+rows:
+
+- `VerificationRun.pipeline_version` and `mode` distinguish V1/legacy from
+  `manifestation-v2` shadow runs.
+- `VerificationResult.evidence_id` and `state` persist one book's resumable state
+  and checksummed-package link.
+- `EvidencePackage.schema_version=2` stores the complete checksummed package in
+  `observations`; `decision` remains null to prevent accidental legacy apply.
+- `OperationLedger.evidence_id` binds an authorized writer operation to the
+  exact package.
+- `Change` and `OperationLedger` retain cover/custom-column backup paths, hashes,
+  and rollback values for apply, undo, and crash reconciliation.
+
+Run migrations explicitly with `bookaudit migrate` or the Compose maintenance
+profile. Runtime services do not migrate automatically. The migration suite
+tests a clean upgrade/downgrade and upgrade of legacy verification rows.
+Downgrade is intentionally refused when V2 audit evidence or V2
+writer/recovery records exist, because dropping those columns would destroy the
+ability to audit or recover operations. The package SHA-256 is an integrity
+checksum inside the trusted database boundary, not an administrator signature.

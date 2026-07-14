@@ -78,6 +78,7 @@ class EvidencePackage(SQLModel, table=True):
     book_key: str = Field(index=True)
     run_id: str = Field(index=True)
     created_at: datetime = Field(default_factory=utc_now)
+    schema_version: int = 1
 
     current: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     extracted: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
@@ -86,6 +87,7 @@ class EvidencePackage(SQLModel, table=True):
     cover: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     risk_flags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     decision: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    observations: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
 
 class Change(SQLModel, table=True):
@@ -101,6 +103,9 @@ class Change(SQLModel, table=True):
     after_metadata: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     backup_opf_path: str
     backup_opf_sha256: str | None = None
+    backup_cover_path: str | None = None
+    backup_cover_sha256: str | None = None
+    before_custom: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     # pending_apply is committed before the external write. Failure states keep
     # enough audit evidence to reconcile or restore after a process crash.
     status: str = "applied"  # pending_apply, applied, failed_rolled_back, failed_rollback_failed, undone
@@ -132,6 +137,10 @@ class OperationLedger(SQLModel, table=True):
     change_id: int | None = Field(default=None, index=True)
     rollback_opf_path: str | None = None
     rollback_opf_sha256: str | None = None
+    rollback_cover_path: str | None = None
+    rollback_cover_sha256: str | None = None
+    rollback_custom: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    evidence_id: str | None = Field(default=None, index=True)
     lease_owner: str | None = Field(default=None, index=True)
     lease_expires_at: datetime | None = Field(default=None, index=True)
     error: str | None = None
@@ -177,6 +186,8 @@ class VerificationRun(SQLModel, table=True):
     completed: int = 0
     counts: dict[str, int] = Field(default_factory=dict, sa_column=Column(JSON))
     use_llm: bool = False
+    pipeline_version: str = "v1"
+    mode: str = "legacy"
 
 
 class VerificationResult(SQLModel, table=True):
@@ -189,6 +200,8 @@ class VerificationResult(SQLModel, table=True):
     run_id: str = Field(index=True)
     book_key: str = Field(index=True)
     verdict: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    evidence_id: str | None = Field(default=None, index=True)
+    state: str = Field(default="pending", index=True)
     created_at: datetime = Field(default_factory=utc_now)
 
 

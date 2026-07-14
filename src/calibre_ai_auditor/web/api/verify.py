@@ -1,13 +1,12 @@
-"""Verify API — programmatic v1.0 ContentVerificationEngine runs over a Calibre library.
+"""Verify API for Manifestation V2 and the legacy V1 engine.
 
 Endpoints:
   POST /api/verify           — start a verify run (returns run_id)
   GET  /api/verify/{run_id}  — get progress + verdicts for a run
   GET  /api/verify/runs      — list recent runs with summary stats
 
-The verify path differs from /api/audit (legacy v0.9) by using the
-ContentVerificationEngine + per-field FieldVerdicts + auto-apply gate
-instead of a single aggregate MetadataResolution.
+POST defaults to the exact-edition, all-format, sealed V2 contract. Clients may
+explicitly select V1 for the legacy ContentVerificationEngine response shape.
 """
 
 import asyncio
@@ -15,11 +14,12 @@ import logging
 from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, desc, select
 
 from calibre_ai_auditor.calibre.cli import CalibreCLI
@@ -45,6 +45,12 @@ class VerifyRequest(BaseModel):
     library: str | None = None
     limit: int | None = None
     use_llm: bool = False
+    use_ocr: bool = True
+    use_vision: bool = False
+    pipeline: Literal["v2", "v1"] = "v2"
+    run_id: str | None = None
+    allow_remote_text: bool = False
+    allow_remote_images: bool = False
 
 
 class VerifyStartResponse(BaseModel):
@@ -57,6 +63,8 @@ class VerifyStartResponse(BaseModel):
 class VerifyRunSummary(BaseModel):
     run_id: str
     status: str
+    pipeline_version: str = "v1"
+    mode: str = "legacy"
     started_at: datetime
     finished_at: datetime | None = None
     total: int
@@ -112,10 +120,66 @@ async def start_verify(
     if req.limit:
         books = books[: req.limit]
 
-    run_id = f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
+    run_id = req.run_id or f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
     started_at = datetime.now(UTC)
     metrics = get_metrics()
     metrics.set_run_progress(run_id, total=len(books), completed=0)
+
+    if req.pipeline == "v2":
+        from calibre_ai_auditor.verification.persistence_v2 import SQLAuditStore
+        from calibre_ai_auditor.verification.pipeline_v2 import AuditMode
+        from calibre_ai_auditor.verification.service_v2 import (
+            build_v2_enricher,
+            run_persisted_library_audit,
+        )
+
+        v2_database_engine = cast(Engine, session.get_bind())
+        try:
+            enricher = build_v2_enricher(
+                settings,
+                use_llm=req.use_llm,
+                use_ocr=req.use_ocr,
+                use_vision=req.use_vision,
+                run_allows_remote_text=req.allow_remote_text,
+                run_allows_remote_images=req.allow_remote_images,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        store = SQLAuditStore(v2_database_engine, run_id)
+        try:
+            store.start(
+                book_keys=[f"calibre:{int(book['id'])}" for book in books],
+                mode=AuditMode.shadow.value,
+                use_llm=req.use_llm,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+
+        async def _run_v2() -> None:
+            try:
+                await run_persisted_library_audit(
+                    cli=cli,
+                    database_engine=v2_database_engine,
+                    run_id=run_id,
+                    limit=0,
+                    mode=AuditMode.shadow,
+                    evidence_enricher=enricher,
+                    use_llm=req.use_llm,
+                    books=books,
+                    settings=settings,
+                )
+            except Exception:
+                logger.exception("Manifestation V2 verify run %s failed", run_id)
+
+        asyncio.create_task(_run_v2())
+        return VerifyStartEnvelope(
+            data=VerifyStartResponse(
+                run_id=run_id,
+                started_at=started_at,
+                total=len(books),
+                status="running",
+            )
+        )
 
     # Run synchronously in the background (FastAPI threadpool) so the
     # caller can poll /verify/{run_id} for progress.
@@ -310,15 +374,45 @@ async def get_verify_run(run_id: str, session: Annotated[Session, Depends(get_se
     results = session.exec(
         select(VerificationResult).where(VerificationResult.run_id == run_id).order_by(col(VerificationResult.id))
     ).all()
+    verdicts: list[dict[str, Any]] = []
+    for result in results:
+        if result.evidence_id:
+            from calibre_ai_auditor.storage.models import EvidencePackage
+            from calibre_ai_auditor.verification.pipeline_v2 import EvidencePackageV2
+
+            package = session.exec(
+                select(EvidencePackage).where(EvidencePackage.evidence_id == result.evidence_id)
+            ).first()
+            if package and package.observations:
+                try:
+                    parsed = EvidencePackageV2.model_validate(package.observations)
+                    if parsed.verify_seal():
+                        verdicts.append(parsed.model_dump(mode="json"))
+                        continue
+                except ValueError:
+                    logger.warning("Rejected invalid V2 evidence package %s", result.evidence_id)
+            verdicts.append(
+                {
+                    "schema_version": 2,
+                    "evidence_id": result.evidence_id,
+                    "book_key": result.book_key,
+                    "state": "failed",
+                    "warnings": ["invalid_or_missing_evidence_seal"],
+                }
+            )
+            continue
+        verdicts.append(result.verdict)
     return VerifyRunEnvelope(
         data=VerifyRunDetail(
             run_id=run_id,
             status=durable_run.status,
+            pipeline_version=durable_run.pipeline_version,
+            mode=durable_run.mode,
             started_at=durable_run.started_at,
             finished_at=durable_run.finished_at,
             total=durable_run.total,
             completed=durable_run.completed,
             counts=durable_run.counts,
-            verdicts=[result.verdict for result in results],
+            verdicts=verdicts,
         )
     )

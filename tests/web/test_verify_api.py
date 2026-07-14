@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -26,9 +27,11 @@ def client(tmp_path: Path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_session] = override_session
+    app.state.verify_test_engine = engine
     yield TestClient(app)
     app.dependency_overrides.pop(get_settings, None)
     app.dependency_overrides.pop(get_session, None)
+    del app.state.verify_test_engine
 
 
 def test_verify_runs_endpoint_empty(client: TestClient) -> None:
@@ -71,6 +74,9 @@ def test_verify_response_schema(client: TestClient) -> None:
     assert req.limit == 1
     assert req.library == "/tmp"
     assert req.use_llm is False
+    assert req.use_ocr is True
+    assert req.use_vision is False
+    assert req.allow_remote_images is False
 
     resp = VerifyStartResponse(
         run_id="verify_test_001",
@@ -80,3 +86,70 @@ def test_verify_response_schema(client: TestClient) -> None:
     )
     assert resp.run_id == "verify_test_001"
     assert resp.status == "running"
+
+
+def test_verify_detail_reads_and_validates_sealed_v2_evidence(client: TestClient) -> None:
+    from calibre_ai_auditor.storage.models import EvidencePackage, VerificationResult, VerificationRun
+    from calibre_ai_auditor.verification.identity_v2 import IdentityTier, ManifestationResolution
+    from calibre_ai_auditor.verification.pipeline_v2 import BookAuditState, BookSnapshot, EvidencePackageV2
+
+    snapshot = BookSnapshot(
+        book_key="calibre:1",
+        calibre_book_id=1,
+        current_metadata={},
+        files=[],
+        snapshot_sha256="0" * 64,
+    )
+    snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})
+    package = EvidencePackageV2(
+        evidence_id="api-evidence-v2",
+        run_id="api-run-v2",
+        book_key="calibre:1",
+        state=BookAuditState.review,
+        snapshot=snapshot,
+        identity=ManifestationResolution(tier=IdentityTier.tier_b),
+    ).seal()
+    with Session(client.app.state.verify_test_engine) as session:
+        session.add(
+            VerificationRun(
+                run_id="api-run-v2",
+                status="completed",
+                started_at=datetime.now(UTC),
+                total=1,
+                completed=1,
+                counts={"review": 1},
+                pipeline_version="manifestation-v2",
+                mode="shadow",
+            )
+        )
+        session.add(
+            VerificationResult(
+                result_id="api-result-v2",
+                run_id="api-run-v2",
+                book_key="calibre:1",
+                state="review",
+                evidence_id=package.evidence_id,
+                verdict={"untrusted": True},
+            )
+        )
+        session.add(
+            EvidencePackage(
+                evidence_id=package.evidence_id,
+                run_id=package.run_id,
+                book_key=package.book_key,
+                schema_version=2,
+                observations=package.model_dump(mode="json"),
+            )
+        )
+        session.commit()
+
+    response = client.get("/api/verify/api-run-v2")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["pipeline_version"] == "manifestation-v2"
+    assert data["mode"] == "shadow"
+    verdict = data["verdicts"][0]
+    assert verdict["evidence_id"] == "api-evidence-v2"
+    assert verdict["identity"]["tier"] == "B"
+    assert "untrusted" not in verdict

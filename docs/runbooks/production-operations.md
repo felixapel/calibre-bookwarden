@@ -20,6 +20,11 @@ docker compose up -d writer app
 Do not expose the port until both containers report healthy and authenticated
 `/api/health/ready` returns `ready`.
 
+The writer is Linux-only. Its startup/runtime contract requires `/proc/self/fd`
+and sealable `memfd` support for immutable OPF/cover handoff. A failure to
+create or pass a sealed descriptor is a stop condition, not a reason to fall
+back to pathname-based writes.
+
 ## Backup
 
 The commands use the PostgreSQL bootstrap administrator inside the private
@@ -71,10 +76,16 @@ BOOKAUDIT_REQUIRE_WRITER_READY=true docker compose up -d --force-recreate app
 ```
 
 Confirm authenticated `/api/health/ready` after re-enabling the writer gate. A
-clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12 restored Alembic
-head `b18f4c2d7a90` and the runtime ACLs successfully.
+clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12 restored the then
+current Alembic head `b18f4c2d7a90` and the runtime ACLs successfully. The
+Manifestation V2 development head is now `e91a7f42c6b4`; repeat the clean
+upgrade/downgrade and backup/restore drill before promoting that schema.
 
 ## Upgrade
+
+The signed GHCR procedure below is a legacy mirror-release path, not the normal
+development workflow. Development, review, and CI use Gitea; use the mirror
+release path only for an explicitly authorized release operation.
 
 1. Verify the release signature and attestations, pull the digest-pinned image,
    and retain the prior image digest:
@@ -173,6 +184,14 @@ Completed transactions intentionally retain a small `state=deleted` journal as
 a durable tombstone and do not block later retention. Pre-publication staging
 contains no moved candidates and is removed automatically only after its shape
 has been validated as an abandoned empty staging transaction.
+
+## Schema downgrade guard
+
+Do not downgrade a database that contains Manifestation V2 runs, evidence, or
+writer recovery records. The V2 migrations deliberately raise an error instead
+of dropping those columns. Export and verify both the database and writer
+artifacts, finish or reconcile every operation, and use a separately reviewed
+data-migration procedure if a downgrade is ever required.
 
 ## Monitoring alerts
 

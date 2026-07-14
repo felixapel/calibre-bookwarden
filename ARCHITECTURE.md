@@ -1,9 +1,9 @@
 # Architecture
 
-`calibre-ai-auditor` v1.0 is a content-ground metadata verification system.
-The book file is the ground truth, deterministic rules adjudicate per
-field, and an LLM is called as a witness only when the rules return
-`ambiguous`.
+The development head of `calibre-ai-auditor` is the Manifestation V2
+exact-edition auditor. It treats each original ebook format as read-only
+evidence, resolves identity before proposing metadata, and seals the complete
+decision record. The historical v1.0 engine remains documented below.
 
 This document is the canonical overview. Detailed component breakdowns
 live in `docs/architecture/`.
@@ -27,6 +27,51 @@ live in `docs/architecture/`.
 only. `paperless-gpt` is the most direct workflow inspiration.
 
 ---
+
+## Manifestation V2 (default verification path)
+
+The CLI and `POST /api/verify` now default to the `manifestation-v2` contract.
+The v1.0 architecture below remains available with `--pipeline v1`, but it is
+not the default identity or V2 write contract.
+
+```mermaid
+flowchart LR
+  C[Calibre membership snapshot] --> B[One active book]
+  B --> F[Inspect every attached format]
+  F --> R[Native content / bounded OCR / opt-in vision]
+  R --> P[Exact-ISBN structured providers]
+  P --> T[Tier A / B / C resolver]
+  T --> E[(Sealed evidence package)]
+  E --> N{Next book}
+  N --> B
+  E --> H[Human review and exact authorization]
+  H --> L[(Operation ledger)]
+  L --> W[Sole privileged writer]
+  W --> X[OPF + custom + cover verification]
+  X --> U[Reversible Change record]
+```
+
+Important boundaries:
+
+- The Calibre record is the value being audited, never an identity root.
+- The original ebook files are hashed and read only. Parsers, converters, OCR,
+  and vision consume stable no-follow temporary copies; paths must remain inside
+  the configured library.
+- A single OCR result, vision output, or LLM response can seed review and exact
+  lookup but cannot promote Tier A. Two OCR engines form one content root.
+- External adapters accept only an exact checksum-valid ISBN returned in the
+  provider's structured record. Network calls are HTTPS/host/DNS/schema/size
+  constrained and reject redirects.
+- V2 packages are persisted in `EvidencePackage.observations` with
+  `schema_version=2`; `decision` stays null so legacy V1 apply cannot consume
+  them accidentally.
+- The V2 public apply path always requires authorization bound to the package
+  checksum and canonical patch. The writer rehashes every live format before and
+  after metadata mutation. Automatic V2 apply and all public legacy apply paths
+  are disabled; calibration output is advisory only.
+
+See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) for the tier,
+provenance, privacy, and rollback invariants.
 
 ## Core Flow (v1.0)
 
@@ -146,12 +191,15 @@ GPU class: heavy vision → 3090, bulk OCR → medium GPU, embedding → medium 
 Per-book restore points at `<artifacts_dir>/restore/<run_id>/<book_key>/`:
 - Original OPF (calibredb export)
 - Original cover image (if it was modified)
-- Hardlink to the original file (instant; falls back to copy if FS doesn't
-  support hardlinks)
+- Descriptor-anchored streamed copy of the original file when requested
 - `before.json` and `after.json` snapshots
 - `restore.json` metadata for bulk undo by run_id
 
 30-day retention target; cleanup is an explicit operator-approved action.
+V2 opens every ebook and artifact path component relative to a trusted root
+descriptor with symlink following disabled. Writer inputs are re-materialized
+as immutable Linux memfd objects and passed to `calibredb` as inherited file
+descriptors, eliminating the validate-path/reopen-path race.
 
 ### ResumableRunStore (new in v1.0)
 
@@ -207,9 +255,9 @@ LM Studio.
 6. Worker calls `metrics.record_book_action(action, run_id)`
 7. On completion, the run appears in the WebUI's "Recent verify runs" list
 8. User clicks the run → `/api/verify/{run_id}` returns full verdicts
-9. If auto-apply enabled, `bookaudit apply --safe-only` iterates over
-   `auto_apply_eligible: true` books, creates restore points, and patches
-   Calibre via `calibredb set_metadata`
+9. The historical `auto_apply_eligible` value remains review data only.
+   `bookaudit apply` and the legacy apply API are retired; writes require an
+   exact manually authorized V2 package and the sole writer.
 
 ---
 

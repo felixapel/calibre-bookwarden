@@ -1,7 +1,8 @@
 # API Documentation
 
-The `calibre-ai-auditor` v1.0 API follows a RESTful design. Interactive
-OpenAPI docs are available at `/docs` when the server is running.
+The `calibre-ai-auditor` API exposes Manifestation V2 as the default verify
+contract while retaining explicitly versioned legacy V1 routes and payloads.
+Interactive OpenAPI docs are available at `/docs` when the server is running.
 
 All responses use the shape:
 
@@ -27,15 +28,59 @@ If `BOOKAUDIT_API_KEY` is set, send header `X-API-Key` on all `/api/*` requests.
 
 ---
 
-## v1.0 Verify (new)
+## Verify
 
 | Endpoint | Description |
 |---|---|
-| `POST /api/verify` | **v1.0** Start a verify run. Body: `{ "library"?: str, "limit"?: int, "use_llm"?: bool }`. Returns `{ "data": { "run_id": "verify_...", "total": int, "status": "running" } }`. |
-| `GET /api/verify/runs` | **v1.0** List recent verify runs with summary stats. |
-| `GET /api/verify/{run_id}` | **v1.0** Get progress + per-book verdicts for a run. |
+| `POST /api/verify` | Start a run. `pipeline` defaults to `v2`; `v1` remains available. Returns `{ "data": { "run_id": "verify_...", "total": int, "status": "running" } }`. |
+| `GET /api/verify/runs` | List recent V1/V2 runs with pipeline version, mode, and summary stats. |
+| `GET /api/verify/{run_id}` | Get progress and per-book sealed V2 summaries or legacy V1 verdicts. |
 
-### Verify response shape
+### Manifestation V2 start body
+
+```json
+{
+  "pipeline": "v2",
+  "library": "/library",
+  "limit": 100,
+  "run_id": null,
+  "use_ocr": true,
+  "use_vision": false,
+  "use_llm": false,
+  "allow_remote_text": false,
+  "allow_remote_images": false
+}
+```
+
+`run_id` resumes only the same frozen library membership and contract. OCR is
+bounded and local by default. Vision requires `recognition_v2.vision.enabled`
+in configuration. Remote text or images additionally require their global
+privacy setting and the corresponding per-run consent above.
+
+### Manifestation V2 result summary
+
+```json
+{
+  "schema_version": 2,
+  "evidence_id": "evidence_...",
+  "book_key": "calibre:1",
+  "state": "shadowed",
+  "identity": {
+    "tier": "A",
+    "manifestation_ids": {"isbn": "9780306406157"},
+    "field_decisions": {},
+    "auto_patch": {"title": "Exact title"},
+    "risk_flags": []
+  },
+  "warnings": []
+}
+```
+
+The database-linked evidence package contains the full format inspections,
+source provenance, locators, hashes, privacy receipts, package seal, and error
+state. V2 does not populate the legacy `decision` column.
+
+### Legacy V1 verify response shape
 
 ```json
 {
@@ -110,8 +155,16 @@ If `BOOKAUDIT_API_KEY` is set, send header `X-API-Key` on all `/api/*` requests.
 | `POST /api/review/{book_key}/approve` | Mark book as ready to apply (`suggest_fix`). |
 | `POST /api/review/{book_key}/reject` | Reject proposed changes; book is removed from queue. |
 | `POST /api/review/{book_key}/lock-field` | Lock a field. Body: `{ "field": "title", "value": "..." }`. Locked fields win in resolution. |
-| `POST /api/apply` | Queue explicit approved books for the sole writer. Body: `{ "force": true, "book_keys": ["calibre:123"] }`; an empty selection is rejected. |
+| `POST /api/apply` | Retired legacy route; always returns HTTP 410 and never queues work. |
+| `POST /api/review/v2/{evidence_id}/authorize` | Authorize one exact sealed Tier A package. Body: `{ "reason": "..." }`. Returns `authorization_id`. |
+| `POST /api/apply/v2` | Queue V2 packages for the sole writer. Body: `{ "force": true, "evidence_ids": ["evidence_..."], "authorization_ids": {"evidence_...": "authorization-uuid"} }`. |
 | `POST /api/undo/{change_id}` | Queue one explicit undo for the sole writer. Body: `{ "force": true }` required. |
+
+V2 authorization is immutable and bound to the evidence-package SHA-256 plus
+the canonical patch after field locks. Reusing it after any package, run,
+snapshot, lock, patch, live Calibre value, format membership, path, or ebook
+hash changes fails closed. API calls
+only queue operations; filesystem writes remain in the sole writer process.
 
 ---
 
@@ -137,10 +190,14 @@ All errors use the shape `{ "status": "error", "detail": "..." }`. Common HTTP c
 - `400` — validation error
 - `403` — sandbox violation (path outside library root), upload disabled
 - `404` — book / run / file not found
+- `410` — retired legacy apply route
 - `500` — internal error
 
 ---
 
 ## Versioning
 
-The API is currently `v1.0.0`. Breaking changes will be versioned under `/api/v2/` in a future release.
+Manifestation V2 is a versioned evidence/policy contract on the existing API
+routes, not an `/api/v2` URL namespace. `pipeline: "v1"` is retained for legacy
+clients while V2 clients use `schema_version: 2` and `policy_version:
+"manifestation-v2"`.

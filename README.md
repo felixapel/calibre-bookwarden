@@ -6,15 +6,41 @@ ground truth and LLMs are witnesses, not generators.
 
 ## Status
 
-- **Version**: v1.2.1 (Content-Ground Verification + Comics Vision + MCP Server)
+- **Development head**: Manifestation V2 exact-edition auditor
+- **Last tagged version**: v1.2.1 (Content-Ground Verification + Comics Vision + MCP Server)
 - **Interface**: Full-stack WebUI (React 19 / FastAPI) + CLI
-- **Default Mode**: Read-Only
-- **Runtime**: Docker (Linux/macOS recommended); native works with `uv`
-- **Production profile**: Internally approved for supervised and unattended
-  operation; complete the operator credential checklist before exposure. See
+- **Default verification contract**: V2, shadow/read-only, one book at a time
+- **V2 writes**: Explicit per-package authorization through the API and the sole writer
+- **Runtime**: Docker/Linux recommended; native verification works with `uv`.
+  The supervised writer requires Linux `/proc` descriptor passing and memfd seals.
+- **Production profile**: Approved only for supervised, per-package V2 writes;
+  unattended and legacy direct apply are disabled. Complete the operator credential checklist before exposure. See
   [docs/production-readiness.md](docs/production-readiness.md).
 
-## What's new in v1.0
+Manifestation V2 inspects every format attached to each Calibre book, anchors
+identity to checksum-valid edition-bearing content, performs exact-ISBN checks
+against Google Books and Open Library, and seals all evidence before review.
+OCR, vision, and LLM output can assist recognition but cannot identify a Tier A
+book by themselves. See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md).
+
+## Current V2 pipeline
+
+1. Freeze the run's Calibre membership and snapshot the current record.
+2. Hash and inspect every EPUB/PDF/CBZ or temporary MOBI/AZW3/CBR conversion.
+3. OCR bounded PDF front matter when native edition evidence is absent; cover
+   vision is opt-in and always non-authoritative.
+4. Query structured providers only by one checksum-valid ISBN candidate.
+5. Resolve Tier A (exact), B (incomplete/review), or C (conflict/defer), then
+   produce only field values supported by two independent roots.
+6. Persist a strict, SHA-256-checksummed evidence package and continue with the next
+   book even when one book fails.
+7. Apply only an explicitly authorized Tier A package after the writer verifies
+   live metadata plus every ebook path/hash and creates OPF/custom-column/cover
+   rollback artifacts. Library and artifact paths are opened component by
+   component beneath sealed roots; OPF and cover bytes are handed to Calibre
+   through immutable descriptors rather than re-opened pathnames.
+
+## Historical v1.0 engine
 
 v1.0 replaces the v0.9 evidence-first pipeline with a **content-ground
 verification engine** that adjudicates each declared metadata field against
@@ -25,7 +51,7 @@ the actual book content.
 | Decision unit | Single `MetadataResolution` aggregate | **Per-field `FieldVerdict`** with cited `EvidenceSpan`s |
 | Adjudication | One LLM call decides everything | **8 deterministic rules** per field; **LLM witness** called only for ambiguous cases |
 | Auto-apply | Manual review queue | **Conservative auto-apply gate** (≥80% confidence, no high-risk flags, per-book restore point) |
-| Undo | OPF backup only | **RestorePointStore**: OPF + cover + hardlinked file + JSON snapshot, 30-day retention target |
+| Undo | OPF backup only | **RestorePointStore**: OPF + cover + secure file copy + JSON snapshot, 30-day retention target |
 | Resume | None | **PostgreSQL ledger/outbox** with single-writer crash reconciliation |
 | OCR | None | **Multi-provider OCR router** (Tesseract / PaddleOCR / Surya) by page hint |
 | Inference | Single Ollama | **Multi-host discovery** (3090 + 5060 Ti + 1660 SUPER + remote) |
@@ -47,7 +73,7 @@ the actual book content.
     declared field has a deterministic verdict, (b) overall confidence ≥80,
     (c) no high-risk flag is present, (d) per-field confidence ≥75.
 5.  **Every apply creates a restore point.** Per-book snapshot of OPF, cover,
-    file hardlink, and JSON metadata diff. 30-day retention target; bulk undo is queued by run ID through the API.
+    secure file copy, and JSON metadata diff. 30-day retention target; bulk undo is queued by run ID through the API.
 6.  **Resumable on crash.** A durable PostgreSQL operation ledger/outbox and
     per-book locks reconcile interrupted external writes before new work begins.
 
@@ -72,7 +98,7 @@ the actual book content.
 ## Quick Start (Docker)
 
 ```bash
-git clone git@github.com:felixapel/calibre-ai-auditor.git
+git clone http://192.168.0.122:3010/felix/calibre-ai-auditor.git
 cd calibre-ai-auditor
 cp .env.example .env
 # Replace placeholders, use distinct secrets and an immutable image digest.
@@ -98,10 +124,10 @@ source .venv/bin/activate
 bookaudit doctor          # verify calibredb, Tika, Qdrant, etc.
 bookaudit hosts           # discover homelab inference hosts
 
-# v1.0: content-ground verification
-bookaudit verify --limit 100                       # 100 books
-bookaudit verify --limit 100 --use-llm            # with LLM witness
-bookaudit verify --limit 0 --format json > out.json  # full library
+# Manifestation V2 (default): shadow audit, one book at a time
+bookaudit verify --pipeline v2 --limit 100 --use-ocr
+bookaudit verify --pipeline v2 --limit 100 --use-ocr --use-llm
+bookaudit verify --pipeline v2 --limit 0 --format json > out.json
 
 # Legacy v0.9 commands (still work as fallback)
 bookaudit inspect --path "/path/to/book.epub"
@@ -120,6 +146,7 @@ bookaudit audit --run latest
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — Component overview, data flow, design principles
 - **[docs/architecture/target-advanced-architecture.md](docs/architecture/target-advanced-architecture.md)** — Detailed v1.0 component breakdown
 - **[docs/architecture/integration-decisions.md](docs/architecture/integration-decisions.md)** — Architecture Decision Records
+- **[docs/decisions/ADR-002-exact-manifestation-v2.md](docs/decisions/ADR-002-exact-manifestation-v2.md)** — Exact-edition V2 trust and write contract
 - **[docs/architecture/v1_scope_decisions.md](docs/architecture/v1_scope_decisions.md)** — What's in / out of v1.0
 - **[docs/research/PEER_PROJECTS.md](docs/research/PEER_PROJECTS.md)** — Comparison vs `paperless-gpt`, `book-memex`, etc.
 
@@ -137,6 +164,7 @@ bookaudit audit --run latest
 - **[TESTING.md](TESTING.md)** — Unit / integration / E2E / benchmark strategy
 - **[tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md)** — Performance baseline
 - **[docs/calibration/v1.0_calibration_runbook.md](docs/calibration/v1.0_calibration_runbook.md)** — Real-world calibration on Unraid
+- **[docs/calibration/manifestation-v2-runbook.md](docs/calibration/manifestation-v2-runbook.md)** — V2 gold-corpus calibration and supervised rollout
 
 ## Project Principles
 
@@ -205,11 +233,11 @@ responsive navigation and browser performance budgets.
 
 ### CI integration
 
-- **GitHub Actions**: `.github/workflows/ci.yml` plus signed release publication in `.github/workflows/release.yml`.
-- **Gitea Actions**: `.gitea/workflows/v1-tests.yml` runs backend/PostgreSQL,
-  benchmarks, browser and production-image gates on the self-hosted runner.
-  GitHub is the canonical production release authority; Gitea never publishes
-  or signs release images.
+- **Gitea Actions** is the canonical development pipeline.
+  `.gitea/workflows/v1-tests.yml` runs backend/PostgreSQL, benchmarks, browser,
+  and production-image gates on the self-hosted runner.
+- Files under `.github/workflows/` remain mirror/release compatibility assets;
+  normal development and review use the Gitea remote and Gitea Actions.
 
 ## License
 

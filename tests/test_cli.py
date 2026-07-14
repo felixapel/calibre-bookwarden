@@ -34,6 +34,47 @@ def test_config() -> None:
     assert "open_ai_api_key" not in result.stdout  # Should be excluded
 
 
+def test_legacy_direct_apply_is_disabled_in_every_profile() -> None:
+    result = runner.invoke(app, ["apply", "--yes"])
+
+    assert result.exit_code == 1
+    assert "Legacy direct apply is disabled" in result.stdout
+
+
+def test_calibrate_v2_writes_a_sealed_report_from_reviewed_labels(tmp_path: Path) -> None:
+    from calibre_ai_auditor.verification.calibration_v2 import CalibrationReportV2
+
+    corpus = tmp_path / "labels.json"
+    corpus.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "policy_version": "manifestation-v2",
+                "observations": [
+                    {
+                        "evidence_id": "evidence-1",
+                        "tier": "A",
+                        "would_auto_apply": True,
+                        "identity_correct": True,
+                        "patch_correct": True,
+                    }
+                ],
+            }
+        )
+    )
+    output = tmp_path / "calibration.json"
+
+    result = runner.invoke(
+        app,
+        ["calibrate-v2", "--corpus", str(corpus), "--output", str(output)],
+    )
+
+    assert result.exit_code == 0
+    report = CalibrationReportV2.model_validate_json(output.read_text())
+    assert report.verify_seal()
+    assert "false_auto_apply=0" in result.stdout
+
+
 def test_migrate_runs_explicit_schema_upgrade() -> None:
     with patch("calibre_ai_auditor.cli.main.init_db") as upgrade:
         result = runner.invoke(app, ["migrate"])

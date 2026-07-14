@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,9 +10,18 @@ from uuid import uuid4
 
 from sqlmodel import Session, col, select
 
-from calibre_ai_auditor.apply.coordinator import validate_apply_operation
+from calibre_ai_auditor.apply.artifacts import (
+    MAX_COVER_BYTES,
+    MAX_OPF_BYTES,
+    bind_exported_artifact,
+    set_cover_from_artifact,
+    set_metadata_from_artifact,
+    verify_artifact,
+)
+from calibre_ai_auditor.apply.coordinator import load_v2_package, validate_apply_operation
 from calibre_ai_auditor.apply.engine import ApplyEngine
 from calibre_ai_auditor.calibre.cli import CalibreCLI
+from calibre_ai_auditor.security.files import ensure_secure_directory, sha256_file_beneath
 from calibre_ai_auditor.storage.models import BookRecord, BookWriteLock, Change, OperationLedger, OutboxEvent, utc_now
 from calibre_ai_auditor.storage.operations import transition_operation
 
@@ -74,8 +84,13 @@ def claim_next_operation(
         return operation.operation_id
 
 
-def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[str]:
+def reconcile_incomplete_operations(
+    session: Session,
+    cli: CalibreCLI,
+    artifacts_dir: Path | None = None,
+) -> list[str]:
     """Resolve operations interrupted after an external write may have started."""
+    artifact_root = Path(artifacts_dir).absolute() if artifacts_dir is not None else None
     reconciled: list[str] = []
     operations = session.exec(
         select(OperationLedger).where(col(OperationLedger.state).in_(("claimed", "writing", "verifying", "restoring")))
@@ -99,7 +114,7 @@ def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[s
             session.commit()
             continue
         if operation.operation_type == "undo_change":
-            _reconcile_undo(session, cli, operation)
+            _reconcile_undo(session, cli, operation, artifact_root)
             reconciled.append(operation.operation_id)
             session.commit()
             continue
@@ -123,6 +138,30 @@ def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[s
         try:
             observed = cli.show_metadata(book.calibre_book_id)
             operation.observed_metadata = observed
+            if operation.policy_version == "manifestation-v2":
+                try:
+                    _verify_v2_live_files(session, cli, operation, observed)
+                except (OSError, ValueError) as exc:
+                    if change is None:
+                        _mark_unknown(operation, f"V2 ebook snapshot changed: {exc}")
+                    else:
+                        if operation.state in {"writing", "verifying"}:
+                            transition_operation(operation, "restoring")
+                        _restore_change(cli, book.calibre_book_id, change, artifact_root)
+                        restored = cli.show_metadata(book.calibre_book_id)
+                        if not _matches_patch(restored, operation.before_metadata):
+                            raise RuntimeError("restore verification failed after ebook snapshot change") from exc
+                        transition_operation(operation, "restored", error=f"V2 ebook snapshot changed: {exc}")
+                        change.status = "failed_rolled_back"
+                    book.status = "error"
+                    _finish_outbox(session, operation.operation_id, "failed", operation.error)
+                    session.add(operation)
+                    session.add(book)
+                    if change is not None:
+                        session.add(change)
+                    reconciled.append(operation.operation_id)
+                    session.commit()
+                    continue
             if _matches_patch(observed, operation.target_metadata):
                 if operation.state == "writing":
                     transition_operation(operation, "verifying")
@@ -152,8 +191,7 @@ def reconcile_incomplete_operations(session: Session, cli: CalibreCLI) -> list[s
                 else:
                     if operation.state in {"writing", "verifying"}:
                         transition_operation(operation, "restoring")
-                    _require_artifact(change.backup_opf_path, change.backup_opf_sha256)
-                    cli.set_metadata(book.calibre_book_id, Path(change.backup_opf_path))
+                    _restore_change(cli, book.calibre_book_id, change, artifact_root)
                     restored = cli.show_metadata(book.calibre_book_id)
                     if _matches_patch(restored, operation.before_metadata):
                         transition_operation(operation, "restored")
@@ -206,6 +244,21 @@ class MetadataWriter:
             return operation
 
         before = self.cli.show_metadata(book.calibre_book_id)
+        if operation.policy_version == "manifestation-v2":
+            try:
+                _verify_v2_live_files(session, self.cli, operation, before)
+            except (OSError, ValueError) as exc:
+                transition_operation(
+                    operation,
+                    "failed",
+                    error=f"live ebook snapshot changed after authorization: {exc}",
+                )
+                book.status = "error"
+                _finish_outbox(session, operation.operation_id, "failed", operation.error)
+                session.add(operation)
+                session.add(book)
+                session.commit()
+                return operation
         if operation.expected_before_metadata is None or not _matches_patch(before, operation.expected_before_metadata):
             transition_operation(operation, "failed", error="live metadata changed after authorization")
             book.status = "suggest_fix"
@@ -215,7 +268,12 @@ class MetadataWriter:
             session.commit()
             return operation
         operation.before_metadata = before
-        operation.target_metadata = {**before, **operation.requested_patch}
+        target = dict(before)
+        if "edition_statement" in operation.requested_patch:
+            target.pop("#edition", None)
+            target.pop("edition_statement", None)
+        target.update(operation.requested_patch)
+        operation.target_metadata = target
         transition_operation(operation, "writing")
         session.add(operation)
         session.commit()
@@ -254,6 +312,33 @@ class MetadataWriter:
         operation.rollback_opf_sha256 = change.backup_opf_sha256
 
         transition_operation(operation, "verifying")
+        if operation.policy_version == "manifestation-v2":
+            try:
+                _verify_v2_live_files(session, self.cli, operation, self.cli.show_metadata(book.calibre_book_id))
+            except (OSError, ValueError) as exc:
+                transition_operation(operation, "restoring")
+                try:
+                    _restore_change(
+                        self.cli,
+                        book.calibre_book_id,
+                        change,
+                        self.apply_engine.artifacts_dir,
+                    )
+                    restored = self.cli.show_metadata(book.calibre_book_id)
+                    if not _matches_patch(restored, before):
+                        raise RuntimeError("restore verification failed after ebook snapshot change")
+                    transition_operation(operation, "restored", error=f"ebook changed during metadata write: {exc}")
+                    change.status = "failed_rolled_back"
+                except Exception as restore_exc:
+                    transition_operation(operation, "restore_failed", error=str(restore_exc))
+                    change.status = "failed_rollback_failed"
+                book.status = "error"
+                _finish_outbox(session, operation.operation_id, "failed", operation.error)
+                session.add(operation)
+                session.add(change)
+                session.add(book)
+                session.commit()
+                return operation
         observed = self.cli.show_metadata(book.calibre_book_id)
         operation.observed_metadata = observed
         if _matches_patch(observed, operation.target_metadata):
@@ -263,8 +348,12 @@ class MetadataWriter:
         else:
             transition_operation(operation, "restoring")
             try:
-                _require_artifact(change.backup_opf_path, change.backup_opf_sha256)
-                self.cli.set_metadata(book.calibre_book_id, Path(change.backup_opf_path))
+                _restore_change(
+                    self.cli,
+                    book.calibre_book_id,
+                    change,
+                    self.apply_engine.artifacts_dir,
+                )
                 restored = self.cli.show_metadata(book.calibre_book_id)
                 if not _matches_patch(restored, before):
                     raise RuntimeError("restore verification failed")
@@ -304,7 +393,12 @@ class MetadataWriter:
             session.add(book)
             session.commit()
             return operation
-        _require_artifact(change.backup_opf_path, change.backup_opf_sha256)
+        _require_artifact(
+            self.apply_engine.artifacts_dir,
+            change.backup_opf_path,
+            change.backup_opf_sha256,
+            max_bytes=MAX_OPF_BYTES,
+        )
 
         before = self.cli.show_metadata(book.calibre_book_id)
         if operation.expected_before_metadata is None or not _matches_patch(before, operation.expected_before_metadata):
@@ -316,10 +410,32 @@ class MetadataWriter:
             session.commit()
             return operation
         current_backup = self.apply_engine.artifacts_dir / "undo" / operation.operation_id / "current.opf"
-        current_backup.parent.mkdir(parents=True, exist_ok=True)
-        self.cli.export_opf(book.calibre_book_id, current_backup)
+        ensure_secure_directory(current_backup.parent)
+        exported_opf_sha256 = self.cli.export_opf(book.calibre_book_id, current_backup)
         operation.rollback_opf_path = str(current_backup)
-        operation.rollback_opf_sha256 = _sha256_file(current_backup)
+        operation.rollback_opf_sha256 = bind_exported_artifact(
+            self.apply_engine.artifacts_dir,
+            current_backup,
+            exported_opf_sha256,
+            max_bytes=MAX_OPF_BYTES,
+        )
+        if change.backup_cover_path:
+            current_cover = current_backup.with_suffix(".cover")
+            exported_cover_sha256 = self.cli.export_cover(book.calibre_book_id, current_cover)
+            if not exported_cover_sha256:
+                raise RuntimeError("current cover could not be backed up before undo")
+            operation.rollback_cover_path = str(current_cover)
+            operation.rollback_cover_sha256 = bind_exported_artifact(
+                self.apply_engine.artifacts_dir,
+                current_cover,
+                exported_cover_sha256,
+                max_bytes=MAX_COVER_BYTES,
+            )
+        if change.before_custom:
+            operation.rollback_custom = {
+                column: str(before.get(column) or before.get("edition_statement") or "")
+                for column in change.before_custom
+            }
         operation.change_id = change.id
         operation.before_metadata = before
         operation.target_metadata = change.before_metadata
@@ -327,7 +443,12 @@ class MetadataWriter:
         session.add(operation)
         session.commit()
 
-        self.cli.set_metadata(book.calibre_book_id, Path(change.backup_opf_path))
+        _restore_change(
+            self.cli,
+            book.calibre_book_id,
+            change,
+            self.apply_engine.artifacts_dir,
+        )
         transition_operation(operation, "verifying")
         observed = self.cli.show_metadata(book.calibre_book_id)
         operation.observed_metadata = observed
@@ -339,8 +460,18 @@ class MetadataWriter:
         else:
             transition_operation(operation, "restoring")
             try:
-                _require_artifact(str(current_backup), operation.rollback_opf_sha256)
-                self.cli.set_metadata(book.calibre_book_id, current_backup)
+                _require_artifact(
+                    self.apply_engine.artifacts_dir,
+                    str(current_backup),
+                    operation.rollback_opf_sha256,
+                    max_bytes=MAX_OPF_BYTES,
+                )
+                _restore_operation_rollback(
+                    self.cli,
+                    book.calibre_book_id,
+                    operation,
+                    self.apply_engine.artifacts_dir,
+                )
                 restored = self.cli.show_metadata(book.calibre_book_id)
                 if not _matches_patch(restored, before):
                     raise RuntimeError("undo rollback verification failed")
@@ -377,7 +508,19 @@ def fail_operation(session: Session, operation_id: str, error: str) -> None:
 
 
 def _matches_patch(observed: dict[str, Any], patch: dict[str, Any]) -> bool:
-    return all(observed.get(field) == expected for field, expected in patch.items())
+    for field, expected in patch.items():
+        if field == "edition_statement":
+            if str(observed.get("#edition") or observed.get("edition_statement") or "") != str(expected or ""):
+                return False
+        elif field == "cover" and isinstance(expected, dict):
+            cover_path = observed.get("cover")
+            if not isinstance(cover_path, str) or not Path(cover_path).is_file():
+                return False
+            if _sha256_file(Path(cover_path)) != expected.get("artifact_sha256"):
+                return False
+        elif observed.get(field) != expected:
+            return False
+    return True
 
 
 def _lease_active(expires_at: datetime) -> bool:
@@ -388,17 +531,122 @@ def _lease_active(expires_at: datetime) -> bool:
 
 
 def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _require_artifact(path_value: str, expected_sha256: str | None) -> Path:
+def _metadata_file_paths(metadata: dict[str, Any]) -> list[str]:
+    raw = metadata.get("formats")
+    if isinstance(raw, str):
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    if not isinstance(raw, list):
+        return []
+    paths: list[str] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            paths.append(item.strip())
+        elif isinstance(item, dict) and isinstance(item.get("path"), str):
+            paths.append(item["path"].strip())
+    return paths
+
+
+def _secure_library_file_sha256(path_value: str, library_root: Path) -> str:
     path = Path(path_value)
-    if expected_sha256 is None or not path.is_file() or _sha256_file(path) != expected_sha256:
-        raise RuntimeError("restore artifact is missing or has been tampered with")
+    if not path.is_absolute():
+        raise ValueError("ebook path is not absolute")
+    return sha256_file_beneath(library_root, path)
+
+
+def _verify_v2_live_files(
+    session: Session,
+    cli: CalibreCLI,
+    operation: OperationLedger,
+    live_metadata: dict[str, Any],
+) -> None:
+    if not operation.evidence_id:
+        raise ValueError("V2 operation has no evidence package")
+    _stored, package = load_v2_package(session, operation.evidence_id)
+    library_path = getattr(cli, "library_path", None)
+    if not isinstance(library_path, (str, Path)):
+        raise ValueError("V2 writer requires an explicit configured Calibre library path")
+    configured_root = Path(os.path.normpath(os.path.abspath(library_path)))
+    sealed_root = (
+        Path(os.path.normpath(os.path.abspath(package.snapshot.library_root)))
+        if package.snapshot.library_root is not None
+        else None
+    )
+    if sealed_root != configured_root:
+        raise ValueError("configured Calibre library differs from the sealed snapshot root")
+    live_paths = _metadata_file_paths(live_metadata)
+    if live_paths != package.snapshot.files:
+        raise ValueError("live Calibre format membership differs from the sealed snapshot")
+    expected_hashes = {item.path: item.sha256 for item in package.formats}
+    if list(expected_hashes) != package.snapshot.files:
+        raise ValueError("sealed format evidence is incomplete or reordered")
+    for path in live_paths:
+        if _secure_library_file_sha256(path, configured_root) != expected_hashes[path]:
+            raise ValueError(f"ebook content hash differs for {Path(path).name}")
+
+
+def _require_artifact(
+    artifacts_root: Path | None,
+    path_value: str,
+    expected_sha256: str | None,
+    *,
+    max_bytes: int,
+) -> Path:
+    if artifacts_root is None:
+        raise RuntimeError("recovery requires the configured artifact root")
+    path = Path(path_value)
+    verify_artifact(artifacts_root, path, expected_sha256, max_bytes=max_bytes)
     return path
 
 
-def _reconcile_undo(session: Session, cli: CalibreCLI, operation: OperationLedger) -> None:
+def _restore_change(
+    cli: CalibreCLI,
+    book_id: int,
+    change: Change,
+    artifacts_root: Path | None,
+) -> None:
+    if artifacts_root is None:
+        raise RuntimeError("recovery requires the configured artifact root")
+    opf = Path(change.backup_opf_path)
+    set_metadata_from_artifact(cli, book_id, artifacts_root, opf, change.backup_opf_sha256)
+    for column, value in (change.before_custom or {}).items():
+        cli.set_custom(book_id, column, str(value))
+    if change.backup_cover_path:
+        cover = Path(change.backup_cover_path)
+        set_cover_from_artifact(cli, book_id, artifacts_root, cover, change.backup_cover_sha256)
+
+
+def _restore_operation_rollback(
+    cli: CalibreCLI,
+    book_id: int,
+    operation: OperationLedger,
+    artifacts_root: Path | None,
+) -> None:
+    if operation.rollback_opf_path is None:
+        raise RuntimeError("operation rollback OPF is unavailable")
+    if artifacts_root is None:
+        raise RuntimeError("recovery requires the configured artifact root")
+    opf = Path(operation.rollback_opf_path)
+    set_metadata_from_artifact(cli, book_id, artifacts_root, opf, operation.rollback_opf_sha256)
+    for column, value in (operation.rollback_custom or {}).items():
+        cli.set_custom(book_id, column, str(value))
+    if operation.rollback_cover_path:
+        cover = Path(operation.rollback_cover_path)
+        set_cover_from_artifact(cli, book_id, artifacts_root, cover, operation.rollback_cover_sha256)
+
+
+def _reconcile_undo(
+    session: Session,
+    cli: CalibreCLI,
+    operation: OperationLedger,
+    artifacts_root: Path | None,
+) -> None:
     """Reconcile undo using its own target and pre-undo rollback artifact."""
     change_id = operation.change_id or operation.requested_patch.get("change_id")
     change = session.get(Change, change_id) if isinstance(change_id, int) else None
@@ -441,8 +689,7 @@ def _reconcile_undo(session: Session, cli: CalibreCLI, operation: OperationLedge
                 transition_operation(operation, "restoring")
             if operation.rollback_opf_path is None:
                 raise RuntimeError("undo rollback artifact is unavailable")
-            rollback = _require_artifact(operation.rollback_opf_path, operation.rollback_opf_sha256)
-            cli.set_metadata(book.calibre_book_id, rollback)
+            _restore_operation_rollback(cli, book.calibre_book_id, operation, artifacts_root)
             restored = cli.show_metadata(book.calibre_book_id)
             if not _matches_patch(restored, operation.before_metadata):
                 raise RuntimeError("undo rollback verification failed")

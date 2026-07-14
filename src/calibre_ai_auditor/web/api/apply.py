@@ -2,13 +2,16 @@ from collections.abc import Generator
 from typing import Any, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import update
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.apply.coordinator import (
     create_manual_authorization,
-    queue_approved_operations,
+    create_v2_manual_authorization,
+    load_v2_package,
     queue_undo_operation,
+    queue_v2_operations,
 )
 from calibre_ai_auditor.config.settings import load_settings
 from calibre_ai_auditor.storage.db import get_engine
@@ -23,6 +26,12 @@ from calibre_ai_auditor.web.schemas import (
 )
 
 router = APIRouter(prefix="", tags=["Review and Apply"])
+
+
+class V2ApplyRequest(BaseModel):
+    force: bool = False
+    evidence_ids: list[str] = Field(default_factory=list)
+    authorization_ids: dict[str, str] = Field(default_factory=dict)
 
 
 def get_session() -> Generator[Session, None, None]:
@@ -95,26 +104,10 @@ async def apply_patches(
     req: ApplyRequest = Body(default_factory=ApplyRequest),
     session: Session = Depends(get_session),
 ) -> Any:
-    if not req.force:
-        raise HTTPException(status_code=400, detail="Apply requires explicit confirmation with force=true")
-    book_keys = list(dict.fromkeys(key.strip() for key in req.book_keys if key.strip()))
-    if not book_keys:
-        raise HTTPException(status_code=400, detail="Apply requires at least one explicit book key")
-    result = queue_approved_operations(
-        session,
-        book_keys=book_keys,
-        authorization_ids=req.authorization_ids,
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy V1 apply is disabled; authorize and queue a sealed Manifestation V2 evidence package",
     )
-
-    return {
-        "status": "success",
-        "data": {
-            "message": f"Queued {len(result.queued_operation_ids)} metadata operations",
-            "queued_count": len(result.queued_operation_ids),
-            "operation_ids": result.queued_operation_ids,
-            "skipped_book_keys": result.skipped_book_keys,
-        },
-    }
 
 
 @router.post("/review/{book_key}/authorize", response_model=APIResponse)
@@ -148,6 +141,55 @@ async def authorize_patch(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     return {"status": "success", "data": {"authorization_id": authorization.authorization_id}}
+
+
+@router.post("/review/v2/{evidence_id}/authorize", response_model=APIResponse)
+async def authorize_v2_patch(
+    evidence_id: str,
+    req: ManualAuthorizationRequest,
+    session: Session = Depends(get_session),
+) -> Any:
+    try:
+        _stored, package = load_v2_package(session, evidence_id)
+        book = session.exec(select(BookRecord).where(BookRecord.book_key == package.book_key)).first()
+        if book is None:
+            raise ValueError("Book record for the evidence package is unavailable")
+        authorization = create_v2_manual_authorization(
+            session,
+            book=book,
+            package=package,
+            actor="api-key",
+            reason=req.reason,
+        )
+        session.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return {"status": "success", "data": {"authorization_id": authorization.authorization_id}}
+
+
+@router.post("/apply/v2", response_model=APIResponse)
+async def apply_v2_patches(
+    req: V2ApplyRequest = Body(default_factory=V2ApplyRequest),
+    session: Session = Depends(get_session),
+) -> Any:
+    if not req.force:
+        raise HTTPException(status_code=400, detail="V2 apply requires explicit confirmation with force=true")
+    evidence_ids = list(dict.fromkeys(item.strip() for item in req.evidence_ids if item.strip()))
+    if not evidence_ids:
+        raise HTTPException(status_code=400, detail="V2 apply requires at least one explicit evidence id")
+    result = queue_v2_operations(
+        session,
+        evidence_ids=evidence_ids,
+        authorization_ids=req.authorization_ids,
+    )
+    return {
+        "status": "success",
+        "data": {
+            "queued_count": len(result.queued_operation_ids),
+            "operation_ids": result.queued_operation_ids,
+            "skipped_book_keys": result.skipped_book_keys,
+        },
+    }
 
 
 @router.post("/undo/{change_id}", response_model=APIResponse)

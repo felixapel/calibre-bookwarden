@@ -1,7 +1,9 @@
 import tempfile
+import zipfile
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import pytest
 
 from calibre_ai_auditor.extractors.cover import extract_pdf_cover
 
@@ -31,8 +33,6 @@ def test_extract_pdf_cover() -> None:
 
 
 def test_extract_zip_cover() -> None:
-    import zipfile
-
     from calibre_ai_auditor.extractors.cover import extract_zip_cover
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -52,3 +52,19 @@ def test_extract_zip_cover() -> None:
         # Try with a non-existent ZIP file
         result_fail = extract_zip_cover(Path(tmp_dir) / "doesnotexist.cbz", output_jpg)
         assert result_fail is False
+
+
+def test_extract_zip_cover_rejects_oversized_archive_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from calibre_ai_auditor.extractors import cover as cover_module
+
+    archive_path = tmp_path / "oversized.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("page_001.jpg", b"123456")
+    monkeypatch.setattr(cover_module, "MAX_COVER_MEMBER_BYTES", 5)
+    target = tmp_path / "cover.jpg"
+
+    assert cover_module.extract_zip_cover(archive_path, target) is False
+    assert not target.exists()

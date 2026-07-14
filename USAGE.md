@@ -1,15 +1,47 @@
 # Usage Guide
 
-`calibre-ai-auditor` v1.0 gives you two ways to manage your Calibre library metadata:
+`calibre-ai-auditor` provides a Manifestation V2 CLI/API path plus the legacy
+V1 WebUI workflow:
 
-1.  **WebUI** — interactive review with the v1.0 per-field verdict rendering
-2.  **CLI** — automatable for batch runs and cron jobs
+1. **CLI/API (V2 default)** — exact-edition, all-format, sealed audits and
+   supervised per-package correction
+2. **WebUI (legacy V1 shape)** — interactive per-field `BookVerdict` review
 
 This guide walks through the canonical workflows for each.
 
 ---
 
-## 1. WebUI Workflow (Recommended)
+## 1. Manifestation V2 workflow (recommended)
+
+Run a shadow pilot; this never modifies Calibre:
+
+```bash
+bookaudit verify --pipeline v2 --limit 100 --use-ocr --format json > v2-pilot.json
+```
+
+For each book, V2 snapshots the current Calibre metadata, hashes and inspects
+every attached format, optionally OCRs PDF front matter, queries Google Books
+and Open Library by one exact checksum-valid ISBN, and persists a checksummed Tier
+A/B/C package. One book failure is recorded and the next book continues.
+
+- **Tier A**: exact internal and structured external manifestation evidence,
+  complete core-field agreement; review the canonical patch.
+- **Tier B**: missing/incomplete evidence, a single OCR/vision candidate, or an
+  unreadable format; human research is required.
+- **Tier C**: conflicting formats or exact provider records; do not apply.
+
+LLM and cover vision are recognition aids, not authorities. Use remote consent
+flags only after enabling the corresponding global privacy setting. All allowed
+egress produces a receipt in the sealed package.
+
+To correct a Tier A book, authorize its exact evidence ID through
+`POST /api/review/v2/{evidence_id}/authorize`, then queue it with
+`POST /api/apply/v2` and `force=true`. The sole writer verifies that Calibre
+metadata, attached-format membership, paths, and ebook hashes have not changed,
+creates rollback artifacts, applies canonical fields, and reads the result back.
+See [docs/API.md](docs/API.md) for request bodies.
+
+## 2. WebUI workflow (legacy V1 review shape)
 
 The WebUI is the primary interface for v1.0 content-ground verification.
 Designed for homelab use with multi-host inference.
@@ -41,8 +73,8 @@ across your library.
 - `needs_review` — high-risk flag (`author_swap`, `isbn_conflict`, etc.) requires human eyes
 - `defer` — insufficient signal to decide deterministically; LLM witness should resolve
 
-**Auto-apply semantics**: books marked `auto_apply_eligible: true` in the
-verdict are queued for the next `bookaudit apply` run.
+**Historical auto-apply flag**: `auto_apply_eligible` is still rendered for V1
+review compatibility, but no public legacy apply path consumes it.
 
 ### Review page — per-field verdicts
 
@@ -55,8 +87,8 @@ shows:
 - **Purple chip** — `Ambiguous` (deterministic engine couldn't decide; LLM witness will resolve)
 - **Risk badges** — `author_swap`, `isbn_conflict`, `wrong_book`, `series_mismatch`, `publisher_mismatch`
 
-The **auto-apply ready** badge appears when the book passes the conservative
-auto-apply gate. **manual review** means human approval is required.
+The historical **auto-apply ready** badge reflects the V1 rule result only; it
+does not authorize a write. **manual review** means human approval is required.
 
 ### Other pages
 
@@ -69,7 +101,7 @@ auto-apply gate. **manual review** means human approval is required.
 
 ---
 
-## 2. CLI Workflow
+## 3. Additional CLI workflows
 
 The CLI is ideal for batch jobs, CI, and offline single-file inspection.
 
@@ -83,24 +115,22 @@ bookaudit doctor
 bookaudit hosts
 ```
 
-### v1.0 content-ground verification
+### Manifestation V2 verification
 
 ```bash
-# Pilot: 100 books, no LLM, text output
-bookaudit verify --limit 100
+# Pilot: 100 books, local extraction/OCR, text output
+bookaudit verify --pipeline v2 --limit 100 --use-ocr
 
-# Pilot with LLM witness (slower, more accurate on ambiguous fields)
+# Add bounded LLM transcription evidence (still non-authoritative)
 bookaudit verify --limit 100 --use-llm
 
-# Full library as JSON (parseable, ~8k books/sec on dev container)
-bookaudit verify --limit 0 --format json > v1_audit.json
-
-# Apply auto-eligible fixes
-bookaudit apply --safe-only
-
-# Bulk undo a run
-bookaudit undo <run_id>
+# Full library as JSON; resume with the emitted run_id if interrupted
+bookaudit verify --limit 0 --format json > manifestation-v2-audit.json
 ```
+
+`bookaudit apply` is retired and exits nonzero; `POST /api/apply` returns HTTP
+410. Use the V2 authorization and queue endpoints. `bookaudit undo` accepts one numeric
+`change_id`, not a run ID.
 
 ### Single-file inspection (no Calibre library required)
 
@@ -121,24 +151,23 @@ bookaudit scan --limit 100
 # Run the v0.9 audit engine (one-shot LLM call per book)
 bookaudit audit --run latest
 
-# Apply approved fixes with OPF backup
-bookaudit apply --run latest
-
 # Roll back via OPF backup
 bookaudit undo <change_id>
 ```
 
 ---
 
-## 3. Real-world calibration on Unraid
+## 4. Real-world calibration
 
-Before relying on auto-apply in production, calibrate the thresholds
-against your actual library. The full procedure lives in
-[docs/calibration/v1.0_calibration_runbook.md](docs/calibration/v1.0_calibration_runbook.md).
+Use calibration to measure the pipeline against your actual library. It does
+not enable automatic writes. The full procedure lives in
+[docs/calibration/manifestation-v2-runbook.md](docs/calibration/manifestation-v2-runbook.md).
 
 Summary:
-1. Run a 100-book pilot: `bookaudit verify --limit 100 --format json > pilot.json`
-2. Manually classify 20 books: precision = TP / (TP + FP)
-3. If precision < 95%, tune `AUTO_APPLY_MIN_CONFIDENCE` in `verification/verdict.py`
-4. Re-run full library: `bookaudit verify --limit 0 --format json > full.json`
-5. Update [tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md) with your real numbers
+1. Run a shadow pilot and review exact manifestations, not just works.
+2. Label at least 100 packages, including at least 50 Tier A decisions.
+3. Generate an integrity-checksummed advisory report with `bookaudit calibrate-v2`.
+4. Require zero false hypothetical automatic writes and the configured
+   false-positive rate before considering any future authenticated gate.
+5. Repeat whenever policy, extractors, providers, models, or the representative
+   library distribution changes.

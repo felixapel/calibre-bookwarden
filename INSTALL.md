@@ -1,14 +1,18 @@
 # Installation Guide
 
-`calibre-ai-auditor` v1.0 can be installed natively for CLI use or deployed via
-Docker for the full WebUI experience. The Docker deployment is recommended
-for homelab use — it includes all sidecar services pre-configured.
+The `calibre-ai-auditor` development head can be installed natively for CLI
+use or deployed with Docker. Manifestation V2 verification is available in the
+CLI and API; the current WebUI review flow still renders the legacy V1 shape.
 
 ## Prerequisites
 
 - **Calibre**: Required (for native install) or available in the container (Docker)
 - **Python**: 3.12+ (for native install)
 - **Docker & Docker Compose**: Recommended for full stack deployment
+- **Linux kernel interfaces**: Required for supervised V2 writes. The writer
+  uses `/proc/self/fd`, inherited descriptors, and sealed `memfd` objects so
+  Calibre cannot reopen a substituted artifact pathname. Non-Linux native
+  installs remain suitable for shadow verification only.
 
 ### System packages (native install only)
 
@@ -34,7 +38,7 @@ The Docker deployment includes all sidecar services (**PostgreSQL**,
 
 1.  **Clone the Repository**:
     ```bash
-    git clone git@github.com:felixapel/calibre-ai-auditor.git
+    git clone http://192.168.0.122:3010/felix/calibre-ai-auditor.git
     cd calibre-ai-auditor
     ```
 

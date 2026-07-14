@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import typer
 from sqlalchemy import text
-from sqlmodel import Session, desc, select
+from sqlmodel import Session, col, desc, select
 
 from calibre_ai_auditor.apply.engine import ApplyEngine
 from calibre_ai_auditor.audit.engine import run_audit
@@ -23,7 +23,6 @@ from calibre_ai_auditor.storage.db import get_engine, init_db
 from calibre_ai_auditor.storage.models import (
     BookRecord,
     Change,
-    EvidencePackage,
     Run,
 )
 
@@ -223,67 +222,14 @@ def apply(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
 ) -> None:
     """
-    Apply approved fixes after backup.
+    Report the retired legacy apply path.
     """
-    settings: Settings = ctx.obj
-    if settings.profile == "production":
-        typer.secho(
-            "Direct CLI apply is disabled in production; queue through the authenticated API",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
-    engine = get_engine(settings)
-    cli = CalibreCLI(settings.library.path)
-    apply_engine = ApplyEngine(cli, settings.storage.artifacts_dir)
-
-    with Session(engine) as session:
-        final_run_id = run
-        if run == "latest":
-            run_stmt = select(Run).order_by(desc(Run.created_at)).limit(1)
-            r = session.exec(run_stmt).first()
-            if not r:
-                typer.secho("Error: No runs found.", fg=typer.colors.RED)
-                raise typer.Exit(1)
-            final_run_id = r.run_id
-
-        book_stmt = select(BookRecord).where(BookRecord.run_id == final_run_id)
-        if safe_only:
-            book_stmt = book_stmt.where(BookRecord.status == "suggest_fix")
-
-        books = session.exec(book_stmt).all()
-
-        if not books:
-            typer.echo("No applicable fixes found.")
-            return
-
-        typer.echo(f"Found {len(books)} fixes to apply.")
-        if not yes and not typer.confirm("Proceed with applying these changes?"):
-            raise typer.Abort()
-
-        for book in books:
-            ev_stmt = (
-                select(EvidencePackage)
-                .where(EvidencePackage.book_key == book.book_key)
-                .where(EvidencePackage.run_id == final_run_id)
-            )
-            pkg = session.exec(ev_stmt).first()
-            if not pkg or not pkg.decision:
-                continue
-
-            patch = pkg.decision.get("proposed_patch")
-            if not patch:
-                continue
-
-            typer.echo(f"  Applying fix to: {book.current_metadata.get('title')}...")
-            try:
-                change = apply_engine.apply_patch(session, book, patch)
-                session.add(change)
-                book.status = "applied"
-            except Exception as e:
-                typer.secho(f"    Failed: {e}", fg=typer.colors.RED)
-
-        session.commit()
-    typer.secho("Apply complete.", fg=typer.colors.GREEN)
+    _ = (ctx, run, safe_only, yes)
+    typer.secho(
+        "Legacy direct apply is disabled. Use the authenticated Manifestation V2 authorize/apply API.",
+        fg=typer.colors.RED,
+    )
+    raise typer.Exit(1)
 
 
 @app.command()
@@ -624,22 +570,159 @@ def config(
     typer.echo(json_lib.dumps(out, indent=2, default=str))
 
 
+@app.command("calibrate-v2")
+def calibrate_v2(
+    corpus: Annotated[
+        Path,
+        typer.Option("--corpus", help="Reviewed manifestation-v2 calibration corpus JSON"),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Destination for the advisory checksummed calibration report"),
+    ],
+    valid_days: Annotated[
+        int,
+        typer.Option("--valid-days", min=1, max=365, help="Report validity window"),
+    ] = 30,
+) -> None:
+    """Create an advisory V2 calibration report from reviewed labels."""
+    from calibre_ai_auditor.verification.calibration_v2 import (
+        create_report_from_labeled_corpus,
+        write_calibration_report,
+    )
+
+    try:
+        report = create_report_from_labeled_corpus(corpus, valid_days=valid_days)
+        write_calibration_report(report, output)
+    except (OSError, ValueError) as exc:
+        typer.secho(f"Calibration failed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    typer.echo(
+        f"Advisory checksummed calibration report: {output} "
+        f"(sample={report.sample_size}, Tier A={report.tier_a_decisions}, "
+        f"false_auto_apply={report.false_auto_apply_count})"
+    )
+
+
 @app.command()
 def verify(
     ctx: typer.Context,
     limit: Annotated[int, typer.Option("--limit", help="Max books to verify (0 = unlimited)")] = 50,
     library: Annotated[str | None, typer.Option("--library", help="Override library path")] = None,
     use_llm: Annotated[bool, typer.Option("--use-llm/--no-llm", help="Call LLM for ambiguous fields")] = False,
+    use_ocr: Annotated[
+        bool,
+        typer.Option("--use-ocr/--no-ocr", help="OCR bounded PDF front matter before exact provider lookup"),
+    ] = True,
+    use_vision: Annotated[
+        bool,
+        typer.Option("--use-vision/--no-vision", help="Use cover vision as non-authoritative review evidence"),
+    ] = False,
     format: Annotated[str, typer.Option("--format", help="Report format: text|json")] = "text",
+    pipeline: Annotated[str, typer.Option("--pipeline", help="Verification contract: v2|v1")] = "v2",
+    run_id: Annotated[str | None, typer.Option("--run-id", help="Resume an existing V2 run id")] = None,
+    allow_remote_text: Annotated[
+        bool,
+        typer.Option(
+            "--allow-remote-text/--deny-remote-text",
+            help="Per-run consent for bounded text egress to a remote LLM",
+        ),
+    ] = False,
+    allow_remote_images: Annotated[
+        bool,
+        typer.Option(
+            "--allow-remote-images/--deny-remote-images",
+            help="Per-run consent for bounded cover egress to a remote vision model",
+        ),
+    ] = False,
 ) -> None:
     """
-    v1.0 ContentVerificationEngine: verify Calibre metadata against book content.
+    Verify Calibre metadata against exact book content.
 
-    Runs the deterministic engine on every book in the library.  With --use-llm,
-    ambiguous fields are sent to the configured LLM for adjudication.  Outputs
-    a per-book report with field-level verdicts.
+    Manifestation V2 is the default: all formats, exact-ID providers, sealed
+    evidence, and shadow-only decisions. Use --pipeline v1 for the legacy
+    ContentVerificationEngine.
     """
     import time as _t
+
+    if pipeline == "v2":
+        from calibre_ai_auditor.providers.evidence_v2 import CompositeEvidenceEnricher
+        from calibre_ai_auditor.storage.models import VerificationResult
+        from calibre_ai_auditor.verification.pipeline_v2 import AuditMode
+        from calibre_ai_auditor.verification.service_v2 import (
+            build_v2_enricher,
+            run_persisted_library_audit,
+        )
+
+        v2_settings: Settings = ctx.obj
+        v2_library_path = Path(library) if library else v2_settings.library.path
+        if not v2_library_path:
+            typer.secho("Error: No library path configured.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if format not in {"text", "json"}:
+            typer.secho("Error: --format must be text or json.", fg=typer.colors.RED)
+            raise typer.Exit(2)
+        init_db(v2_settings)
+        database_engine = get_engine(v2_settings)
+        final_run_id = run_id or f"verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
+        try:
+            enricher = build_v2_enricher(
+                v2_settings,
+                use_llm=use_llm,
+                use_ocr=use_ocr,
+                use_vision=use_vision,
+                run_allows_remote_text=allow_remote_text,
+                run_allows_remote_images=allow_remote_images,
+            )
+        except ValueError as exc:
+            typer.secho(f"Error: {exc}", fg=typer.colors.RED)
+            raise typer.Exit(2) from exc
+        # Keep the protocol dependency explicit for type checkers and callers
+        # that replace the configured enrichers in tests.
+        assert isinstance(enricher, CompositeEvidenceEnricher)
+        started = _t.monotonic()
+        v2_result = asyncio.run(
+            run_persisted_library_audit(
+                cli=CalibreCLI(v2_library_path),
+                database_engine=database_engine,
+                run_id=final_run_id,
+                limit=limit,
+                mode=AuditMode.shadow,
+                evidence_enricher=enricher,
+                use_llm=use_llm,
+                settings=v2_settings,
+            )
+        )
+        elapsed = _t.monotonic() - started
+        with Session(database_engine) as result_session:
+            stored_v2 = result_session.exec(
+                select(VerificationResult)
+                .where(VerificationResult.run_id == final_run_id)
+                .order_by(col(VerificationResult.id))
+            ).all()
+        v2_verdicts = [item.verdict for item in stored_v2 if item.evidence_id]
+        if format == "json":
+            typer.echo(
+                json_lib.dumps(
+                    {"run_id": final_run_id, "elapsed_seconds": elapsed, "verdicts": v2_verdicts},
+                    indent=2,
+                    default=str,
+                )
+            )
+        else:
+            typer.echo(f"Verified {len(v2_verdicts)} books (run_id={final_run_id}, status={v2_result.status.value})")
+            for v2_verdict in v2_verdicts:
+                identity = v2_verdict.get("identity", {})
+                typer.echo(
+                    f"  {v2_verdict.get('book_key', '?'):20s} "
+                    f"state={v2_verdict.get('state', '?'):10s} tier={identity.get('tier', '?')} "
+                    f"flags={','.join(identity.get('risk_flags', [])) or '-'}"
+                )
+            typer.echo(f"Done in {elapsed:.1f}s")
+        return
+    if pipeline != "v1":
+        typer.secho("Error: --pipeline must be v2 or v1.", fg=typer.colors.RED)
+        raise typer.Exit(2)
 
     from calibre_ai_auditor.verification import (
         ContentVerificationEngine,
@@ -913,7 +996,7 @@ def writer(
     # connection while another writer takes ownership.
     session = Session(bind=writer_guard if writer_guard is not None else engine)
     try:
-        reconciled = reconcile_incomplete_operations(session, cli)
+        reconciled = reconcile_incomplete_operations(session, cli, settings.storage.artifacts_dir)
         if reconciled:
             typer.echo(f"Reconciled {len(reconciled)} interrupted operations")
 

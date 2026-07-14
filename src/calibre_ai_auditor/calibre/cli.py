@@ -1,9 +1,13 @@
+import hashlib
 import json
 import logging
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, cast
+
+from calibre_ai_auditor.security.files import copy_file_beneath, write_bytes_beneath
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +26,22 @@ class CalibreCLI:
         self.library_path = library_path
 
     def _run_command(
-        self, cmd: list[str], capture_output: bool = True, timeout: float = 30.0
+        self,
+        cmd: list[str],
+        capture_output: bool = True,
+        timeout: float = 30.0,
+        pass_fds: tuple[int, ...] = (),
     ) -> subprocess.CompletedProcess[str]:
         try:
             logger.debug(f"Running Calibre command: {' '.join(cmd)}")
-            return subprocess.run(cmd, capture_output=capture_output, text=True, check=True, timeout=timeout)
+            return subprocess.run(
+                cmd,
+                capture_output=capture_output,
+                text=True,
+                check=True,
+                timeout=timeout,
+                pass_fds=pass_fds,
+            )
         except subprocess.TimeoutExpired as e:
             logger.error(f"Calibre command timed out after {timeout}s: {' '.join(cmd)}")
             raise CalibreCLIError(f"Command '{' '.join(cmd)}' timed out.") from e
@@ -93,15 +108,16 @@ class CalibreCLI:
         result = self._run_command(cmd)
         return result.stdout
 
-    def export_opf(self, book_id: int, output_path: Path) -> None:
+    def export_opf(self, book_id: int, output_path: Path) -> str:
         """Wraps 'calibredb export_metadata --as-opf'."""
         cmd = ["calibredb", "show_metadata", "--as-opf", str(book_id)]
         if self.library_path:
             cmd.extend(["--with-library", str(self.library_path)])
 
         result = self._run_command(cmd)
-        with open(output_path, "w") as f:
-            f.write(result.stdout)
+        payload = result.stdout.encode()
+        write_bytes_beneath(output_path.parent, output_path, payload)
+        return hashlib.sha256(payload).hexdigest()
 
     def set_metadata(self, book_id: int, opf_path: Path) -> None:
         """Apply a full OPF snapshot, including clearing absent optional fields."""
@@ -118,6 +134,88 @@ class CalibreCLI:
             cmd.extend(["--with-library", str(self.library_path)])
 
         self._run_command(cmd)
+
+    def set_metadata_from_fd(self, book_id: int, descriptor: int) -> None:
+        """Apply OPF bytes from an inherited, already-verified descriptor."""
+        opf_path = Path(f"/proc/self/fd/{descriptor}")
+        missing_fields = self._missing_optional_opf_fields(opf_path)
+        if missing_fields:
+            clear_cmd = ["calibredb", "set_metadata", str(book_id)]
+            for field in missing_fields:
+                clear_cmd.extend(["--field", f"{field}:"])
+            if self.library_path:
+                clear_cmd.extend(["--with-library", str(self.library_path)])
+            self._run_command(clear_cmd)
+        cmd = ["calibredb", "set_metadata", str(book_id), str(opf_path)]
+        if self.library_path:
+            cmd.extend(["--with-library", str(self.library_path)])
+        self._run_command(cmd, pass_fds=(descriptor,))
+
+    def list_metadata_fields(self) -> set[str]:
+        """Return fields accepted by ``calibredb set_metadata --field``."""
+        cmd = ["calibredb", "set_metadata", "--list-fields"]
+        if self.library_path:
+            cmd.extend(["--with-library", str(self.library_path)])
+        result = self._run_command(cmd)
+        return {
+            token for line in result.stdout.splitlines() for token in re.findall(r"#?[A-Za-z_][A-Za-z0-9_-]*", line)
+        }
+
+    def custom_columns(self) -> set[str]:
+        cmd = ["calibredb", "custom_columns"]
+        if self.library_path:
+            cmd.extend(["--with-library", str(self.library_path)])
+        result = self._run_command(cmd)
+        labels: set[str] = set()
+        for line in result.stdout.splitlines():
+            labels.update(match.lstrip("#") for match in re.findall(r"#?[A-Za-z_][A-Za-z0-9_-]*", line))
+        return labels
+
+    def set_custom(self, book_id: int, column: str, value: str) -> None:
+        label = column.strip().lstrip("#")
+        if not label or label not in self.custom_columns():
+            raise CalibreCLIError(f"Required custom column #{label or '?'} is unavailable")
+        cmd = ["calibredb", "set_custom", label, str(book_id), value]
+        if self.library_path:
+            cmd.extend(["--with-library", str(self.library_path)])
+        self._run_command(cmd)
+
+    def set_cover(self, book_id: int, cover_path: Path) -> None:
+        if "cover" not in self.list_metadata_fields():
+            raise CalibreCLIError("This Calibre version does not expose the cover metadata field")
+        cmd = ["calibredb", "set_metadata", str(book_id), "--field", f"cover:{cover_path}"]
+        if self.library_path:
+            cmd.extend(["--with-library", str(self.library_path)])
+        self._run_command(cmd)
+
+    def set_cover_from_fd(self, book_id: int, descriptor: int) -> None:
+        """Apply cover bytes from an inherited, already-verified descriptor."""
+        if "cover" not in self.list_metadata_fields():
+            raise CalibreCLIError("This Calibre version does not expose the cover metadata field")
+        cover_path = f"/proc/self/fd/{descriptor}"
+        cmd = ["calibredb", "set_metadata", str(book_id), "--field", f"cover:{cover_path}"]
+        if self.library_path:
+            cmd.extend(["--with-library", str(self.library_path)])
+        self._run_command(cmd, pass_fds=(descriptor,))
+
+    def export_cover(self, book_id: int, output_path: Path) -> str | None:
+        """Copy the current library cover to a rollback artifact, if present."""
+        metadata = self.show_metadata(book_id)
+        raw_path = metadata.get("cover")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return None
+        source = Path(raw_path)
+        source_root = self.library_path if self.library_path is not None else source.parent
+        try:
+            return copy_file_beneath(
+                source_root,
+                source,
+                output_path,
+                max_bytes=20 * 1024 * 1024,
+                target_root=output_path.parent,
+            )
+        except (OSError, RuntimeError) as exc:
+            raise CalibreCLIError("Calibre returned an unsafe cover path") from exc
 
     @staticmethod
     def _missing_optional_opf_fields(opf_path: Path) -> list[str]:

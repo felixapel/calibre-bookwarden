@@ -128,11 +128,11 @@ def test_lock_field_persists(test_db: Any) -> None:
         assert book.field_locks.get("title") == "Locked Title"
 
 
-def test_apply_only_queues_operations(test_db: Any) -> None:
+def test_legacy_apply_endpoint_is_gone(test_db: Any) -> None:
     response = client.post("/api/apply", json={"force": True, "book_keys": ["calibre:1"]})
 
-    assert response.status_code == 200
-    assert response.json()["data"]["queued_count"] == 0
+    assert response.status_code == 410
+    assert "Manifestation V2" in response.json()["detail"]
 
 
 def test_reject_patch(test_db: Any) -> None:

@@ -10,6 +10,8 @@ from sqlmodel import Session, col, select
 
 from calibre_ai_auditor.storage.models import BookRecord, Change, EvidencePackage, ManualAuthorization, OperationLedger
 from calibre_ai_auditor.storage.operations import create_operation
+from calibre_ai_auditor.verification.identity_v2 import CanonicalPatch, IdentityTier
+from calibre_ai_auditor.verification.pipeline_v2 import EvidencePackageV2
 from calibre_ai_auditor.verification.restore import ConservativeAutoApply
 from calibre_ai_auditor.verification.verdict import BookVerdict
 
@@ -23,6 +25,118 @@ def _hash_json(value: object) -> str:
 
 def _hash_verdict(verdict: BookVerdict) -> str:
     return _hash_json(verdict.model_dump(mode="json", exclude={"created_at"}))
+
+
+def _canonicalize_legacy_patch(raw_patch: dict[str, object]) -> dict[str, object]:
+    patch = dict(raw_patch)
+    if "published_date" in patch:
+        if "pubdate" in patch:
+            raise ValueError("legacy and canonical publication date fields conflict")
+        patch["pubdate"] = patch.pop("published_date")
+    if "language" in patch:
+        if "languages" in patch:
+            raise ValueError("legacy and canonical language fields conflict")
+        language = patch.pop("language")
+        patch["languages"] = language if isinstance(language, list) else [language]
+    return CanonicalPatch.model_validate(patch).model_dump(mode="json", exclude_none=True)
+
+
+def load_v2_package(session: Session, evidence_id: str) -> tuple[EvidencePackage, EvidencePackageV2]:
+    stored = session.exec(select(EvidencePackage).where(EvidencePackage.evidence_id == evidence_id)).first()
+    if stored is None or stored.schema_version != 2 or not stored.observations:
+        raise ValueError("sealed V2 evidence package is unavailable")
+    package = EvidencePackageV2.model_validate(stored.observations)
+    if (
+        not package.verify_seal()
+        or package.evidence_id != stored.evidence_id
+        or package.book_key != stored.book_key
+        or package.run_id != stored.run_id
+        or stored.current != package.snapshot.current_metadata
+        or stored.extracted != package.identity.model_dump(mode="json")
+    ):
+        raise ValueError("V2 evidence package identity or seal is invalid")
+    return stored, package
+
+
+def _book_file_paths(book: BookRecord) -> list[str]:
+    paths: list[str] = []
+    for item in book.files or []:
+        if isinstance(item, dict) and isinstance(item.get("path"), str):
+            paths.append(item["path"])
+    return paths
+
+
+def _validate_v2_book_snapshot(book: BookRecord, package: EvidencePackageV2) -> None:
+    if (
+        package.error is not None
+        or package.state.value != "shadowed"
+        or book.book_key != package.book_key
+        or book.run_id != package.run_id
+        or book.calibre_book_id != package.snapshot.calibre_book_id
+        or book.current_metadata != package.snapshot.current_metadata
+        or _book_file_paths(book) != package.snapshot.files
+    ):
+        raise ValueError("persisted book no longer matches the exact sealed V2 snapshot")
+
+
+def _v2_patch(package: EvidencePackageV2, book: BookRecord) -> dict[str, object]:
+    patch = CanonicalPatch.model_validate(package.identity.auto_patch).model_dump(mode="json", exclude_none=True)
+    locks = set(book.field_locks or {})
+    return {field: value for field, value in patch.items() if field not in locks}
+
+
+def _current_value_for_patch(book: BookRecord, field: str) -> object:
+    """Map a canonical V2 field to its value in the Calibre snapshot."""
+    if field == "edition_statement":
+        return book.current_metadata.get("#edition", book.current_metadata.get("edition_statement"))
+    return book.current_metadata.get(field)
+
+
+def create_v2_manual_authorization(
+    session: Session,
+    *,
+    book: BookRecord,
+    package: EvidencePackageV2,
+    actor: str,
+    reason: str,
+) -> ManualAuthorization:
+    if not actor.strip() or not reason.strip() or not package.verify_seal() or package.package_sha256 is None:
+        raise ValueError("actor, reason, and a valid sealed package are required")
+    if package.book_key != book.book_key or package.run_id != book.run_id:
+        raise ValueError("evidence package does not belong to the current book snapshot")
+    _validate_v2_book_snapshot(book, package)
+    patch = _v2_patch(package, book)
+    if package.identity.tier is not IdentityTier.tier_a or not patch:
+        raise ValueError("only a Tier A package with a non-empty canonical patch can be authorized")
+    authorization = ManualAuthorization(
+        authorization_id=str(uuid4()),
+        book_key=book.book_key,
+        run_id=book.run_id,
+        verdict_hash=package.package_sha256,
+        patch_hash=_hash_json(patch),
+        actor=actor.strip(),
+        reason=reason.strip(),
+    )
+    session.add(authorization)
+    session.flush()
+    return authorization
+
+
+def _v2_authorization_matches(
+    authorization: ManualAuthorization | None,
+    *,
+    book: BookRecord,
+    package: EvidencePackageV2,
+    patch: dict[str, object],
+) -> bool:
+    return bool(
+        authorization
+        and package.package_sha256
+        and authorization.book_key == book.book_key
+        and authorization.run_id == book.run_id
+        and authorization.verdict_hash == package.package_sha256
+        and authorization.patch_hash == _hash_json(patch)
+    )
 
 
 def create_manual_authorization(
@@ -73,6 +187,9 @@ class CoordinationResult:
 
 def validate_apply_operation(session: Session, operation: OperationLedger, book: BookRecord) -> None:
     """Revalidate a sealed queued operation at the privileged writer boundary."""
+    if operation.policy_version == "manifestation-v2":
+        _validate_v2_apply_operation(session, operation, book)
+        return
     if (
         operation.operation_type != "apply_metadata"
         or operation.policy_version != "v1"
@@ -92,7 +209,8 @@ def validate_apply_operation(session: Session, operation: OperationLedger, book:
     verdict = BookVerdict.model_validate(package.decision)
     if operation.verdict_hash != _hash_verdict(verdict):
         raise ValueError("persisted verdict changed after authorization")
-    patch = {key: value for key, value in verdict.proposed_patch.items() if key not in (book.field_locks or {})}
+    raw_patch = {key: value for key, value in verdict.proposed_patch.items() if key not in (book.field_locks or {})}
+    patch = _canonicalize_legacy_patch(raw_patch)
     if patch != operation.requested_patch:
         raise ValueError("authorized patch no longer matches the operation")
     eligible, _ = ConservativeAutoApply(dry_run=False).is_eligible(verdict)
@@ -105,6 +223,32 @@ def validate_apply_operation(session: Session, operation: OperationLedger, book:
         ).first()
     if not eligible and not _authorization_matches(authorization, book=book, verdict=verdict):
         raise ValueError("operation is no longer eligible or exactly authorized")
+
+
+def _validate_v2_apply_operation(session: Session, operation: OperationLedger, book: BookRecord) -> None:
+    if (
+        operation.operation_type != "apply_metadata"
+        or not operation.evidence_id
+        or operation.run_id != book.run_id
+        or operation.calibre_book_id != book.calibre_book_id
+        or operation.field_locks_hash != _hash_json(book.field_locks or {})
+    ):
+        raise ValueError("V2 operation identity changed after authorization")
+    _stored, package = load_v2_package(session, operation.evidence_id)
+    _validate_v2_book_snapshot(book, package)
+    patch = _v2_patch(package, book)
+    if (
+        package.identity.tier is not IdentityTier.tier_a
+        or package.package_sha256 != operation.verdict_hash
+        or patch != operation.requested_patch
+        or operation.patch_hash != _hash_json(patch)
+    ):
+        raise ValueError("V2 evidence seal or canonical patch changed after authorization")
+    authorization = session.exec(
+        select(ManualAuthorization).where(ManualAuthorization.authorization_id == operation.authorization_id)
+    ).first()
+    if not _v2_authorization_matches(authorization, book=book, package=package, patch=patch):
+        raise ValueError("V2 operation lacks an exact manual authorization")
 
 
 def queue_undo_operation(session: Session, change: Change) -> str:
@@ -161,7 +305,12 @@ def queue_approved_operations(
             skipped.append(book.book_key)
             continue
 
-        patch = {key: value for key, value in verdict.proposed_patch.items() if key not in (book.field_locks or {})}
+        raw_patch = {key: value for key, value in verdict.proposed_patch.items() if key not in (book.field_locks or {})}
+        try:
+            patch = _canonicalize_legacy_patch(raw_patch)
+        except ValueError:
+            skipped.append(book.book_key)
+            continue
         if not patch:
             skipped.append(book.book_key)
             continue
@@ -198,5 +347,69 @@ def queue_approved_operations(
         else:
             skipped.append(book.book_key)
 
+    session.commit()
+    return CoordinationResult(queued_operation_ids=queued, skipped_book_keys=skipped)
+
+
+def queue_v2_operations(
+    session: Session,
+    *,
+    evidence_ids: list[str],
+    authorization_ids: dict[str, str],
+) -> CoordinationResult:
+    queued: list[str] = []
+    skipped: list[str] = []
+    for evidence_id in dict.fromkeys(evidence_ids):
+        try:
+            _stored, package = load_v2_package(session, evidence_id)
+            book = session.exec(select(BookRecord).where(BookRecord.book_key == package.book_key)).first()
+            if book is None or book.run_id != package.run_id or package.identity.tier is not IdentityTier.tier_a:
+                raise ValueError("book snapshot or Tier A identity is unavailable")
+            _validate_v2_book_snapshot(book, package)
+            patch = _v2_patch(package, book)
+            if not patch:
+                raise ValueError("canonical patch is empty")
+            authorization_id = authorization_ids.get(evidence_id)
+            authorization = (
+                session.exec(
+                    select(ManualAuthorization).where(ManualAuthorization.authorization_id == authorization_id)
+                ).first()
+                if authorization_id
+                else None
+            )
+            if authorization is None or not _v2_authorization_matches(
+                authorization,
+                book=book,
+                package=package,
+                patch=patch,
+            ):
+                raise ValueError("exact manual authorization is required")
+            operation = create_operation(
+                session,
+                idempotency_key=f"apply-v2:{package.evidence_id}:{_hash_json(patch)}",
+                operation_type="apply_metadata",
+                book_key=book.book_key,
+                run_id=book.run_id,
+                requested_patch=patch,
+                authorization_id=authorization.authorization_id,
+                calibre_book_id=book.calibre_book_id,
+                verdict_hash=package.package_sha256,
+                patch_hash=_hash_json(patch),
+                field_locks_hash=_hash_json(book.field_locks or {}),
+                expected_before_metadata={field: _current_value_for_patch(book, field) for field in patch},
+                policy_version="manifestation-v2",
+                evidence_id=package.evidence_id,
+            )
+            if operation.state != "requested":
+                raise ValueError("operation was already queued")
+            book.status = "apply_queued"
+            session.add(book)
+            queued.append(operation.operation_id)
+        except ValueError:
+            try:
+                _stored, package = load_v2_package(session, evidence_id)
+                skipped.append(package.book_key)
+            except ValueError:
+                skipped.append(evidence_id)
     session.commit()
     return CoordinationResult(queued_operation_ids=queued, skipped_book_keys=skipped)

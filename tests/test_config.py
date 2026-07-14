@@ -29,6 +29,21 @@ def test_load_settings_yaml(tmp_path: Any) -> None:
     assert str(settings.library.path) == "/tmp/lib"
 
 
+def test_manifestation_v2_recognition_defaults_are_bounded_and_local_first(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    settings = load_settings()
+
+    assert settings.recognition_v2.ocr.backends == ["tesseract"]
+    assert settings.recognition_v2.ocr.max_pages == 6
+    assert settings.recognition_v2.vision.enabled is False
+    assert settings.privacy.allow_remote_images is False
+    assert settings.manifestation_v2.auto_apply.enabled is False
+    assert settings.manifestation_v2.auto_apply.calibration_report is None
+
+
 def test_nested_environment_overrides_yaml(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "config.yml"
     config_path.write_text("database:\n  backend: sqlite\n  postgres_dsn: postgresql+psycopg://yaml.invalid/db\n")

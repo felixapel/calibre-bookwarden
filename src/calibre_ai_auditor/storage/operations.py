@@ -38,6 +38,8 @@ def create_operation(
     patch_hash: str | None = None,
     field_locks_hash: str | None = None,
     expected_before_metadata: dict[str, Any] | None = None,
+    policy_version: str = "v1",
+    evidence_id: str | None = None,
 ) -> OperationLedger:
     """Create one operation and outbox event, or return its prior retry."""
     existing = session.exec(select(OperationLedger).where(OperationLedger.idempotency_key == idempotency_key)).first()
@@ -57,6 +59,8 @@ def create_operation(
         patch_hash=patch_hash,
         field_locks_hash=field_locks_hash,
         expected_before_metadata=expected_before_metadata,
+        policy_version=policy_version,
+        evidence_id=evidence_id,
     )
     session.add(operation)
     session.add(
