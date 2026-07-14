@@ -26,6 +26,8 @@ def test_clean_database_upgrades_and_downgrades(tmp_path: Path) -> None:
     assert "verificationrun" in tables
     assert "verificationresult" in tables
     assert "manualauthorization" in tables
+    assert "pilotsession" in tables
+    assert "operationincidentacknowledgement" in tables
     inspector = inspect(create_engine(f"sqlite:///{database_path}"))
     assert {column["name"] for column in inspector.get_columns("evidencepackage")} >= {
         "schema_version",
@@ -46,9 +48,19 @@ def test_clean_database_upgrades_and_downgrades(tmp_path: Path) -> None:
     }
     assert {column["name"] for column in inspector.get_columns("operationledger")} >= {
         "evidence_id",
+        "pilot_id",
         "rollback_cover_path",
         "rollback_cover_sha256",
         "rollback_custom",
+    }
+    assert {
+        constraint["name"] for constraint in inspector.get_check_constraints("operationincidentacknowledgement")
+    } >= {
+        "ck_incident_ack_actor_length",
+        "ck_incident_ack_reason_length",
+    }
+    assert {foreign_key["name"] for foreign_key in inspector.get_foreign_keys("operationincidentacknowledgement")} == {
+        "fk_incident_ack_operation"
     }
 
     command.downgrade(config, "base")

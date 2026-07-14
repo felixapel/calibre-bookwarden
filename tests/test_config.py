@@ -42,6 +42,8 @@ def test_manifestation_v2_recognition_defaults_are_bounded_and_local_first(
     assert settings.privacy.allow_remote_images is False
     assert settings.manifestation_v2.auto_apply.enabled is False
     assert settings.manifestation_v2.auto_apply.calibration_report is None
+    assert settings.manifestation_v2.supervised_pilot.enabled is False
+    assert settings.manifestation_v2.supervised_pilot.max_operations == 5
 
 
 def test_nested_environment_overrides_yaml(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:

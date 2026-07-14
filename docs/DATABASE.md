@@ -43,7 +43,8 @@ Regardless of the backend, the database serves as the system-of-record for:
 
 ## Manifestation V2 records
 
-Alembic head `e91a7f42c6b4` adds the V2 contract without reinterpreting legacy
+Alembic head `a72c9d4e8f31` adds the supervised-pilot binding to the V2 contract
+without reinterpreting legacy
 rows:
 
 - `VerificationRun.pipeline_version` and `mode` distinguish V1/legacy from
@@ -53,7 +54,20 @@ rows:
 - `EvidencePackage.schema_version=2` stores the complete checksummed package in
   `observations`; `decision` remains null to prevent accidental legacy apply.
 - `OperationLedger.evidence_id` binds an authorized writer operation to the
-  exact package.
+  exact package; `pilot_id` binds V2 writes to one persisted pilot session.
+- `PilotSession` stores the immutable library-root hash, release digest,
+  Alembic revision, max-five reservation budget and open/stopped state. The app
+  role can create/update it; the writer can only read it. Both queueing and the
+  writer compare its reservation counter with the count of immutable
+  pilot-bound operations, so resetting the app-writable counter fails closed.
+- `OperationIncidentAcknowledgement` is keyed by the exact operation ID and is
+  append-only at the PostgreSQL ACL boundary: the app may insert/select, while
+  neither runtime role may update or delete it. It records operator, reason and
+  timestamp for a reconciled terminal V2 `failed` operation only after the
+  operation's exact `PilotSession` is stopped under lock, without rewriting
+  ledger or outbox history or reopening that ID. Queue and metrics rederive
+  validity from the linked operation, failed outbox, stopped pilot and absent
+  book lease; acknowledgement-row presence alone grants nothing.
 - `Change` and `OperationLedger` retain cover/custom-column backup paths, hashes,
   and rollback values for apply, undo, and crash reconciliation.
 

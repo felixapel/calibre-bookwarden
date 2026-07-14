@@ -56,3 +56,51 @@ def test_placeholders_shared_secrets_and_mutable_image_fail(tmp_path: Path) -> N
     assert any("distinct" in error for error in errors)
     assert any("immutable" in error for error in errors)
     assert any("chmod 600" in error for error in errors)
+
+
+def test_supervised_pilot_requires_exact_runtime_binding(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    content = _valid_env(library, backups)
+    content += f"""\
+BOOKAUDIT_REQUIRE_WRITER_READY=true
+BOOKAUDIT_MANIFESTATION_V2__AUTO_APPLY__ENABLED=false
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=true
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__PILOT_ID=pilot-2026-07-14
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__RELEASE_DIGEST=sha256:{"a" * 64}
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__MAX_OPERATIONS=5
+"""
+    env.write_text(content)
+    env.chmod(0o600)
+
+    assert MODULE.validate(env) == []
+
+
+def test_supervised_pilot_rejects_unsafe_or_mismatched_binding(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    content = _valid_env(library, backups)
+    content += f"""\
+BOOKAUDIT_REQUIRE_WRITER_READY=false
+BOOKAUDIT_MANIFESTATION_V2__AUTO_APPLY__ENABLED=true
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=true
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__PILOT_ID=
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__RELEASE_DIGEST=sha256:{"b" * 64}
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__MAX_OPERATIONS=6
+"""
+    env.write_text(content)
+    env.chmod(0o600)
+
+    errors = MODULE.validate(env)
+
+    assert any("pilot ID" in error for error in errors)
+    assert any("must match BOOKAUDIT_IMAGE" in error for error in errors)
+    assert any("between 1 and 5" in error for error in errors)
+    assert any("writer readiness" in error for error in errors)
+    assert any("auto-apply" in error for error in errors)

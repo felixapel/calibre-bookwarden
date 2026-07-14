@@ -78,8 +78,10 @@ BOOKAUDIT_REQUIRE_WRITER_READY=true docker compose up -d --force-recreate app
 Confirm authenticated `/api/health/ready` after re-enabling the writer gate. A
 clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12 restored the then
 current Alembic head `b18f4c2d7a90` and the runtime ACLs successfully. The
-Manifestation V2 development head is now `e91a7f42c6b4`; repeat the clean
-upgrade/downgrade and backup/restore drill before promoting that schema.
+Manifestation V2 supervised-pilot development head is now `a72c9d4e8f31`;
+repeat the clean upgrade and backup/restore drill before promoting that schema.
+Its downgrade refuses to discard any persisted pilot, pilot-bound operation, or
+incident acknowledgement.
 
 ## Upgrade
 
@@ -106,11 +108,66 @@ release path only for an explicitly authorized release operation.
 
 The full production profile sets `BOOKAUDIT_REQUIRE_WRITER_READY=true`. Once the
 writer is enabled, `/api/health/ready` and the writer container healthcheck both
-require a fresh Valkey heartbeat. During the temporary read-only upgrade gate,
-set it to `false` for the app only; restore it to `true` before declaring the
-write-enabled deployment healthy.
+require a fresh Valkey heartbeat. When the supervised pilot is enabled,
+readiness additionally requires its exact pilot ID, max operations, release
+digest, Alembic head, and canonical library-root hash. During the temporary
+read-only upgrade gate, set it to `false` for the app only; restore it to `true`
+before declaring the write-enabled deployment healthy.
 
 Runtime services never run migrations automatically.
+
+## Supervised Manifestation V2 pilot
+
+Keep `BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=false` during
+ordinary shadow operation. Before a pilot, require the exact-commit Gitea
+real-service gate plus the disposable and restored-clone rehearsals in the
+[Manifestation V2 runbook](../calibration/manifestation-v2-runbook.md).
+
+The operator-owned `.env` must bind a unique pilot ID, one-to-five operation
+budget, and the exact `sha256:...` digest suffix of `BOOKAUDIT_IMAGE`.
+`./scripts/prepare-production.sh` rejects a mutable/mismatched image, missing
+pilot ID, larger budget, disabled writer readiness, or enabled auto-apply.
+
+Queue one manually reviewed Tier A evidence package, wait for its operation and
+outbox to become terminal/published, then validate Calibre readback and rollback
+artifacts before the next package. A consumed reservation is never refunded.
+Metrics must show the pilot and exact writer binding healthy throughout.
+
+Emergency stop order:
+
+```bash
+docker compose stop app writer
+# Set BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=false in .env.
+docker compose run --rm app pilot-stop "$PILOT_ID" --yes
+```
+
+Do not restart the writer until every nonterminal or failed operation is
+classified against live Calibre metadata and its hashed recovery artifacts.
+Closing the row blocks writer revalidation but cannot cancel an external
+Calibre process that had already started. Never reopen or reuse a stopped pilot
+ID; start a separately reviewed pilot only after the incident is resolved.
+
+If the terminal state is exactly `failed`, the outbox is `failed`, no writer
+lease remains, and live Calibre plus recovery evidence prove the write either
+never began or was fully restored, append the incident acknowledgement. The
+command independently requires and locks the stopped pilot row:
+
+```bash
+docker compose run --rm app incident-ack "$OPERATION_ID" \
+  --actor "$OPERATOR" \
+  --reason "Verified Calibre matches before_metadata and recovery hashes" \
+  --yes
+```
+
+This insert-only record preserves the failed operation/outbox while allowing a
+separately reviewed next pilot to pass the historical-outbox gate. It clears
+that acknowledged `failed` row from the active V2-failure alert and increments
+`bookaudit_v2_incidents_acknowledged`. Never use or attempt to emulate this for
+`unknown` or `restore_failed`; the command rejects them. It does not repair
+metadata, reopen a stopped pilot, or refund its reservation.
+Queue admission and the active-failure metric independently recheck the linked
+terminal state, failed outbox, stopped historical pilot, distinct current pilot
+and absence of a book lease; acknowledgement-row presence alone is not enough.
 
 ## Rollback
 
@@ -124,6 +181,9 @@ operations.
 
 - `unknown` or `restore_failed`: stop writer, preserve DB and artifacts, inspect
   actual Calibre metadata against `before_metadata` and `target_metadata`.
+- Terminal `failed`: stop intake/writer and prove from Calibre, ledger, outbox,
+  change row, and hashed artifacts whether no mutation occurred or restoration
+  completed. Only then use `incident-ack`; otherwise keep the hard stop.
 - Missing/tampered OPF: do not retry the write; recover the matching artifact
   from backup and re-run reconciliation.
 - Writer-lock conflict: verify there is exactly one live writer. Do not delete a
@@ -214,3 +274,15 @@ mechanism. The metrics endpoint is intentionally authenticated in production.
   Valkey connectivity. Preserve the database before manual reconciliation.
 - `BookAuditRollbackFailure`: stop the writer immediately and follow the
   `restore_failed` incident procedure above.
+- `BookAuditV2WriterBindingMismatch`: stop intake and writer; compare the
+  configured image digest, pilot digest, Alembic head and canonical library
+  root. Do not change the persisted binding to make the alert disappear.
+- `BookAuditV2PilotOperationStalled`: stop intake and writer after preserving
+  state; inspect the exact ledger/outbox row and Calibre readback before
+  recovery.
+- `BookAuditV2PilotOperationFailed`: stop and close the exact pilot. Preserve
+  all rollback artifacts. `unknown`/`restore_failed` remain unresolved until
+  repaired; an exactly `failed`, safely reconciled row may use the append-only
+  acknowledgement procedure above before a new pilot.
+- `BookAuditV2PilotBudgetExhausted`: the pilot is complete for operational
+  purposes. Disable and close it; never raise or reset the persisted budget.

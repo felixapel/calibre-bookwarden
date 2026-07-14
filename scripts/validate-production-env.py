@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import stat
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -14,6 +15,12 @@ REQUIRED_ROLES = {
     "BOOKAUDIT_WRITER_POSTGRES_DSN": ("bookaudit_writer", "POSTGRES_WRITER_PASSWORD"),
     "BOOKAUDIT_MIGRATOR_POSTGRES_DSN": ("bookaudit_migrator", "POSTGRES_MIGRATOR_PASSWORD"),
 }
+SHA256_IMAGE_PATTERN = re.compile(r"@sha256:([0-9a-f]{64})$")
+SHA256_DIGEST_PATTERN = re.compile(r"sha256:([0-9a-f]{64})$")
+
+
+def _enabled(values: dict[str, str], key: str) -> bool:
+    return values.get(key, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -77,9 +84,38 @@ def validate(path: Path, *, allow_local_image: bool = False) -> list[str]:
         errors.append("BOOKAUDIT_TRUSTED_HOSTS must contain explicit hosts and no wildcard")
 
     image = values.get("BOOKAUDIT_IMAGE", "")
+    image_digest_match = SHA256_IMAGE_PATTERN.search(image)
     local_allowed = allow_local_image or values.get("BOOKAUDIT_ALLOW_LOCAL_IMAGE", "").lower() == "true"
-    if not local_allowed and "@sha256:" not in image:
+    if not local_allowed and image_digest_match is None:
         errors.append("BOOKAUDIT_IMAGE must use an immutable sha256 digest")
+
+    pilot_prefix = "BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__"
+    if _enabled(values, f"{pilot_prefix}ENABLED"):
+        pilot_id = values.get(f"{pilot_prefix}PILOT_ID", "").strip()
+        if not pilot_id:
+            errors.append("supervised V2 pilot ID must be non-empty")
+
+        configured_digest = values.get(f"{pilot_prefix}RELEASE_DIGEST", "").strip()
+        configured_digest_match = SHA256_DIGEST_PATTERN.fullmatch(configured_digest)
+        if (
+            image_digest_match is None
+            or configured_digest_match is None
+            or configured_digest_match.group(1) != image_digest_match.group(1)
+        ):
+            errors.append("supervised V2 pilot release digest must match BOOKAUDIT_IMAGE")
+
+        maximum = values.get(f"{pilot_prefix}MAX_OPERATIONS", "").strip()
+        try:
+            maximum_value = int(maximum)
+        except ValueError:
+            maximum_value = 0
+        if maximum_value not in range(1, 6):
+            errors.append("supervised V2 pilot max operations must be between 1 and 5")
+
+        if not _enabled(values, "BOOKAUDIT_REQUIRE_WRITER_READY"):
+            errors.append("supervised V2 pilot requires writer readiness")
+        if _enabled(values, "BOOKAUDIT_MANIFESTATION_V2__AUTO_APPLY__ENABLED"):
+            errors.append("supervised V2 pilot requires auto-apply to remain disabled")
     return errors
 
 

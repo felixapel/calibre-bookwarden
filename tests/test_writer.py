@@ -6,12 +6,14 @@ from unittest.mock import MagicMock
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.apply.coordinator import (
+    PilotGuard,
     create_v2_manual_authorization,
     queue_approved_operations,
     queue_undo_operation,
-    queue_v2_operations,
+    queue_v2_operation,
 )
 from calibre_ai_auditor.apply.writer import MetadataWriter, claim_next_operation, reconcile_incomplete_operations
+from calibre_ai_auditor.storage.db import expected_schema_revision
 from calibre_ai_auditor.storage.models import (
     BookRecord,
     BookWriteLock,
@@ -22,13 +24,19 @@ from calibre_ai_auditor.storage.models import (
     utc_now,
 )
 from calibre_ai_auditor.storage.operations import create_operation, transition_operation
-from calibre_ai_auditor.verification.identity_v2 import (
-    FormatEvidence,
-    FormatEvidenceStatus,
-    IdentityTier,
-    ManifestationResolution,
-)
-from calibre_ai_auditor.verification.pipeline_v2 import BookAuditState, BookSnapshot, EvidencePackageV2
+from tests.v2_fixtures import build_exact_tier_a_package
+
+
+def _writer_pilot(library_root: Path | str) -> PilotGuard:
+    return PilotGuard(
+        enabled=True,
+        pilot_id="writer-test-pilot",
+        library_root=str(library_root),
+        release_digest=f"sha256:{'d' * 64}",
+        alembic_revision=expected_schema_revision(),
+        max_operations=5,
+        writer_ready=True,
+    )
 
 
 def _setup_operation(session: Session) -> str:
@@ -72,35 +80,16 @@ def _setup_v2_operation(
     digest = hashlib.sha256(ebook.read_bytes()).hexdigest()
     current = current_metadata or {"title": "Old"}
     requested_patch = patch or {"title": "New"}
-    snapshot = BookSnapshot(
-        book_key="calibre:11",
-        calibre_book_id=11,
-        current_metadata=current,
-        files=[str(ebook)],
-        library_root=str(snapshot_library_root or ebook.parent),
-        snapshot_sha256="0" * 64,
-    )
-    snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})
-    package = EvidencePackageV2(
+    package = build_exact_tier_a_package(
         evidence_id="evidence-v2-writer",
         run_id="run-v2-writer",
-        book_key="calibre:11",
-        state=BookAuditState.shadowed,
-        snapshot=snapshot,
-        formats=[
-            FormatEvidence(
-                path=str(ebook),
-                format="EPUB",
-                sha256=digest,
-                status=FormatEvidenceStatus.readable,
-            )
-        ],
-        identity=ManifestationResolution(
-            tier=IdentityTier.tier_a,
-            manifestation_ids={"isbn": "9780306406157"},
-            auto_patch=requested_patch,
-        ),
-    ).seal()
+        book_id=11,
+        library_root=str(snapshot_library_root or ebook.parent),
+        files=[str(ebook)],
+        current_metadata=current,
+        resolved_patch=requested_patch,
+        file_sha256=digest,
+    )
     book = BookRecord(
         book_key=package.book_key,
         run_id=package.run_id,
@@ -130,12 +119,12 @@ def _setup_v2_operation(
         reason="Exact manifestation reviewed",
     )
     session.commit()
-    result = queue_v2_operations(
+    return queue_v2_operation(
         session,
-        evidence_ids=[package.evidence_id],
-        authorization_ids={package.evidence_id: authorization.authorization_id},
+        evidence_id=package.evidence_id,
+        authorization_id=authorization.authorization_id,
+        pilot=_writer_pilot(package.snapshot.library_root or ""),
     )
-    return result.queued_operation_ids[0]
 
 
 def test_v2_writer_rejects_ebook_changed_after_authorization(tmp_path: Path) -> None:
@@ -154,11 +143,31 @@ def test_v2_writer_rejects_ebook_changed_after_authorization(tmp_path: Path) -> 
         cli.show_metadata.return_value = {"title": "Old", "formats": [str(ebook)]}
         apply_engine = MagicMock()
 
-        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        operation = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert operation.state == "failed"
         assert "ebook snapshot changed" in (operation.error or "")
         apply_engine.apply_patch.assert_not_called()
+
+
+def test_v2_writer_refuses_to_read_calibre_without_runtime_pilot_binding(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    ebook = library / "book.epub"
+    ebook.write_bytes(b"authorized edition")
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        operation_id = _setup_v2_operation(session, ebook)
+        assert claim_next_operation(session) == operation_id
+        cli = MagicMock()
+        cli.library_path = library
+
+        operation = MetadataWriter(cli, MagicMock()).process(session, operation_id)
+
+        assert operation.state == "failed"
+        assert "runtime pilot binding" in (operation.error or "")
+        cli.show_metadata.assert_not_called()
 
 
 def test_v2_writer_rejects_configured_library_different_from_sealed_root(tmp_path: Path) -> None:
@@ -176,7 +185,7 @@ def test_v2_writer_rejects_configured_library_different_from_sealed_root(tmp_pat
         cli.show_metadata.return_value = {"title": "Old", "formats": [str(ebook)]}
         apply_engine = MagicMock()
 
-        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        operation = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(tmp_path)).process(session, operation_id)
 
         assert operation.state == "failed"
         assert "library differs" in (operation.error or "")
@@ -217,7 +226,7 @@ def test_v2_writer_rolls_back_metadata_if_ebook_changes_during_write(tmp_path: P
 
         apply_engine.apply_patch.side_effect = mutate_ebook
 
-        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        operation = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert operation.state == "restored"
         assert "ebook changed during metadata write" in (operation.error or "")
@@ -253,7 +262,7 @@ def test_v2_writer_normalizes_edition_alias_in_target_readback(tmp_path: Path) -
             backup_opf_path=str(tmp_path / "before.opf"),
         )
 
-        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        operation = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert operation.state == "succeeded"
         assert operation.target_metadata is not None
@@ -261,73 +270,115 @@ def test_v2_writer_normalizes_edition_alias_in_target_readback(tmp_path: Path) -
         assert operation.target_metadata["edition_statement"] == "Second edition"
 
 
-def test_writer_verifies_successful_target() -> None:
+def test_writer_verifies_successful_target(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    ebook = library / "book.epub"
+    ebook.write_bytes(b"authorized edition")
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        operation_id = _setup_operation(session)
+        operation_id = _setup_v2_operation(session, ebook)
         assert claim_next_operation(session) == operation_id
         cli = MagicMock()
-        cli.show_metadata.side_effect = [{"title": "Old"}, {"title": "New"}]
+        cli.library_path = library
+        before = {"title": "Old", "formats": [str(ebook)]}
+        after = {"title": "New", "formats": [str(ebook)]}
+        cli.show_metadata.side_effect = [before, after, after]
         apply_engine = MagicMock()
+        apply_engine.artifacts_dir = tmp_path
         apply_engine.apply_patch.return_value = Change(
-            book_key="calibre:1",
-            run_id="run-1",
-            backup_opf_path="/tmp/before.opf",
+            operation_id=operation_id,
+            book_key="calibre:11",
+            run_id="run-v2-writer",
+            backup_opf_path=str(tmp_path / "before.opf"),
         )
 
-        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        operation = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert operation.state == "succeeded"
         cli.set_metadata.assert_not_called()
 
 
-def test_writer_restores_verified_partial_write(tmp_path: Path) -> None:
+def test_writer_refuses_legacy_apply_before_reading_calibre() -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         operation_id = _setup_operation(session)
         assert claim_next_operation(session) == operation_id
         cli = MagicMock()
-        cli.show_metadata.side_effect = [{"title": "Old"}, {"title": "Partial"}, {"title": "Old"}]
+        apply_engine = MagicMock()
+
+        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+
+        assert operation.state == "failed"
+        assert "legacy metadata apply is disabled" in (operation.error or "")
+        cli.show_metadata.assert_not_called()
+        apply_engine.apply_patch.assert_not_called()
+
+
+def test_writer_restores_verified_partial_write(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    ebook = library / "book.epub"
+    ebook.write_bytes(b"authorized edition")
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        operation_id = _setup_v2_operation(session, ebook)
+        assert claim_next_operation(session) == operation_id
+        cli = MagicMock()
+        cli.library_path = library
+        before = {"title": "Old", "formats": [str(ebook)]}
+        partial = {"title": "Partial", "formats": [str(ebook)]}
+        cli.show_metadata.side_effect = [before, partial, partial, before]
         backup = tmp_path / "before.opf"
         backup.write_text("backup")
         apply_engine = MagicMock()
         apply_engine.artifacts_dir = tmp_path
         apply_engine.apply_patch.return_value = Change(
-            book_key="calibre:1",
-            run_id="run-1",
+            operation_id=operation_id,
+            book_key="calibre:11",
+            run_id="run-v2-writer",
             backup_opf_path=str(backup),
             backup_opf_sha256=hashlib.sha256(backup.read_bytes()).hexdigest(),
         )
 
-        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        operation = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert operation.state == "restored"
-        cli.set_metadata.assert_called_once_with(1, backup)
+        cli.set_metadata.assert_called_once_with(11, backup)
 
 
 def test_writer_marks_restore_failed_when_backup_does_not_restore_before_state(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    ebook = library / "book.epub"
+    ebook.write_bytes(b"authorized edition")
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        operation_id = _setup_operation(session)
+        operation_id = _setup_v2_operation(session, ebook)
         assert claim_next_operation(session) == operation_id
         cli = MagicMock()
-        cli.show_metadata.side_effect = [{"title": "Old"}, {"title": "Partial"}, {"title": "Still Partial"}]
+        cli.library_path = library
+        before = {"title": "Old", "formats": [str(ebook)]}
+        partial = {"title": "Partial", "formats": [str(ebook)]}
+        still_partial = {"title": "Still Partial", "formats": [str(ebook)]}
+        cli.show_metadata.side_effect = [before, partial, partial, still_partial]
         backup = tmp_path / "wrong-restore.opf"
         backup.write_text("backup")
         apply_engine = MagicMock()
         apply_engine.artifacts_dir = tmp_path
         apply_engine.apply_patch.return_value = Change(
             operation_id=operation_id,
-            book_key="calibre:1",
-            run_id="run-1",
+            book_key="calibre:11",
+            run_id="run-v2-writer",
             backup_opf_path=str(backup),
             backup_opf_sha256=hashlib.sha256(backup.read_bytes()).hexdigest(),
         )
 
-        operation = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        operation = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert operation.state == "restore_failed"
 
@@ -413,11 +464,15 @@ def test_claim_skips_stale_event_and_claims_next_requested_operation() -> None:
         assert claim_next_operation(session) == second.operation_id
 
 
-def test_writer_refuses_patch_tampered_after_queueing() -> None:
+def test_writer_refuses_patch_tampered_after_queueing(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    ebook = library / "book.epub"
+    ebook.write_bytes(b"authorized edition")
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        operation_id = _setup_operation(session)
+        operation_id = _setup_v2_operation(session, ebook)
         operation = session.exec(select(OperationLedger).where(OperationLedger.operation_id == operation_id)).one()
         operation.requested_patch = {"title": "Injected"}
         session.add(operation)
@@ -425,24 +480,29 @@ def test_writer_refuses_patch_tampered_after_queueing() -> None:
         assert claim_next_operation(session) == operation_id
         cli = MagicMock()
 
-        result = MetadataWriter(cli, MagicMock()).process(session, operation_id)
+        result = MetadataWriter(cli, MagicMock(), pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert result.state == "failed"
-        assert "seal changed" in (result.error or "")
+        assert "evidence seal" in (result.error or "")
         cli.show_metadata.assert_not_called()
 
 
-def test_writer_refuses_stale_patch_after_external_calibre_edit() -> None:
+def test_writer_refuses_stale_patch_after_external_calibre_edit(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    ebook = library / "book.epub"
+    ebook.write_bytes(b"authorized edition")
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        operation_id = _setup_operation(session)
+        operation_id = _setup_v2_operation(session, ebook)
         assert claim_next_operation(session) == operation_id
         cli = MagicMock()
-        cli.show_metadata.return_value = {"title": "Newer Manual Edit"}
+        cli.library_path = library
+        cli.show_metadata.return_value = {"title": "Newer Manual Edit", "formats": [str(ebook)]}
         apply_engine = MagicMock()
 
-        result = MetadataWriter(cli, apply_engine).process(session, operation_id)
+        result = MetadataWriter(cli, apply_engine, pilot=_writer_pilot(library)).process(session, operation_id)
 
         assert result.state == "failed"
         assert "changed after authorization" in (result.error or "")

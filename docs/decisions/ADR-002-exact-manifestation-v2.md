@@ -70,11 +70,23 @@ Manifestation V2 is the default `verify` contract and follows these rules.
    `BookVerdict`. The checksum detects accidental or out-of-contract changes
    inside the trusted database boundary; it is not a signature and does not
    authenticate a database administrator.
+   Sealing and later loading recompute a Tier A resolution from the stored
+   formats and source provenance; a caller cannot promote a hand-labeled Tier A
+   identity merely by supplying that enum value.
 9. The current public V2 write flow is supervised: an operator authorizes one
    exact sealed Tier A package, then explicitly queues that evidence ID with
-   `force=true`. The sole writer revalidates the package seal, run/book identity,
-   field locks, authorization hash, canonical patch, live pre-write values, exact
-   format membership, the sealed library root, and every live ebook SHA-256.
+   `force=true`. A disabled-by-default pilot gate binds the operation to one
+   persisted pilot ID, canonical library-root hash, immutable release digest,
+   Alembic head, and a maximum budget of five operations. Queueing is serialized
+   by one fixed PostgreSQL transaction advisory lock before the exact pilot row
+   lock, so different proposed pilot IDs cannot race. Any nonterminal operation
+   or unacknowledged unpublished outbox event blocks the next reservation.
+   Reservation count must equal the number of pilot-bound ledger rows. The sole
+   writer revalidates the complete configured and
+   persisted pilot binding, that count, package seal, run/book
+   identity, field locks, authorization hash, canonical patch, live pre-write
+   values, exact format membership, the sealed library root, and every live ebook
+   SHA-256.
    Ebook paths are opened beneath that root with descriptor-relative no-follow
    traversal for every component, closing parent-directory substitution races.
 10. Calibre writes use only the canonical adapter fields: title, authors,
@@ -106,9 +118,22 @@ Manifestation V2 is the default `verify` contract and follows these rules.
 - Google Books and Open Library are the implemented external adapters. The
   source contract supports national-library and official-publisher evidence,
   but those adapters are future work.
-- The WebUI still renders the V1 review shape. V2 is fully available through
-  CLI verification and the API review/apply endpoints; a dedicated V2 WebUI is
-  not part of this decision.
+- The WebUI review surface is V2-native: it renders sealed evidence and exact
+  current-versus-patch data, authorizes one package, and queues one operation.
+  Tier B/C controls are disabled. V1 records remain historical/read-only in the
+  UI; the legacy apply endpoint remains permanently retired.
+- An operator can close one exact persisted pilot with `bookaudit pilot-stop
+  PILOT_ID --yes`. Closing shares the row lock used by queue reservation and
+  makes queued work fail writer revalidation; it does not replace stopping a
+  writer that may already be inside an external Calibre call.
+- A separately permissioned, append-only incident row may acknowledge one
+  reconciled terminal V2 `failed` operation only after locking and confirming
+  its exact pilot is stopped. It preserves ledger/outbox history, never applies
+  to `unknown` or `restore_failed`, does not refund budget or reopen the stopped
+  ID, and is the only historical-failure exception for a distinct next pilot.
+  Queueing and alert suppression independently join the acknowledgement back to
+  the completed failed operation, failed outbox, absent lease and stopped
+  historical pilot; a standalone or forged row is insufficient.
 - Migration downgrades refuse to discard persisted V2 evidence or active V2
   writer/recovery records.
 - Shadow verification is portable, but the supervised writer is deliberately

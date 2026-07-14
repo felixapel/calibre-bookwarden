@@ -43,6 +43,11 @@ manifestation_v2:
     min_tier_a_decisions: 50
     max_false_positive_rate: 0.0
     max_report_age_days: 30
+  supervised_pilot:
+    enabled: false
+    pilot_id: null
+    release_digest: null
+    max_operations: 5
 ```
 
 One OCR backend is intentionally non-authoritative. Configure two distinct
@@ -158,9 +163,57 @@ changed report, expired report, symlink, wrong policy version, insufficient
 sample, or nonzero false write fails validation. Even a valid report cannot
 enable automatic writes; `tier_a_auto` is rejected unconditionally.
 
-## 6. Supervised V2 apply and undo
+## 6. Required rehearsal before a live pilot
 
-Use the authenticated API. First authorize one exact package:
+Do not enable the pilot merely because shadow results look plausible. For the
+exact commit and image digest, require a green Gitea job named `Manifestation V2
+required integration`; that job fails if its real Calibre/Tesseract/PostgreSQL/
+Valkey apply-readback-undo test skips. Then:
+
+1. Run the same flow on a disposable Calibre library.
+2. Restore the paired database/artifact backup and a copy of the real library
+   into an isolated clone path.
+3. Create new evidence against that clone; evidence sealed for another absolute
+   library root is correctly rejected.
+4. Apply one reviewed Tier A patch, verify Calibre readback and every rollback
+   artifact, queue its undo, and verify the original values return.
+5. Confirm there are no `unknown`, `restore_failed`, or nonterminal ledger rows
+   and no unpublished outbox rows.
+
+Any missing gate leaves the live deployment shadow-only.
+
+## 7. Start a serial max-five pilot
+
+Stop intake and the writer, take the paired backup, and edit the operator-owned
+`.env`. The image digest and pilot digest must be identical:
+
+```dotenv
+BOOKAUDIT_IMAGE=registry.example/bookaudit@sha256:<64-hex-digest>
+BOOKAUDIT_REQUIRE_WRITER_READY=true
+BOOKAUDIT_MANIFESTATION_V2__AUTO_APPLY__ENABLED=false
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=true
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__PILOT_ID=pilot-YYYYMMDD
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__RELEASE_DIGEST=sha256:<64-hex-digest>
+BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__MAX_OPERATIONS=5
+```
+
+```bash
+docker compose stop app writer
+chmod 600 .env
+./scripts/prepare-production.sh
+docker compose --profile maintenance run --rm migrate
+docker compose up -d writer app
+```
+
+Authenticated `/api/health/ready` must be ready, and the metrics
+`bookaudit_v2_pilot_enabled` and `bookaudit_v2_writer_binding_ok` must both be
+`1`. Readiness checks the same pilot ID, maximum, release digest, Alembic head,
+and canonical library-root hash carried by the writer heartbeat. Do not
+authorize or queue while a V2 alert is firing.
+
+Use the WebUI Review page or the authenticated API. First authorize one exact
+package after inspecting every format/hash, internal locator, exact provider
+record, current value and proposed value:
 
 ```bash
 curl -X POST "$BOOKAUDIT_URL/api/review/v2/$EVIDENCE_ID/authorize" \
@@ -177,15 +230,44 @@ curl -X POST "$BOOKAUDIT_URL/api/apply/v2" \
   -H "Content-Type: application/json" \
   -d '{
     "force": true,
-    "evidence_ids": ["'"$EVIDENCE_ID"'"],
-    "authorization_ids": {"'"$EVIDENCE_ID"'":"'"$AUTHORIZATION_ID"'"}
+    "evidence_id": "'"$EVIDENCE_ID"'",
+    "authorization_id": "'"$AUTHORIZATION_ID"'"
   }'
 ```
 
-The request only queues work. The sole privileged writer performs the Calibre
-mutation after revalidation. Confirm the resulting Calibre metadata and test
-`POST /api/undo/{change_id}` with `{"force": true}` on a disposable library
-before using the production library.
+The request queues only one operation. The next request is rejected until every
+nonterminal ledger row is terminal and every outbox event is published, except
+for a separately reconciled terminal `failed` row with an append-only incident
+acknowledgement. Inspect
+`GET /api/operations/{operation_id}`, the Calibre record, attached ebook hashes,
+and rollback artifacts before considering the next canary. Never exceed the
+persisted budget, even after a failure or undo; reservations are intentionally
+not refunded.
+
+## 8. Stop and reconcile the pilot
+
+At the first stop condition, do not queue another operation:
+
+```bash
+docker compose stop app writer
+# Edit .env and set SUPERVISED_PILOT__ENABLED=false before continuing.
+docker compose run --rm app pilot-stop "$PILOT_ID" --yes
+```
+
+The command closes the exact persisted row under the same lock used by queue
+reservation. It makes queued V2 work fail writer revalidation, but cannot
+interrupt a Calibre subprocess that had already begun; stopping the writer
+first is mandatory. Preserve the database, library and writer artifacts, then
+reconcile all nonterminal/failed states under the production operations
+runbook. Only a new reviewed pilot ID and a new explicit approval may resume
+writes. Re-enabling a stopped ID is unsupported.
+
+If and only if the operation ended in `failed` (never `unknown` or
+`restore_failed`), its outbox is failed, no writer lease remains, and live
+Calibre plus hashed recovery evidence prove no unresolved mutation, follow the
+production runbook's `bookaudit incident-ack` procedure. The acknowledgement
+preserves the original ledger/outbox and consumes no less budget; it merely
+allows a new reviewed pilot to pass that historical failed-outbox gate.
 
 ## Stop conditions
 
@@ -196,3 +278,7 @@ before using the production library.
 - Any Tier A false positive or false automatic patch in the labeled corpus.
 - Any remote payload without both configured permission and per-run consent.
 - Any apply that cannot restore OPF, `#edition`, and the previous cover.
+- A stale/mismatched writer binding, any V2 operation stalled for ten minutes,
+  any failed/unknown/restore-failed operation, or exhausted pilot budget.
+- Any attempt to batch evidence IDs, overlap operations, reuse a stopped pilot
+  ID, or run beyond five reserved operations.

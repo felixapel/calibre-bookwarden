@@ -65,8 +65,16 @@ class AutoApplyV2Settings(BaseModel):
     max_report_age_days: int = Field(default=30, ge=1, le=365)
 
 
+class SupervisedPilotV2Settings(BaseModel):
+    enabled: bool = False
+    pilot_id: str | None = Field(default=None, min_length=1, max_length=128)
+    release_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    max_operations: int = Field(default=5, ge=1, le=5)
+
+
 class ManifestationV2Settings(BaseModel):
     auto_apply: AutoApplyV2Settings = Field(default_factory=AutoApplyV2Settings)
+    supervised_pilot: SupervisedPilotV2Settings = Field(default_factory=SupervisedPilotV2Settings)
 
 
 def _default_library() -> LibrarySettings:

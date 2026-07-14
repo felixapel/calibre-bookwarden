@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -10,9 +12,15 @@ from calibre_ai_auditor.verification.identity_v2 import (
     FormatEvidence,
     FormatEvidenceStatus,
     IdentityTier,
+    ManifestationResolution,
     SourceEvidence,
     resolve_manifestation,
     validate_isbn,
+)
+from calibre_ai_auditor.verification.pipeline_v2 import (
+    BookAuditState,
+    BookSnapshot,
+    EvidencePackageV2,
 )
 
 ISBN = "9780306406157"
@@ -119,6 +127,56 @@ def _exact_manifestation_evidence() -> list[SourceEvidence]:
             kind=EvidenceSourceKind.provider_structured,
         ),
     ]
+
+
+def test_seal_rejects_fabricated_tier_a_from_one_ocr_source() -> None:
+    path = "/library/book.epub"
+    snapshot = BookSnapshot(
+        book_key="calibre:1",
+        calibre_book_id=1,
+        current_metadata={"title": "Wrong title"},
+        files=[path],
+        library_root="/library",
+        snapshot_sha256="0" * 64,
+    )
+    snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})
+    package = EvidencePackageV2(
+        evidence_id="fabricated-tier-a",
+        run_id="run-fabricated",
+        book_key="calibre:1",
+        created_at=datetime.now(UTC),
+        state=BookAuditState.shadowed,
+        snapshot=snapshot,
+        formats=[
+            FormatEvidence(
+                path=path,
+                format="EPUB",
+                sha256=SHA,
+                status=FormatEvidenceStatus.readable,
+                identifiers={"isbn": ISBN},
+                title="The Example Book",
+                authors=["Ada Author"],
+                languages=["eng"],
+            )
+        ],
+        source_evidence=[
+            _evidence(
+                "single-ocr",
+                "ocr-engine",
+                "identifiers",
+                {"isbn": ISBN},
+                kind=EvidenceSourceKind.ocr_consensus,
+            )
+        ],
+        identity=ManifestationResolution(
+            tier=IdentityTier.tier_a,
+            manifestation_ids={"isbn": ISBN},
+            auto_patch={"title": "The Example Book"},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="invariants"):
+        package.seal()
 
 
 @pytest.mark.parametrize(

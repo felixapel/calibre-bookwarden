@@ -152,12 +152,15 @@ state. V2 does not populate the legacy `decision` column.
 
 | Endpoint | Description |
 |---|---|
-| `POST /api/review/{book_key}/approve` | Mark book as ready to apply (`suggest_fix`). |
-| `POST /api/review/{book_key}/reject` | Reject proposed changes; book is removed from queue. |
-| `POST /api/review/{book_key}/lock-field` | Lock a field. Body: `{ "field": "title", "value": "..." }`. Locked fields win in resolution. |
+| `POST /api/review/{book_key}/approve` | Legacy V1 compatibility state transition; it cannot reach the retired V1 apply route. |
+| `POST /api/review/{book_key}/reject` | Legacy V1 compatibility state transition. |
+| `POST /api/review/{book_key}/lock-field` | Legacy V1 field lock. Body: `{ "field": "title", "value": "..." }`. |
 | `POST /api/apply` | Retired legacy route; always returns HTTP 410 and never queues work. |
+| `GET /api/review/v2` | Paginated sealed V2 packages. Optional `run_id`, `state`, and `tier` filters; `limit` and `offset` are bounded. A corrupt row makes the requested page fail HTTP 409 instead of being silently omitted. |
+| `GET /api/review/v2/{evidence_id}` | Full validated package, exact authorization (if any), and latest operation for one evidence ID. |
 | `POST /api/review/v2/{evidence_id}/authorize` | Authorize one exact sealed Tier A package. Body: `{ "reason": "..." }`. Returns `authorization_id`. |
-| `POST /api/apply/v2` | Queue V2 packages for the sole writer. Body: `{ "force": true, "evidence_ids": ["evidence_..."], "authorization_ids": {"evidence_...": "authorization-uuid"} }`. |
+| `POST /api/apply/v2` | Queue exactly one V2 package. Body: `{ "force": true, "evidence_id": "evidence_...", "authorization_id": "authorization-uuid" }`. Batch fields are rejected. |
+| `GET /api/operations/{operation_id}` | Sanitized operation state for UI polling; raw errors, rollback paths, and patch payloads are not returned. |
 | `POST /api/undo/{change_id}` | Queue one explicit undo for the sole writer. Body: `{ "force": true }` required. |
 
 V2 authorization is immutable and bound to the evidence-package SHA-256 plus
@@ -165,6 +168,22 @@ the canonical patch after field locks. Reusing it after any package, run,
 snapshot, lock, patch, live Calibre value, format membership, path, or ebook
 hash changes fails closed. API calls
 only queue operations; filesystem writes remain in the sole writer process.
+
+`POST /api/apply/v2` is unavailable unless the supervised-pilot kill switch is
+enabled and fully bound. The API requires a fresh sole-writer heartbeat matching
+the configured release digest, Alembic head and canonical library root. The
+database then takes a fixed PostgreSQL transaction advisory lock, row-locks the
+persisted pilot session, enforces a budget of at most five operations, verifies
+that the reservation counter equals the pilot-bound ledger count, and refuses a
+second nonterminal operation or any unacknowledged unpublished outbox event.
+The fixed lock also serializes simultaneous requests with different pilot IDs.
+The writer validates the exact pilot ID, maximum, release, schema, library root
+and operation count again before mutation.
+Tier B/C packages, an empty patch, stale evidence, mismatched authorization, and
+reused batch payloads fail closed.
+
+The current WebUI uses only these V2 review routes. Legacy V1 results are shown
+as historical/read-only information and have no apply control.
 
 ---
 
@@ -190,8 +209,18 @@ All errors use the shape `{ "status": "error", "detail": "..." }`. Common HTTP c
 - `400` — validation error
 - `403` — sandbox violation (path outside library root), upload disabled
 - `404` — book / run / file not found
+- `409` — writer binding, pilot, outbox, serial-operation, or evidence conflict
 - `410` — retired legacy apply route
+- `422` — authorization or strict request validation failure
+- `503` — supervised pilot disabled/incomplete or writer heartbeat unavailable
 - `500` — internal error
+
+Authenticated readiness requires both a fresh writer heartbeat and, whenever a
+supervised pilot is enabled, an exact match for pilot ID, max operations,
+release digest, Alembic head, and canonical library-root hash. Post-failure
+acknowledgement is intentionally a local CLI workflow, not an HTTP endpoint.
+It requires the exact failed pilot to be stopped and cannot reopen or reuse that
+ID. Legacy V1 apply rows cannot cross the privileged writer boundary.
 
 ---
 

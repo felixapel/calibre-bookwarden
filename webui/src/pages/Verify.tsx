@@ -17,17 +17,19 @@ import { useToast } from '../context/ToastContext'
 import clsx from 'clsx'
 
 const ACTION_COLORS: Record<string, string> = {
-  no_change: 'text-emerald-400 bg-emerald-950/30 border-emerald-900/40',
-  suggest_fix: 'text-amber-400 bg-amber-950/30 border-amber-900/40',
-  needs_review: 'text-rose-400 bg-rose-950/30 border-rose-900/40',
-  defer: 'text-purple-400 bg-purple-950/30 border-purple-900/40',
+  shadowed: 'text-emerald-400 bg-emerald-950/30 border-emerald-900/40',
+  review: 'text-amber-400 bg-amber-950/30 border-amber-900/40',
+  deferred: 'text-purple-400 bg-purple-950/30 border-purple-900/40',
+  failed: 'text-rose-400 bg-rose-950/30 border-rose-900/40',
+  blocked_recovery: 'text-rose-400 bg-rose-950/30 border-rose-900/40',
 }
 
 const ACTION_LABELS: Record<string, string> = {
-  no_change: 'No change',
-  suggest_fix: 'Suggest fix',
-  needs_review: 'Needs review',
-  defer: 'Defer',
+  shadowed: 'Tier A shadowed',
+  review: 'Needs review',
+  deferred: 'Conflict / deferred',
+  failed: 'Failed',
+  blocked_recovery: 'Recovery blocked',
 }
 
 export default function Verify() {
@@ -50,7 +52,15 @@ export default function Verify() {
   })
 
   const startMutation = useMutation({
-    mutationFn: () => startVerify({ limit, use_llm: useLlm }),
+    mutationFn: () => startVerify({
+      pipeline: 'v2',
+      limit,
+      use_llm: useLlm,
+      use_ocr: true,
+      use_vision: false,
+      allow_remote_text: false,
+      allow_remote_images: false,
+    }),
     onSuccess: (res) => {
       setActiveRunId(res.data.run_id)
       showToast(`Verify run started: ${res.data.total} books`, 'success')
@@ -75,7 +85,7 @@ export default function Verify() {
               Verify Library
             </h1>
             <p className="text-sm text-slate-400 mt-1">
-              v1.0 content-ground verification — every book vs its declared metadata
+              Manifestation V2 — every attached format, exact-edition evidence, shadow-only decisions
             </p>
           </div>
         </div>
@@ -107,7 +117,7 @@ export default function Verify() {
               onChange={(e) => setUseLlm(e.target.checked)}
               className="w-4 h-4 accent-purple-500"
             />
-            Use LLM witness for ambiguous fields
+            Use local LLM transcription witness (non-authoritative)
           </label>
           <button
             onClick={() => startMutation.mutate()}
@@ -122,7 +132,7 @@ export default function Verify() {
             ) : (
               <>
                 <Play className="w-4 h-4" />
-                Run v1.0 Verify
+                Run Manifestation V2
               </>
             )}
           </button>
@@ -200,7 +210,7 @@ export default function Verify() {
                   <p className="font-mono text-xs text-slate-300 truncate">{r.run_id}</p>
                   <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-2">
                     <Clock className="w-3 h-3" />
-                    {r.started_at}
+                    {r.started_at} · {r.pipeline_version} · {r.mode}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

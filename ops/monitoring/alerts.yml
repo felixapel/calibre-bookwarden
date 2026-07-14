@@ -62,3 +62,44 @@ groups:
         annotations:
           summary: At least one metadata rollback failed
           runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditV2WriterBindingMismatch
+        expr: |
+          bookaudit_v2_pilot_enabled == 1
+          and
+          bookaudit_v2_writer_binding_ok == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: The V2 writer does not match the supervised pilot runtime binding
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditV2PilotOperationStalled
+        expr: |
+          sum(bookaudit_v2_operations{state=~"requested|claimed|writing|verifying|restoring"}) > 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: A supervised V2 metadata operation has remained nonterminal for ten minutes
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditV2PilotOperationFailed
+        expr: |
+          sum(bookaudit_v2_operations{state=~"failed|unknown|restore_failed"}) > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: A supervised V2 operation failed or requires recovery
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditV2PilotBudgetExhausted
+        expr: |
+          bookaudit_v2_pilot_max_operations{state="open"} > 0
+          and
+          bookaudit_v2_pilot_reserved_operations{state="open"}
+            >= bookaudit_v2_pilot_max_operations{state="open"}
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: The supervised V2 pilot has consumed its complete canary budget
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts

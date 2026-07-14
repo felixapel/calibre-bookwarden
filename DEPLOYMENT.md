@@ -15,9 +15,9 @@ provenance and SPDX SBOM. For production, set `BOOKAUDIT_IMAGE` to the immutable
 `ghcr.io/<owner>/<repo>@sha256:<digest>` printed by the release workflow. The
 local version tag is intended for build-and-test deployments only.
 
-GitHub Actions is the canonical release authority and the only workflow that
-publishes production images. Gitea Actions gates homelab branches and pull
-requests but does not publish or sign releases.
+Gitea Actions is the canonical development and pull-request gate. Mirror/release
+automation is outside the normal development workflow and must not be invoked
+without an explicit release request.
 
 The runtime layer installs Debian's Calibre package, so rebuilding the same
 commit can resolve different OS package versions. The release contract is the
@@ -102,6 +102,9 @@ Critical variables for deployment:
     `BOOKAUDIT_MIGRATOR_POSTGRES_DSN`: distinct database roles. Their passwords
     must match `POSTGRES_APP_PASSWORD`, `POSTGRES_WRITER_PASSWORD`, and
     `POSTGRES_MIGRATOR_PASSWORD`; do not reuse the migrator credential at runtime.
+*   `BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED`: defaults to
+    `false`. A live write pilot also requires an exact pilot ID, the immutable
+    image digest, and a one-to-five operation budget; follow the rollout runbook.
 
 ---
 
@@ -112,6 +115,9 @@ Critical variables for deployment:
     no approved apply/undo operation should be possible.
 2.  **Backups**: Back up `.writer-artifacts`; only the writer may mount this directory read-write.
 3.  **Permissions**: Containers run as the host's UID/GID (defined in `.env`) to prevent "root-owned" file issues on your host filesystem.
+4.  **Pilot binding**: `prepare-production.sh` must prove that the configured
+    supervised-pilot digest is exactly the digest in `BOOKAUDIT_IMAGE`. Keep
+    auto-apply disabled and never overlap V2 operations.
 # Production v2 network boundary
 
 The production Compose profile binds the API only to `127.0.0.1`. Terminate
@@ -120,10 +126,10 @@ TLS in a reverse proxy on the same host and proxy to
 directly on the LAN. PostgreSQL, Valkey, and optional sidecars are reachable
 only on the Compose network.
 
-Set `BOOKAUDIT_LIBRARY_HOST_PATH` to an absolute Calibre library path. The
-read-only gate always mounts it as `/library:ro`; no environment option can
-turn that mount read-write. Copy `.env.example` to `.env`, replace every
-placeholder secret, and keep `.env` outside version control.
+Set `BOOKAUDIT_LIBRARY_HOST_PATH` to an absolute Calibre library path. The app
+always mounts it as `/library:ro`; only the fenced writer service mounts the
+same root read-write. Copy `.env.example` to `.env`, replace every placeholder
+secret, and keep `.env` outside version control.
 
 Schema upgrades are an explicit maintenance action. Stop `app` and `writer`,
 take a PostgreSQL plus `.writer-artifacts` backup, run the one-shot `migrate`

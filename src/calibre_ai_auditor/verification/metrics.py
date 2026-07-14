@@ -16,6 +16,9 @@ from __future__ import annotations
 import threading
 from collections import defaultdict
 
+_V2_AUTHORIZATION_OUTCOMES = frozenset({"success", "rejected"})
+_V2_APPLY_OUTCOMES = frozenset({"queued", "disabled", "writer_unavailable", "rejected", "conflict"})
+
 
 class Metrics:
     """Thread-safe in-process metrics collector."""
@@ -88,6 +91,28 @@ class Metrics:
 
     def set_change_depth(self, status: str, count: int) -> None:
         self.gauge("bookaudit_changes", float(count), labels={"status": status})
+
+    def record_v2_authorization(self, outcome: str) -> None:
+        if outcome not in _V2_AUTHORIZATION_OUTCOMES:
+            raise ValueError("unsupported V2 authorization outcome")
+        self.inc("bookaudit_v2_authorizations_total", labels={"outcome": outcome})
+
+    def record_v2_apply_request(self, outcome: str) -> None:
+        if outcome not in _V2_APPLY_OUTCOMES:
+            raise ValueError("unsupported V2 apply outcome")
+        self.inc("bookaudit_v2_apply_requests_total", labels={"outcome": outcome})
+
+    def set_v2_writer_binding(self, *, matched: bool) -> None:
+        self.gauge("bookaudit_v2_writer_binding_ok", float(matched))
+
+    def set_v2_pilot(self, *, enabled: bool, state: str, reserved: int, maximum: int) -> None:
+        self.gauge("bookaudit_v2_pilot_enabled", float(enabled))
+        labels = {"state": state}
+        self.gauge("bookaudit_v2_pilot_reserved_operations", float(reserved), labels=labels)
+        self.gauge("bookaudit_v2_pilot_max_operations", float(maximum), labels=labels)
+
+    def set_v2_operation_depth(self, state: str, count: int) -> None:
+        self.gauge("bookaudit_v2_operations", float(count), labels={"state": state})
 
     def record_llm_call(
         self,

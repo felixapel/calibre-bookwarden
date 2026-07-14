@@ -19,6 +19,10 @@ def test_request_id_is_returned_and_sanitized() -> None:
 
 def test_json_formatter_emits_structured_record() -> None:
     record = logging.LogRecord("bookaudit.test", logging.INFO, __file__, 1, "ready %s", ("now",), None)
+    record.event = "v2_apply_queued"
+    record.evidence_id = "evidence-1"
+    record.pilot_id = "pilot-1"
+    record.untrusted_path = "/library/private/book.epub"
 
     payload = json.loads(JsonFormatter().format(record))
 
@@ -26,3 +30,7 @@ def test_json_formatter_emits_structured_record() -> None:
     assert payload["logger"] == "bookaudit.test"
     assert payload["message"] == "ready now"
     assert payload["timestamp"].endswith("Z")
+    assert payload["event"] == "v2_apply_queued"
+    assert payload["evidence_id"] == "evidence-1"
+    assert payload["pilot_id"] == "pilot-1"
+    assert "untrusted_path" not in payload

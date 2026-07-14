@@ -18,7 +18,7 @@ from calibre_ai_auditor.apply.artifacts import (
     set_metadata_from_artifact,
     verify_artifact,
 )
-from calibre_ai_auditor.apply.coordinator import load_v2_package, validate_apply_operation
+from calibre_ai_auditor.apply.coordinator import PilotGuard, load_v2_package, validate_apply_operation
 from calibre_ai_auditor.apply.engine import ApplyEngine
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.security.files import ensure_secure_directory, sha256_file_beneath
@@ -219,9 +219,16 @@ def reconcile_incomplete_operations(
 
 
 class MetadataWriter:
-    def __init__(self, cli: CalibreCLI, apply_engine: ApplyEngine) -> None:
+    def __init__(
+        self,
+        cli: CalibreCLI,
+        apply_engine: ApplyEngine,
+        *,
+        pilot: PilotGuard | None = None,
+    ) -> None:
         self.cli = cli
         self.apply_engine = apply_engine
+        self.pilot = pilot
 
     def process(self, session: Session, operation_id: str) -> OperationLedger:
         operation = session.exec(select(OperationLedger).where(OperationLedger.operation_id == operation_id)).one()
@@ -233,7 +240,7 @@ class MetadataWriter:
         if not book.calibre_book_id:
             raise ValueError(f"Operation {operation_id} has no Calibre book id")
         try:
-            validate_apply_operation(session, operation, book)
+            validate_apply_operation(session, operation, book, pilot=self.pilot)
         except (ValueError, TypeError) as exc:
             transition_operation(operation, "failed", error=str(exc))
             book.status = "error"

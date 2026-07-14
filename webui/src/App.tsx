@@ -57,7 +57,7 @@ function Sidebar() {
 
       <nav className="flex-1 px-4 py-2 space-y-1.5 overflow-y-auto">
         <NavItem to="/" icon={LayoutDashboard}>Dashboard</NavItem>
-        <NavItem to="/verify" icon={Sparkles}>Verify (v1.0)</NavItem>
+        <NavItem to="/verify" icon={Sparkles}>Verify (V2)</NavItem>
         <NavItem to="/scan" icon={Search}>Scan Library</NavItem>
         <NavItem to="/inspect" icon={FileSearch}>Inspect File</NavItem>
         <NavItem to="/duplicates" icon={Copy}>Duplicates</NavItem>

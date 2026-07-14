@@ -4,6 +4,62 @@ All notable changes to `calibre-ai-auditor` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- V2-native WebUI review with paginated/filterable sealed evidence, exact
+  format hashes and provenance, current-versus-patch comparison, disabled Tier
+  B/C controls, one-package authorization, and sanitized operation polling.
+- Disabled-by-default supervised V2 pilot sessions bound to the canonical
+  library-root hash, immutable release digest, Alembic revision and a persisted
+  budget of at most five serial operation reservations.
+- Exact writer heartbeat binding, durable pilot metrics, bounded structured
+  audit events, and alerts for binding mismatch, stalled/failed V2 operations
+  and exhausted pilot budget.
+- `bookaudit pilot-stop PILOT_ID --yes` for fail-closed persistent pilot
+  shutdown.
+- `bookaudit incident-ack OPERATION_ID --actor ... --reason ... --yes` and an
+  append-only incident table for reviewed, quiescent V2 failures; uncertain and
+  restore-failed operations remain hard stops.
+- A required Gitea real-service integration job that refuses skips while testing
+  authenticated authorization, unit queueing, real Calibre apply/readback,
+  queued undo and restored readback with PostgreSQL, Valkey and Tesseract.
+
+### Changed
+
+- `POST /api/apply/v2` accepts exactly one `evidence_id` and one matching
+  `authorization_id`; batch-shaped payloads are rejected.
+- V2 queueing now rejects stale/mismatched writers, reused or closed pilot IDs,
+  exhausted budgets, any existing nonterminal operation, and any unpublished
+  outbox event without a safe-failure acknowledgement. A fixed PostgreSQL
+  transaction advisory lock serializes reservations across different pilot
+  IDs. The API and writer both reconcile the persisted budget against
+  pilot-bound ledger rows, and the writer revalidates the complete configured
+  binding before mutation.
+- Incident acknowledgement now requires the failed operation's persisted pilot
+  to be stopped under lock. That ID remains closed; only a distinct, separately
+  reviewed pilot may pass the acknowledged historical-failure gate. Queue and
+  failure metrics independently rederive the stopped-pilot, terminal-outbox and
+  no-lease conditions instead of trusting acknowledgement-row existence.
+- Tier A package sealing now recomputes the production deterministic resolver;
+  manually labeled Tier A evidence is rejected. The required real-service
+  canary obtains its internal root through the production EPUB extractor and
+  treats real OCR as a non-authoritative witness.
+- The V2 review list fails closed on invalid sealed rows, authenticated
+  readiness checks the exact enabled-pilot heartbeat binding, and the WebUI
+  ignores out-of-order detail responses.
+- Production preflight verifies that an enabled pilot's configured digest
+  exactly matches the immutable `BOOKAUDIT_IMAGE`, keeps auto-apply disabled,
+  requires writer readiness and limits the budget to one through five.
+
+### Safety status
+
+- This development increment remains shadow/read-only by default and is not yet
+  approved for live-library writes. Promotion requires the exact-commit Gitea
+  gate, disposable and restored-clone rehearsals, and separately approved
+  serial canaries.
+
 ## [1.2.1] - 2026-07-13
 
 ### Added

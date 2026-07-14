@@ -4,45 +4,40 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.apply.coordinator import create_manual_authorization, queue_approved_operations
+from calibre_ai_auditor.apply.heartbeat import library_root_sha256
+from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.storage.db import expected_schema_revision
 from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, ManualAuthorization, OperationLedger
+from calibre_ai_auditor.verification.metrics import get_metrics, reset_metrics
 from calibre_ai_auditor.verification.verdict import BookVerdict
 from calibre_ai_auditor.web.api import apply as apply_module
 from calibre_ai_auditor.web.api.apply import V2ApplyRequest
 from calibre_ai_auditor.web.schemas import ApplyRequest, ManualAuthorizationRequest
+from tests.v2_fixtures import build_exact_tier_a_package
 
 
 def _sealed_v2_package() -> Any:
-    from calibre_ai_auditor.verification.identity_v2 import IdentityTier, ManifestationResolution
-    from calibre_ai_auditor.verification.pipeline_v2 import BookAuditState, BookSnapshot, EvidencePackageV2
-
-    snapshot = BookSnapshot(
-        book_key="calibre:9",
-        calibre_book_id=9,
-        current_metadata={"title": "Wrong"},
-        files=[],
-        snapshot_sha256="0" * 64,
-    )
-    snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})
-    return EvidencePackageV2(
+    return build_exact_tier_a_package(
         evidence_id="evidence-v2-api",
         run_id="run-v2-api",
-        book_key="calibre:9",
+        book_id=9,
+        library_root="/library",
+        files=["/library/book-9.epub"],
+        current_metadata={"title": "Wrong"},
         created_at=datetime.now(UTC),
-        state=BookAuditState.shadowed,
-        snapshot=snapshot,
-        identity=ManifestationResolution(
-            tier=IdentityTier.tier_a,
-            manifestation_ids={"isbn": "9780306406157"},
-            auto_patch={"title": "Exact"},
-        ),
-    ).seal()
+        resolved_patch={"title": "Exact"},
+    )
 
 
 @pytest.mark.asyncio
-async def test_v2_api_authorizes_and_queues_only_the_exact_sealed_package() -> None:
+async def test_v2_api_authorizes_and_queues_only_the_exact_sealed_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_metrics()
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
     package = _sealed_v2_package()
@@ -54,6 +49,7 @@ async def test_v2_api_authorizes_and_queues_only_the_exact_sealed_package() -> N
                 calibre_book_id=9,
                 status="shadowed",
                 current_metadata=package.snapshot.current_metadata,
+                files=[{"path": path, "format": "EPUB"} for path in package.snapshot.files],
             )
         )
         session.add(
@@ -75,19 +71,76 @@ async def test_v2_api_authorizes_and_queues_only_the_exact_sealed_package() -> N
             session,
         )
         authorization_id = authorized["data"]["authorization_id"]
+        monkeypatch.setattr(
+            apply_module,
+            "read_writer_heartbeat",
+            lambda *_args, **_kwargs: {
+                "owner": "writer-1",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "release_digest": f"sha256:{'b' * 64}",
+                "alembic_revision": expected_schema_revision(),
+                "library_root_sha256": library_root_sha256("/library"),
+                "pilot_id": "api-pilot",
+                "max_operations": 5,
+            },
+        )
+        settings = Settings(
+            library={"path": "/library", "read_only": False},
+            manifestation_v2={
+                "supervised_pilot": {
+                    "enabled": True,
+                    "pilot_id": "api-pilot",
+                    "release_digest": f"sha256:{'b' * 64}",
+                    "max_operations": 5,
+                }
+            },
+        )
         queued = await apply_module.apply_v2_patches(
             V2ApplyRequest(
                 force=True,
-                evidence_ids=[package.evidence_id],
-                authorization_ids={package.evidence_id: authorization_id},
+                evidence_id=package.evidence_id,
+                authorization_id=authorization_id,
             ),
-            session,
+            session=session,
+            settings=settings,
         )
         operation = session.exec(select(OperationLedger)).one()
 
-    assert queued["data"]["queued_count"] == 1
+    assert queued["data"]["operation_id"] == operation.operation_id
+    assert queued["data"]["pilot_id"] == "api-pilot"
     assert operation.evidence_id == package.evidence_id
     assert operation.policy_version == "manifestation-v2"
+    rendered_metrics = get_metrics().render()
+    assert 'bookaudit_v2_authorizations_total{outcome="success"} 1' in rendered_metrics
+    assert 'bookaudit_v2_apply_requests_total{outcome="queued"} 1' in rendered_metrics
+
+
+def test_v2_apply_request_rejects_batch_contract() -> None:
+    with pytest.raises(ValidationError, match="evidence_id"):
+        V2ApplyRequest.model_validate(
+            {
+                "force": True,
+                "evidence_ids": ["evidence-1", "evidence-2"],
+                "authorization_ids": {"evidence-1": "authorization-1"},
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_v2_api_fails_closed_when_supervised_apply_is_disabled() -> None:
+    reset_metrics()
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session, pytest.raises(HTTPException) as exc_info:
+        await apply_module.apply_v2_patches(
+            V2ApplyRequest(force=True, evidence_id="evidence-1", authorization_id="authorization-1"),
+            session=session,
+            settings=Settings(),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert "disabled" in str(exc_info.value.detail).lower()
+    assert 'bookaudit_v2_apply_requests_total{outcome="disabled"} 1' in get_metrics().render()
 
 
 @pytest.mark.asyncio

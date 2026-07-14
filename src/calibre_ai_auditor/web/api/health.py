@@ -21,6 +21,38 @@ def get_settings() -> Settings:
     return load_settings()
 
 
+def _writer_readiness_check(settings: Settings, heartbeat: object) -> dict[str, Any]:
+    """Evaluate freshness and, when enabled, the complete supervised-pilot binding."""
+    from calibre_ai_auditor.apply.heartbeat import (
+        heartbeat_is_fresh,
+        heartbeat_matches_pilot,
+        library_root_sha256,
+    )
+
+    fresh = heartbeat_is_fresh(
+        heartbeat,
+        max_age_seconds=settings.writer_heartbeat_max_age_seconds,
+    )
+    pilot = settings.manifestation_v2.supervised_pilot
+    if not pilot.enabled:
+        return {"ok": fresh, "fresh": fresh, "pilot_binding": None}
+    library_path = settings.library.path
+    binding_ok = bool(
+        pilot.pilot_id
+        and pilot.release_digest
+        and library_path is not None
+        and heartbeat_matches_pilot(
+            heartbeat,
+            release_digest=pilot.release_digest,
+            alembic_revision=expected_schema_revision(),
+            library_root_sha256=library_root_sha256(library_path),
+            pilot_id=pilot.pilot_id,
+            max_operations=pilot.max_operations,
+        )
+    )
+    return {"ok": fresh and binding_ok, "fresh": fresh, "pilot_binding": binding_ok}
+
+
 @router.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
@@ -107,19 +139,15 @@ async def readiness_check(settings: Settings = Depends(get_settings)) -> dict[st
     except Exception as exc:
         checks["rate_limit_valkey"] = {"ok": False, "error": type(exc).__name__}
 
-    if settings.require_writer_ready:
+    if settings.require_writer_ready or settings.manifestation_v2.supervised_pilot.enabled:
         try:
-            from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+            from calibre_ai_auditor.apply.heartbeat import read_writer_heartbeat
 
             heartbeat = read_writer_heartbeat(
                 settings.queue.valkey_url,
                 timeout=settings.queue.connect_timeout_seconds,
             )
-            writer_ok = heartbeat_is_fresh(
-                heartbeat,
-                max_age_seconds=settings.writer_heartbeat_max_age_seconds,
-            )
-            checks["writer"] = {"ok": writer_ok}
+            checks["writer"] = _writer_readiness_check(settings, heartbeat)
         except Exception as exc:
             checks["writer"] = {"ok": False, "error": type(exc).__name__}
 
@@ -133,9 +161,16 @@ async def prometheus_metrics(settings: Settings = Depends(get_settings)) -> Resp
     """Prometheus metrics, including durable queue and writer liveness state."""
     metrics = get_metrics()
     collection_ok = True
+    configured_pilot = settings.manifestation_v2.supervised_pilot
+    current_pilot_id = configured_pilot.pilot_id if configured_pilot.enabled and configured_pilot.pilot_id else ""
 
     try:
-        from calibre_ai_auditor.apply.heartbeat import heartbeat_is_fresh, read_writer_heartbeat
+        from calibre_ai_auditor.apply.heartbeat import (
+            heartbeat_is_fresh,
+            heartbeat_matches_pilot,
+            library_root_sha256,
+            read_writer_heartbeat,
+        )
 
         heartbeat = read_writer_heartbeat(
             settings.queue.valkey_url,
@@ -147,27 +182,99 @@ async def prometheus_metrics(settings: Settings = Depends(get_settings)) -> Resp
                 max_age_seconds=settings.writer_heartbeat_max_age_seconds,
             )
         )
+        pilot_settings = settings.manifestation_v2.supervised_pilot
+        binding_ok = bool(
+            pilot_settings.enabled
+            and pilot_settings.release_digest
+            and settings.library.path
+            and heartbeat_matches_pilot(
+                heartbeat,
+                release_digest=pilot_settings.release_digest,
+                alembic_revision=expected_schema_revision(),
+                library_root_sha256=library_root_sha256(settings.library.path),
+                pilot_id=pilot_settings.pilot_id or "",
+                max_operations=pilot_settings.max_operations,
+            )
+        )
+        metrics.set_v2_writer_binding(matched=binding_ok)
     except Exception:
         collection_ok = False
         metrics.set_writer_health(fresh=False)
+        metrics.set_v2_writer_binding(matched=False)
 
     try:
         outbox_depths = {"pending": 0, "processing": 0, "failed": 0, "published": 0}
         operation_depths = {"unknown": 0, "restore_failed": 0}
+        v2_operation_depths = {
+            "requested": 0,
+            "claimed": 0,
+            "writing": 0,
+            "verifying": 0,
+            "restoring": 0,
+            "succeeded": 0,
+            "restored": 0,
+            "restore_failed": 0,
+            "unknown": 0,
+            "failed": 0,
+            "cancelled": 0,
+        }
         change_depths = {"failed_rollback_failed": 0}
+        pilot_depths = {"open": (0, 0), "stopped": (0, 0), "completed": (0, 0)}
         with get_engine(settings).connect() as connection:
             for status, count in connection.execute(text("SELECT status, count(*) FROM outboxevent GROUP BY status")):
                 outbox_depths[str(status)] = int(count)
             for state, count in connection.execute(text("SELECT state, count(*) FROM operationledger GROUP BY state")):
                 operation_depths[str(state)] = int(count)
+            for state, count in connection.execute(
+                text(
+                    "SELECT operation.state, count(*) FROM operationledger AS operation "
+                    "WHERE operation.policy_version = 'manifestation-v2' "
+                    "AND (operation.state != 'failed' "
+                    "OR NOT EXISTS ("
+                    "SELECT 1 FROM operationincidentacknowledgement AS acknowledgement "
+                    "JOIN pilotsession AS historical_pilot "
+                    "ON historical_pilot.pilot_id = operation.pilot_id "
+                    "JOIN outboxevent AS failed_outbox "
+                    "ON failed_outbox.aggregate_id = operation.operation_id "
+                    "AND failed_outbox.status = 'failed' "
+                    "LEFT JOIN bookwritelock AS active_lock "
+                    "ON active_lock.book_key = operation.book_key "
+                    "WHERE acknowledgement.operation_id = operation.operation_id "
+                    "AND operation.completed_at IS NOT NULL "
+                    "AND historical_pilot.state = 'stopped' "
+                    "AND operation.pilot_id != :current_pilot_id "
+                    "AND active_lock.book_key IS NULL"
+                    ")) GROUP BY operation.state"
+                ),
+                {"current_pilot_id": current_pilot_id},
+            ):
+                v2_operation_depths[str(state)] = int(count)
+            acknowledged_incidents = int(
+                connection.execute(text("SELECT count(*) FROM operationincidentacknowledgement")).scalar_one()
+            )
             for status, count in connection.execute(text('SELECT status, count(*) FROM "change" GROUP BY status')):
                 change_depths[str(status)] = int(count)
+            for state, reserved, maximum in connection.execute(
+                text("SELECT state, sum(reserved_operations), sum(max_operations) FROM pilotsession GROUP BY state")
+            ):
+                pilot_depths[str(state)] = (int(reserved), int(maximum))
         for status, count in outbox_depths.items():
             metrics.set_outbox_depth(status, count)
         for state, count in operation_depths.items():
             metrics.set_operation_depth(state, count)
+        for state, count in v2_operation_depths.items():
+            metrics.set_v2_operation_depth(state, count)
+        metrics.gauge("bookaudit_v2_incidents_acknowledged", float(acknowledged_incidents))
         for status, count in change_depths.items():
             metrics.set_change_depth(status, count)
+        pilot_enabled = settings.manifestation_v2.supervised_pilot.enabled
+        for state, (reserved, maximum) in pilot_depths.items():
+            metrics.set_v2_pilot(
+                enabled=pilot_enabled,
+                state=state,
+                reserved=reserved,
+                maximum=maximum,
+            )
     except Exception:
         collection_ok = False
 

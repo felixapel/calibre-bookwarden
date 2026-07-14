@@ -1,11 +1,12 @@
 # Usage Guide
 
-`calibre-ai-auditor` provides a Manifestation V2 CLI/API path plus the legacy
-V1 WebUI workflow:
+`calibre-ai-auditor` provides one Manifestation V2 workflow across CLI, API and
+WebUI, while retaining historical V1 inspection compatibility:
 
-1. **CLI/API (V2 default)** — exact-edition, all-format, sealed audits and
+1. **CLI/API/WebUI (V2 default)** — exact-edition, all-format, sealed audits and
    supervised per-package correction
-2. **WebUI (legacy V1 shape)** — interactive per-field `BookVerdict` review
+2. **Legacy V1 data** — historical/read-only in the V2 Review surface; the
+   legacy apply route is permanently retired
 
 This guide walks through the canonical workflows for each.
 
@@ -41,59 +42,58 @@ metadata, attached-format membership, paths, and ebook hashes have not changed,
 creates rollback artifacts, applies canonical fields, and reads the result back.
 See [docs/API.md](docs/API.md) for request bodies.
 
-## 2. WebUI workflow (legacy V1 review shape)
+## 2. WebUI Manifestation V2 workflow
 
-The WebUI is the primary interface for v1.0 content-ground verification.
-Designed for homelab use with multi-host inference.
+The WebUI starts shadow V2 audits and reviews their sealed evidence. It never
+turns a Tier B/C result or a historical V1 flag into a write.
 
 ### Dashboard
 
 Start at the **Dashboard** to see:
 - System health (Calibre CLI, Tika, Qdrant)
 - Homelab inference host discovery (3090 + Unraid Ollama + remote)
-- Aggregated v1.0 verdict counters (no_change / suggest_fix / needs_review / defer)
+- Historical V1 aggregate counters, clearly separate from V2 review
 - Review queue size, duplicates count, applied fixes
 
-### Verify (v1.0) page — the new core workflow
+### Verify (V2) page
 
-The **Verify** page is where you trigger the v1.0 content-ground engine
-across your library.
+The **Verify** page explicitly submits `pipeline: "v2"` with local bounded OCR,
+vision and remote egress disabled, and the optional LLM witness off by default.
 
-1. Navigate to **Verify (v1.0)** in the sidebar.
+1. Navigate to **Verify (V2)** in the sidebar.
 2. Set **Limit** (e.g. `50` books for a pilot run, `0` for the full library).
-3. Toggle **Use LLM witness** if you want ambiguous fields sent to the
-   configured LLM for adjudication. Leave off for fast deterministic-only runs.
-4. Click **Run v1.0 Verify**. The progress bar updates every 1.5s.
+3. Toggle the local non-authoritative LLM transcription witness only if needed.
+4. Click **Run Manifestation V2**. The progress bar updates every 1.5s.
 5. When the run completes, click the row in **Recent verify runs** to drill
-   into per-book verdicts.
+   into per-book evidence summaries.
 
-**Action semantics**:
-- `no_change` — declared metadata matches observed content; no fix needed
-- `suggest_fix` — declared metadata disagrees with content; engine proposes a fix
-- `needs_review` — high-risk flag (`author_swap`, `isbn_conflict`, etc.) requires human eyes
-- `defer` — insufficient signal to decide deterministically; LLM witness should resolve
+**Terminal-state semantics**:
 
-**Historical auto-apply flag**: `auto_apply_eligible` is still rendered for V1
-review compatibility, but no public legacy apply path consumes it.
+- `shadowed` — Tier A exact identity was sealed; any canonical patch still
+  requires manual review and pilot authorization
+- `review` — Tier B incomplete evidence; no write control
+- `deferred` — Tier C conflict; no write control
+- `failed` / `blocked_recovery` — inspect and resolve before proceeding
 
-### Review page — per-field verdicts
+### Review page — sealed exact-manifestation evidence
 
-When you click a book in the Review queue, the v1.0 per-field verdict rendering
-shows:
+The Review page lists validated V2 packages and lets the operator inspect:
 
-- **Green chip** — `Confirmed` (declared matches content)
-- **Red chip** — `Mismatch` (declared disagrees with content); shows `declared` vs `observed` side-by-side
-- **Amber chip** — `Missing` (declared is None but observed has a value)
-- **Purple chip** — `Ambiguous` (deterministic engine couldn't decide; LLM witness will resolve)
-- **Risk badges** — `author_swap`, `isbn_conflict`, `wrong_book`, `series_mismatch`, `publisher_mismatch`
+- exact evidence/package ID and SHA-256 seal
+- every attached format, path and hash
+- internal/external source provenance and locators
+- Tier/risk reasons and current-versus-canonical-patch values
+- exact authorization and sanitized operation state
 
-The historical **auto-apply ready** badge reflects the V1 rule result only; it
-does not authorize a write. **manual review** means human approval is required.
+Only a Tier A package with a nonempty patch can be authorized. Queueing is a
+separate second action and submits exactly that evidence ID plus its returned
+authorization ID. Tier B/C controls are disabled. V1 results show a historical
+read-only notice.
 
 ### Other pages
 
-- **Scan Library** — Triggers a Calibre DB scan (legacy v0.9 path; v1.0 uses
-  Verify instead)
+- **Scan Library** — Triggers a Calibre DB scan (legacy ingestion path; V2 uses
+  Verify for exact-manifestation auditing)
 - **Inspect File** — Single-file inspection; useful before adding to library
 - **Duplicates** — Qdrant-backed semantic duplicate detection
 - **Changes & Undo** — v1.0 restore points + API-queued run revert
@@ -131,6 +131,23 @@ bookaudit verify --limit 0 --format json > manifestation-v2-audit.json
 `bookaudit apply` is retired and exits nonzero; `POST /api/apply` returns HTTP
 410. Use the V2 authorization and queue endpoints. `bookaudit undo` accepts one numeric
 `change_id`, not a run ID.
+
+To close one persisted pilot after first stopping app intake and the writer:
+
+```bash
+bookaudit pilot-stop pilot-YYYYMMDD --yes
+```
+
+If a completed V2 operation is exactly `failed`, stop intake/writer, close its
+exact pilot with `pilot-stop`, and first prove from live Calibre plus hashed
+recovery evidence that no unresolved write remains. Then append the incident
+record (never for `unknown` or `restore_failed`). The stopped ID remains closed;
+continuation requires a new reviewed pilot:
+
+```bash
+bookaudit incident-ack OPERATION_ID --actor OPERATOR \
+  --reason "Verified Calibre matches before_metadata and recovery hashes" --yes
+```
 
 ### Single-file inspection (no Calibre library required)
 

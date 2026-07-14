@@ -5,7 +5,9 @@ from __future__ import annotations
 from sqlalchemy import create_engine, text
 
 from calibre_ai_auditor.apply import heartbeat as heartbeat_module
+from calibre_ai_auditor.apply.heartbeat import library_root_sha256
 from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.storage.db import expected_schema_revision
 from calibre_ai_auditor.verification.metrics import Metrics, get_metrics, reset_metrics
 from calibre_ai_auditor.web.api import health as health_api
 
@@ -79,6 +81,24 @@ def test_operational_health_helpers_expose_writer_and_durable_queue() -> None:
     assert 'bookaudit_operations{state="failed_rollback_failed"} 2.0' in out
 
 
+def test_v2_pilot_metrics_use_only_bounded_outcomes() -> None:
+    m = Metrics()
+    m.record_v2_authorization("success")
+    m.record_v2_apply_request("queued")
+    m.set_v2_writer_binding(matched=True)
+    m.set_v2_pilot(enabled=True, state="open", reserved=2, maximum=5)
+    m.set_v2_operation_depth("verifying", 1)
+
+    out = m.render()
+
+    assert 'bookaudit_v2_authorizations_total{outcome="success"} 1' in out
+    assert 'bookaudit_v2_apply_requests_total{outcome="queued"} 1' in out
+    assert "bookaudit_v2_writer_binding_ok 1.0" in out
+    assert 'bookaudit_v2_pilot_reserved_operations{state="open"} 2.0' in out
+    assert 'bookaudit_v2_pilot_max_operations{state="open"} 5.0' in out
+    assert 'bookaudit_v2_operations{state="verifying"} 1.0' in out
+
+
 def test_record_llm_call_helper() -> None:
     m = Metrics()
     m.record_llm_call(
@@ -130,22 +150,93 @@ def test_empty_metrics_renders_cleanly() -> None:
 async def test_metrics_endpoint_collects_writer_and_durable_state(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE outboxevent (status TEXT NOT NULL)"))
-        connection.execute(text("CREATE TABLE operationledger (state TEXT NOT NULL)"))
+        connection.execute(text("CREATE TABLE outboxevent (aggregate_id TEXT, status TEXT NOT NULL)"))
+        connection.execute(
+            text(
+                "CREATE TABLE operationledger ("
+                "operation_id TEXT NOT NULL, book_key TEXT NOT NULL, pilot_id TEXT, "
+                "state TEXT NOT NULL, policy_version TEXT NOT NULL, completed_at TEXT)"
+            )
+        )
+        connection.execute(text("CREATE TABLE operationincidentacknowledgement (operation_id TEXT NOT NULL)"))
+        connection.execute(text("CREATE TABLE bookwritelock (book_key TEXT NOT NULL)"))
         connection.execute(text('CREATE TABLE "change" (status TEXT NOT NULL)'))
-        connection.execute(text("INSERT INTO outboxevent VALUES ('pending'), ('pending')"))
-        connection.execute(text("INSERT INTO operationledger VALUES ('restore_failed')"))
+        connection.execute(
+            text(
+                "CREATE TABLE pilotsession ("
+                "pilot_id TEXT NOT NULL, state TEXT NOT NULL, "
+                "reserved_operations INTEGER NOT NULL, max_operations INTEGER NOT NULL)"
+            )
+        )
+        connection.execute(text("INSERT INTO outboxevent VALUES (NULL, 'pending'), (NULL, 'pending')"))
+        connection.execute(
+            text(
+                "INSERT INTO operationledger VALUES "
+                "('unresolved-operation', 'calibre:1', 'open-pilot', "
+                " 'restore_failed', 'manifestation-v2', '2026-07-14'), "
+                "('acknowledged-operation', 'calibre:2', 'stopped-pilot', "
+                " 'failed', 'manifestation-v2', '2026-07-14'), "
+                "('forged-unknown-ack', 'calibre:3', 'open-pilot', "
+                " 'unknown', 'manifestation-v2', '2026-07-14'), "
+                "('forged-open-failed', 'calibre:4', 'open-pilot', "
+                " 'failed', 'manifestation-v2', '2026-07-14')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO operationincidentacknowledgement VALUES "
+                "('acknowledged-operation'), ('forged-unknown-ack'), ('forged-open-failed')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO outboxevent VALUES "
+                "('acknowledged-operation', 'failed'), ('forged-unknown-ack', 'failed'), "
+                "('forged-open-failed', 'failed')"
+            )
+        )
         connection.execute(text("INSERT INTO \"change\" VALUES ('failed_rollback_failed')"))
+        connection.execute(
+            text("INSERT INTO pilotsession VALUES ('open-pilot', 'open', 2, 5), ('stopped-pilot', 'stopped', 1, 5)")
+        )
 
     monkeypatch.setattr(health_api, "get_engine", lambda _settings: engine)
-    monkeypatch.setattr(heartbeat_module, "read_writer_heartbeat", lambda *_args, **_kwargs: {"owner": "writer"})
+    settings = Settings(
+        library={"path": "/library"},
+        manifestation_v2={
+            "supervised_pilot": {
+                "enabled": True,
+                "pilot_id": "metrics-pilot",
+                "release_digest": f"sha256:{'a' * 64}",
+                "max_operations": 5,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        heartbeat_module,
+        "read_writer_heartbeat",
+        lambda *_args, **_kwargs: {
+            "owner": "writer",
+            "release_digest": f"sha256:{'a' * 64}",
+            "alembic_revision": expected_schema_revision(),
+            "library_root_sha256": library_root_sha256("/library"),
+            "pilot_id": "metrics-pilot",
+            "max_operations": 5,
+        },
+    )
     monkeypatch.setattr(heartbeat_module, "heartbeat_is_fresh", lambda *_args, **_kwargs: True)
     reset_metrics()
 
-    response = await health_api.prometheus_metrics(Settings())
+    response = await health_api.prometheus_metrics(settings)
     body = response.body.decode()
     assert "bookaudit_writer_heartbeat_fresh 1.0" in body
     assert 'bookaudit_outbox_events{status="pending"} 2.0' in body
     assert 'bookaudit_operations{state="restore_failed"} 1.0' in body
+    assert 'bookaudit_v2_operations{state="restore_failed"} 1.0' in body
+    assert 'bookaudit_v2_operations{state="failed"} 1.0' in body
+    assert 'bookaudit_v2_operations{state="unknown"} 1.0' in body
+    assert "bookaudit_v2_incidents_acknowledged 3.0" in body
+    assert 'bookaudit_v2_pilot_reserved_operations{state="open"} 2.0' in body
+    assert "bookaudit_v2_writer_binding_ok 1.0" in body
     assert 'bookaudit_changes{status="failed_rollback_failed"} 1.0' in body
     assert "bookaudit_operational_metrics_collection_success 1.0" in body

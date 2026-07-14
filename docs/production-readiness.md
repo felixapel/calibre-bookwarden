@@ -2,71 +2,88 @@
 
 ## Current decision
 
-Release `v1.2.1` (2026-07-13) is approved for supervised and unattended
-**internal** production operation. This decision covers the shipped
-application, writer, database protocol, maintenance commands, Compose contract,
-and release pipeline. It does not certify the surrounding host or operator
-accounts.
+The Manifestation V2 supervised-pilot development head is **not yet approved
+for writes to a live Calibre library**. It is read-only/shadow by default.
+Legacy direct apply and unattended V2 apply are disabled in every profile.
 
-Before exposing a deployment, the operator must rotate deployment secrets and
-revoke every superseded Gitea or registry personal access token. Never embed a
-token in a Git remote URL, committed file, shell history, or CI log. Token
-revocation is an account-side action and cannot be proven by repository tests.
+The earlier `v1.2.1` operational assessment does not automatically approve this
+new schema, API, WebUI, pilot ledger, or writer binding. Promotion is per exact
+commit and immutable image digest.
 
-## Acceptance evidence
+## Required promotion evidence
 
-- `scripts/verify-calibre-gate.sh` exited 0 for the `v1.2.1` release candidate.
-- 218 selected backend and integration tests passed, followed by the separate
-  Komf integration gate.
-- The Komf integration test passed.
-- Seven conditional local skips remain limited to unavailable optional integrations;
-  CI and release verification explicitly require the PostgreSQL/Valkey retention
-  test and cannot silently skip it.
-- The PostgreSQL/Calibre SIGKILL reconciliation test was executed separately
-  with both dependencies present and passed.
-- A disposable production-mode PostgreSQL/Valkey drill proved that retention
-  exits non-zero and preserves the restore point for an advisory-lock owner, a
-  fresh heartbeat, and a non-terminal ledger row, then deletes exactly that
-  restore point only when all three guards are clear.
-- Fault injection covers journal creation, atomic transaction publication,
-  candidate rename, journal advancement, partial payload deletion, and terminal
-  tombstone recovery boundaries.
-- Independent adversarial review returned GO for both supervised and unattended
-  internal production operation after the retention and lock-cleanup fixes.
+All of these gates are mandatory for the same commit and release digest:
+
+1. Ruff, format, mypy, the complete hermetic backend suite, WebUI lint/build,
+   and Playwright pass.
+2. Gitea job `Manifestation V2 required integration` passes with real Calibre,
+   Tesseract, PostgreSQL and Valkey. Its API-authorize, unit-queue, writer
+   apply/readback, queued undo and restored-readback test must report exactly one
+   pass and no skip.
+3. The Gitea production-image contract and vulnerability gates pass. Do not
+   manually rerun Actions to manufacture a green result.
+4. `scripts/prepare-production.sh` accepts the operator-owned mode-0600 `.env`
+   and proves that the configured pilot digest exactly matches the immutable
+   `BOOKAUDIT_IMAGE` reference.
+5. A disposable library apply/readback/undo drill succeeds with the exact image.
+6. A restored clone of the real library completes shadow audit and a supervised
+   apply/readback/undo rehearsal with no unexplained evidence or recovery state.
+7. Only after explicit approval, at most five serial live canaries are manually
+   reviewed one by one. Any stop condition closes the pilot immediately.
+
+Repository tests cannot prove token revocation, host access control, backup
+recoverability, a real-library clone rehearsal, or human review quality. Record
+those operator-owned facts separately; never turn their absence into a passing
+checkbox.
 
 ## Safety boundaries
 
-- Only the dedicated writer receives a read-write Calibre library mount.
-- Writer exclusivity is enforced by a PostgreSQL session advisory lock, not by a
-  human confirmation flag.
-- Retention requires a paired backup manifest whose database dump and artifact
-  archive match their SHA-256 digests. Symlinks are rejected in the manifest and
-  referenced paths.
-- Retention records and revalidates each expired restore directory's device,
-  inode, and manifest digest before moving the exact set into a same-filesystem
-  quarantine.
-- Recovery is explicit per transaction ID, requires the same verified backup,
-  resumes deletion under the production writer guard, and retains a durable
-  terminal journal. It never guesses between rollback and deletion.
-- The advisory lock protects against application-mediated concurrency. A
-  privileged host process that mutates bind-mounted paths concurrently is
-  outside this trust boundary; restrict host access during maintenance.
-- If retention is interrupted after publication, preserve the hidden quarantine
-  for investigation and use only the documented `--recover-quarantine` command.
-  Manual deletion remains outside the supported recovery contract.
+- Only the dedicated writer receives a read-write Calibre library mount. The
+  app can authorize and enqueue but cannot write library files.
+- A persisted pilot row binds its exact ID to a canonical library-root SHA-256,
+  immutable release digest, Alembic revision and budget of one to five reserved
+  operations. Reusing the ID with different binding data is rejected.
+- Queueing reserves exactly one operation under a fixed PostgreSQL transaction
+  advisory lock plus the exact pilot row lock, including when simultaneous
+  requests present different pilot IDs. Any nonterminal operation or
+  unacknowledged unpublished outbox event blocks the next request. The
+  reservation counter must equal the number of pilot-bound operations at both
+  API and writer boundaries; reservations are never reset or refunded.
+- A fresh writer heartbeat must match the pilot runtime before queueing; the
+  authenticated readiness endpoint and writer both validate the complete pilot
+  ID, max-operations, release, schema and canonical-root binding.
+- Tier A still requires manual authorization of one exact sealed package. Tier
+  B/C, title-only lookup, LLM confidence, vision alone and a single OCR engine
+  cannot authorize a write.
+- Writer exclusivity uses a PostgreSQL session advisory lock. A privileged host
+  process that directly changes the bind mount is outside this trust boundary.
+- Every apply preserves hashed OPF/custom-column/cover recovery evidence and
+  performs readback. Unknown or failed recovery is a stop condition.
+- `bookaudit pilot-stop PILOT_ID --yes` closes the persisted session. Stop app
+  intake and the writer first because closing a row cannot interrupt a Calibre
+  subprocess that has already started.
+- A historical terminal V2 `failed` outbox can be bypassed only by the separate
+  append-only `bookaudit incident-ack` workflow after live Calibre and recovery
+  evidence are reconciled and the exact failed pilot is stopped under lock. It
+  is unavailable for `unknown` and `restore_failed`, preserves all original
+  rows, does not refund budget, and never permits reuse of the stopped ID.
+- Retention remains a separate guarded maintenance workflow and requires the
+  paired PostgreSQL/artifact backup manifest described in the operations
+  runbook.
 
-## Deployment checklist
+## Operator checklist
 
 1. Revoke superseded Gitea and registry tokens; rotate deployment secrets.
-2. Pin `BOOKAUDIT_IMAGE` to the verified release digest.
-3. Run `scripts/prepare-production.sh` and resolve every validation error.
-4. Create the paired PostgreSQL/artifact backup and its manifest.
-5. Run the explicit migration service before runtime services.
-6. Require authenticated readiness and a fresh writer heartbeat.
-7. Load the supplied monitoring and alert rules.
-8. Perform the restore drill and rollback check described in the production
-   operations runbook.
+2. Pin `BOOKAUDIT_IMAGE` to the exact reviewed digest and set the same digest in
+   `BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__RELEASE_DIGEST`.
+3. Keep `BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=false` through
+   shadow audit, backup, restore drill and clone rehearsal.
+4. Run `scripts/prepare-production.sh` and resolve every validation error.
+5. Apply Alembic head `a72c9d4e8f31` explicitly; runtime services never migrate.
+6. Load alerts and require authenticated readiness plus the exact writer
+   binding metric.
+7. Follow the serial start/stop procedure in the supervised rollout runbook.
 
-See [DEPLOYMENT.md](../DEPLOYMENT.md) and the
-[production operations runbook](runbooks/production-operations.md) for exact
-commands.
+See [DEPLOYMENT.md](../DEPLOYMENT.md), the
+[production operations runbook](runbooks/production-operations.md), and the
+[Manifestation V2 rollout runbook](calibration/manifestation-v2-runbook.md).

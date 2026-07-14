@@ -75,6 +75,73 @@ jobs:
           uv export --frozen --no-hashes --no-emit-project --output-file requirements-audit.txt
           uvx pip-audit==2.10.1 --requirement requirements-audit.txt
 
+  v2-pilot-integration:
+    name: Manifestation V2 required integration
+    runs-on: ubuntu-latest
+    needs: backend
+    services:
+      postgres:
+        image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
+        env:
+          POSTGRES_USER: bookaudit
+          POSTGRES_PASSWORD: gitea-v2-required-password
+          POSTGRES_DB: bookaudit_v2_required_test
+        options: >-
+          --health-cmd "pg_isready -U bookaudit -d bookaudit_v2_required_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        image: valkey/valkey:8.1.3-alpine@sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:gitea-v2-required-password@postgres:5432/bookaudit_v2_required_test
+      TEST_VALKEY_URL: redis://valkey:6379/0
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install real Calibre, OCR, PostgreSQL, and Valkey clients
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            calibre tesseract-ocr tesseract-ocr-eng fonts-dejavu-core \
+            postgresql-client redis-tools curl ca-certificates
+
+      - name: Install uv and locked Python deps
+        run: |
+          curl -LsSf https://astral.sh/uv/0.11.15/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          uv python install 3.12.13
+          uv sync --python 3.12.13 --frozen --extra dev
+
+      - name: Prove every required integration dependency
+        run: |
+          command -v calibredb
+          command -v ebook-meta
+          command -v tesseract
+          tesseract --version
+          pg_isready -h postgres -U bookaudit -d bookaudit_v2_required_test
+          test "$(redis-cli -u "$TEST_VALKEY_URL" ping)" = "PONG"
+
+      - name: Migrate disposable V2 integration database
+        run: |
+          BOOKAUDIT_DATABASE__BACKEND=postgres \
+            BOOKAUDIT_DATABASE__POSTGRES_DSN="$TEST_POSTGRES_DSN" \
+            uv run bookaudit migrate
+
+      - name: Run required API to writer to undo round trip without skips
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run pytest tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs \
+            | tee /tmp/v2-required-pytest.log
+          test "${PIPESTATUS[0]}" -eq 0
+          ! grep -Eq "[0-9]+ skipped|SKIPPED" /tmp/v2-required-pytest.log
+          grep -Eq "1 passed" /tmp/v2-required-pytest.log
+
   benchmarks:
     name: Benchmarks
     runs-on: ubuntu-latest

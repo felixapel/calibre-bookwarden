@@ -37,16 +37,13 @@ git push -u gitea <branch>
 ## What happens after the push
 
 1. **Gitea webhook** (if configured) fires → **act_runner** picks up the workflow
-2. **`.gitea/workflows/v1-tests.yml`** runs the 4 jobs:
-   - `backend` — ruff + mypy + pytest (no benchmarks)
+2. **`.gitea/workflows/v1-tests.yml`** runs five jobs:
+   - `backend` — ruff + mypy + PostgreSQL/Valkey pytest and dependency gates
+   - `v2-pilot-integration` — required no-skip real Calibre/Tesseract apply,
+     readback, queued undo and restored readback
    - `benchmarks` — pytest --benchmark-only on push
-   - `webui-lint-build` — npm install + lint + build
-   - `webui-e2e` — Playwright E2E suite
-
-3. **Workflow artifacts** uploaded:
-   - `coverage-xml`
-   - `benchmark-baseline` (`.benchmarks/baseline.json`)
-   - `playwright-report` (HTML report of the E2E run)
+   - `webui` — npm audit/lint/build plus desktop/mobile Playwright
+   - `container` — production image, Compose, Prometheus and Trivy contract
 
 ## Creating the Gitea PR (after push)
 
@@ -62,7 +59,7 @@ curl -X POST "$GITEA_URL/api/v1/repos/felix/calibre-ai-auditor/pulls" \
   -d '{
     "head": "feat/v1-content-verification",
     "base": "main",
-    "title": "release(v1.0): Content-Ground Verification",
+    "title": "feat: supervised exact-manifestation V2 pilot",
     "body": "Implementation details, verification evidence, migration notes, and rollback plan."
   }'
 ```

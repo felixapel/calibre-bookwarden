@@ -14,7 +14,7 @@ tests/
 │   └── gold_truth/          # Per-field contract for each fixture
 ├── benchmarks/        # 32 pytest-benchmark tests (with baseline.json)
 ├── calibration/       # 4 smoke tests for the calibration pipeline
-├── web/               # 23 FastAPI test-client tests
+├── web/               # FastAPI route, auth, observability, and V2 review tests
 └── cassettes/         # Recorded LLM responses for the witness tests
 ```
 
@@ -23,7 +23,9 @@ tests/
 The V2 tests prove strict evidence/provenance contracts, one-book-at-a-time
 processing, all-format extraction, OCR-to-exact-provider ordering, non-authority
 of vision/LLM output, privacy consent, SSRF and response limits, sealed resume
-state, exact authorization, writer rollback, calibration, and migrations.
+state, exact authorization, resolver-derived Tier A packages, writer rollback,
+legacy-writer rejection, monotonic pilot budgeting, append-only failure
+acknowledgement, calibration, and migrations.
 
 ```bash
 pytest -q \
@@ -34,11 +36,28 @@ pytest -q \
   tests/test_library_pipeline_v2.py \
   tests/test_persistence_v2.py \
   tests/test_v2_apply_coordinator.py \
+  tests/test_v2_supervised_pilot_integration.py \
   tests/test_calibration_v2.py \
   tests/test_migrations.py \
   tests/web/test_apply_security.py \
+  tests/web/test_review_v2_api.py \
   tests/web/test_verify_api.py
 ```
+
+The real supervised round trip is intentionally conditional locally:
+
+```bash
+TEST_POSTGRES_DSN=postgresql+psycopg://... \
+TEST_VALKEY_URL=redis://... \
+pytest tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs
+```
+
+The Gitea job `Manifestation V2 required integration` installs and proves every
+dependency, migrates a disposable database, and fails if this test skips or
+does not report exactly one pass. Its internal identity root is produced by the
+same bounded EPUB extractor used in production; Tesseract remains a separate
+non-authoritative observation and a deterministic structured-catalog fixture
+provides the independent external root.
 
 The hermetic backend gate excludes benchmarks, live OCR, and network tests:
 
@@ -87,7 +106,9 @@ the production frontend build. Every page has its own spec file.
 
 - **Specs** (in `webui/e2e/`):
   - `dashboard.spec.ts` — health card, homelab host count
-  - `review.spec.ts` — **the v1.0 per-field verdict rendering** (13 tests)
+  - `review.spec.ts` — V2-only sealed evidence, Tier B/C blocking, exact
+    authorization, one-operation queueing, stale-response selection isolation,
+    and legacy V1 read-only messaging
   - `scan.spec.ts`, `inspect.spec.ts`, `settings.spec.ts`, `duplicates.spec.ts`,
     `undo.spec.ts` — page-specific behavior
   - `verify.spec.ts` — the new v1.0 Verify page (6 tests)
@@ -164,7 +185,9 @@ that simulate real LLM responses. No API calls in CI.
 | Job | What it does |
 |---|---|
 | `backend` | Locked Python quality, PostgreSQL/Valkey integration, coverage, 50k metadata and dependency gates |
-| `frontend` | Isolated backend bootstrap plus npm lint/build/audit and desktop/mobile Playwright |
+| `v2-pilot-integration` | Required, no-skip real Calibre/Tesseract/PostgreSQL/Valkey apply/readback/undo round trip |
+| `webui` | Isolated backend bootstrap plus npm lint/build/audit and desktop/mobile Playwright |
+| `benchmarks` | Push-only benchmark suite |
 | `container` | Production image, runtime, Compose, Prometheus and vulnerability contracts after backend/frontend pass |
 
 It runs Backend, Benchmarks, WebUI and Production image contract jobs on the
@@ -239,3 +262,14 @@ Before merging any change to the v1.0 **Apply Engine** or **RestorePointStore**:
    mutation.
 6. Replace an OPF/cover pathname after its checksum is verified and prove the
    Calibre adapter still consumes the original immutable descriptor bytes.
+7. Prove the supervised queue accepts one exact package and rejects batches,
+   overlapping nonterminal operations, unpublished outbox rows, mismatched
+   runtime binding, stopped pilot state and a sixth reservation. With real
+   PostgreSQL, race different pilot IDs and prove the fixed transaction advisory
+   lock permits only one reservation.
+8. Run the required real-service V2 apply/readback/undo gate without skips
+   before any promotion or live canary.
+9. Prove incident acknowledgement rejects an open pilot, keeps the stopped ID
+   unusable, and permits continuation only under a distinct reviewed pilot ID.
+   Directly forge acknowledgement rows for both same-ID and different-ID open
+   pilots; queue and failure metrics must still fail closed.

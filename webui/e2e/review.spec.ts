@@ -1,145 +1,252 @@
-import { test, expect } from '@playwright/test'
-import { mockApi } from './helpers/api-mock'
+import { expect, test } from '@playwright/test'
 import { setApiKey } from './helpers/auth'
-import { mockVerdictFor } from './helpers/verdict-mock'
-import {
-  SAMPLE_BOOKS,
-  SAMPLE_BOOK_VERDICT_CONFIRMED,
-  SAMPLE_BOOK_VERDICT_MISMATCH,
-  SAMPLE_BOOK_VERDICT_AUTHOR_SWAP,
-  SAMPLE_BOOK_VERDICT_AMBIGUOUS,
-} from './helpers/fixtures'
 
-test.describe('Review page — v1.0 per-field verdicts', () => {
+const tierASummary = {
+  evidence_id: 'evidence-tier-a',
+  run_id: 'run-v2',
+  book_key: 'calibre:1',
+  created_at: '2026-07-14T12:00:00Z',
+  state: 'shadowed',
+  tier: 'A',
+  current_metadata: { title: 'Old title', authors: ['Current Author'] },
+  manifestation_ids: { isbn: '9780306406157' },
+  patch_fields: ['title', 'publisher'],
+  risk_flags: [],
+}
+
+const tierBSummary = {
+  evidence_id: 'evidence-tier-b',
+  run_id: 'run-v2',
+  book_key: 'calibre:2',
+  created_at: '2026-07-14T12:01:00Z',
+  state: 'review',
+  tier: 'B',
+  current_metadata: { title: 'Unresolved edition', authors: ['Unknown Author'] },
+  manifestation_ids: {},
+  patch_fields: [],
+  risk_flags: ['manifestation_unresolved'],
+}
+
+const detailFor = (summary: typeof tierASummary | typeof tierBSummary) => ({
+  status: 'success',
+  data: {
+    package: {
+      schema_version: 2,
+      policy_version: 'manifestation-v2',
+      evidence_id: summary.evidence_id,
+      run_id: summary.run_id,
+      book_key: summary.book_key,
+      created_at: summary.created_at,
+      state: summary.state,
+      snapshot: {
+        book_key: summary.book_key,
+        calibre_book_id: summary.book_key === 'calibre:1' ? 1 : 2,
+        current_metadata: summary.current_metadata,
+        files: [`/library/${summary.book_key}.epub`],
+        library_root: '/library',
+        snapshot_sha256: '1'.repeat(64),
+      },
+      formats: [
+        {
+          path: `/library/${summary.book_key}.epub`,
+          format: 'EPUB',
+          sha256: '2'.repeat(64),
+          status: 'readable',
+          identifiers: summary.manifestation_ids,
+          title: summary.current_metadata.title,
+          authors: summary.current_metadata.authors,
+          languages: ['en'],
+          evidence_ids: ['source-title'],
+          error: null,
+        },
+      ],
+      source_evidence: [
+        {
+          evidence_id: 'source-title',
+          root_id: 'ebook-content',
+          independence_root: null,
+          source_kind: 'content_native',
+          field: 'title',
+          value: 'Exact title',
+          manifestation_ids: summary.manifestation_ids,
+          locator: 'EPUB title page',
+          artifact_sha256: '3'.repeat(64),
+          source_url: null,
+          authoritative: true,
+        },
+      ],
+      identity: {
+        tier: summary.tier,
+        manifestation_ids: summary.manifestation_ids,
+        field_decisions:
+          summary.tier === 'A'
+            ? {
+                title: {
+                  field: 'title',
+                  current_value: 'Old title',
+                  resolved_value: 'Exact title',
+                  status: 'auto',
+                  evidence_ids: ['source-title'],
+                  root_ids: ['ebook-content'],
+                  reasons: ['Exact manifestation corroborated'],
+                },
+              }
+            : {},
+        auto_patch: summary.tier === 'A' ? { title: 'Exact title', publisher: 'Exact Publisher' } : {},
+        risk_flags: summary.risk_flags,
+        reasons: summary.tier === 'A' ? ['Tier A exact identity'] : ['Manifestation remains unresolved'],
+      },
+      privacy_receipts: [],
+      warnings: [],
+      error: null,
+      package_sha256: '4'.repeat(64),
+    },
+    authorization: null,
+    operation: null,
+  },
+})
+
+test.describe('Review page — sealed Manifestation V2 workflow', () => {
   test.beforeEach(async ({ page }) => {
     await setApiKey(page)
-    await mockApi(page, /\/api\/config/, {
-      get: { body: { status: 'success', data: { library: { path: '/dev/null', read_only: true } } } },
-    })
-    await mockApi(page, /\/api\/books$/, {
-      get: { body: { status: 'success', data: SAMPLE_BOOKS } },
-    })
-    // The evidence endpoint returns 404 in the test DB; mock it as empty so the
-    // page can advance past "Extracting evidence package..." state.
-    await mockApi(page, /\/api\/books\/.*\/evidence/, {
-      get: { body: { status: 'success', data: { current: {}, extracted: {}, snippets: [], candidates: [], decision: null } } },
-    })
-  })
-
-  test('shows per-field verdicts when book is selected', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:1', SAMPLE_BOOK_VERDICT_CONFIRMED)
-    await page.goto('/review')
-    await page.click('text=The Great Gatsby')
-    await expect(page.locator('text=Per-Field Content Verdicts (v1.0)')).toBeVisible()
-    await expect(page.locator('text=TITLE').first()).toBeVisible()
-    await expect(page.locator('text=Confirmed').first()).toBeVisible()
-  })
-
-  test('confirmed verdict shows green chip and matches book content', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:1', SAMPLE_BOOK_VERDICT_CONFIRMED)
-    await page.goto('/review')
-    await page.click('text=The Great Gatsby')
-    await expect(page.locator('text=Confirmed').first()).toBeVisible()
-    await expect(page.locator('text=matches book content').first()).toBeVisible()
-  })
-
-  test('mismatch verdict shows red chip with declared vs observed diff', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:2', SAMPLE_BOOK_VERDICT_MISMATCH)
-    await page.goto('/review')
-    await page.click('text=WRONG TITLE')
-    await expect(page.locator('text=declared:')).toBeVisible()
-    await expect(page.locator('text=observed:')).toBeVisible()
-    await expect(page.locator('text=Some Real Book').first()).toBeVisible()
-  })
-
-  test('author_swap risk flag renders as red badge', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:3', SAMPLE_BOOK_VERDICT_AUTHOR_SWAP)
-    await page.goto('/review')
-    await page.click('text=Right Book')
-    await expect(page.locator('text=author_swap').first()).toBeVisible()
-  })
-
-  test('ambiguous verdict shows purple chip with LLM witness needed', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:4', SAMPLE_BOOK_VERDICT_AMBIGUOUS)
-    await page.goto('/review')
-    await page.click('text=The Novel')
-    await expect(page.locator('text=cannot decide deterministically').first()).toBeVisible()
-  })
-
-  test('auto-apply eligible badge shows when verdict is eligible', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:2', SAMPLE_BOOK_VERDICT_MISMATCH)
-    await page.goto('/review')
-    await page.click('text=WRONG TITLE')
-    await expect(page.locator('text=auto-apply ready')).toBeVisible()
-  })
-
-  test('manual review badge shows when verdict is not eligible', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:3', SAMPLE_BOOK_VERDICT_AUTHOR_SWAP)
-    await page.goto('/review')
-    await page.click('text=Right Book')
-    await expect(page.locator('text=manual review')).toBeVisible()
-  })
-
-  test('overall confidence percentage is displayed', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:1', SAMPLE_BOOK_VERDICT_CONFIRMED)
-    await page.goto('/review')
-    await page.click('text=The Great Gatsby')
-    await expect(page.locator('text=conf').first()).toBeVisible()
-  })
-
-  test('evidence spans render with source and page', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:1', SAMPLE_BOOK_VERDICT_CONFIRMED)
-    await page.goto('/review')
-    await page.click('text=The Great Gatsby')
-    await expect(page.locator('text=Evidence (1):')).toBeVisible()
-    await expect(page.locator('text=[title_page 1]').first()).toBeVisible()
-  })
-
-  test('proposed patch section shows JSON', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:2', SAMPLE_BOOK_VERDICT_MISMATCH)
-    await page.goto('/review')
-    await page.click('text=WRONG TITLE')
-    await expect(page.locator('text=Proposed Patch')).toBeVisible()
-    await expect(page.locator('text=Some Real Book').first()).toBeVisible()
-  })
-
-  test('Approve button calls /api/review/{key}/approve', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:1', SAMPLE_BOOK_VERDICT_CONFIRMED)
-    let approveCalled = false
-    await page.route(/\/api\/review\/calibre:1\/approve/, async (route) => {
-      approveCalled = true
+    await page.route(/\/api\/review\/v2(?:\?.*)?$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ status: 'success', data: { message: 'approved' } }),
+        body: JSON.stringify({
+          status: 'success',
+          data: [tierASummary, tierBSummary],
+          meta: { total: 2, limit: 50, offset: 0 },
+        }),
       })
     })
-    await page.goto('/review')
-    await page.click('text=The Great Gatsby')
-    await page.click('button:has-text("Approve Changes")')
-    await expect.poll(() => approveCalled).toBe(true)
-  })
-
-  test('Reject button calls /api/review/{key}/reject and removes from queue', async ({ page }) => {
-    await mockVerdictFor(page, 'calibre:1', SAMPLE_BOOK_VERDICT_CONFIRMED)
-    await page.route(/\/api\/review\/calibre:1\/reject/, async (route) => {
+    await page.route(/\/api\/review\/v2\/evidence-tier-a$/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ status: 'success', data: { message: 'rejected' } }),
+        body: JSON.stringify(detailFor(tierASummary)),
       })
     })
-    await page.goto('/review')
-    await page.click('text=The Great Gatsby')
-    await page.click('button:has-text("Reject")')
-    await expect(page.locator('button:has-text("The Great Gatsby")')).toHaveCount(0)
+    await page.route(/\/api\/review\/v2\/evidence-tier-b$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(detailFor(tierBSummary)),
+      })
+    })
   })
 
-  test('Queue Approved Fixes button is enabled when there are approved books', async ({ page }) => {
+  test('lists only V2 evidence and has no bulk queue action', async ({ page }) => {
     await page.goto('/review')
-    const applyButton = page.locator('button:has-text("Queue Approved Fixes")')
-    // With 4 SAMPLE_BOOKS, 3 of which are in suggest_fix/needs_review/audited status,
-    // the button should be enabled (the queue is non-empty).
-    await expect(applyButton).toBeEnabled()
+
+    await expect(page.getByRole('heading', { name: 'Manifestation review' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Old title/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Unresolved edition/ })).toBeVisible()
+    await expect(page.getByText('Legacy V1 records are historical and read-only')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Queue Approved Fixes/i })).toHaveCount(0)
+  })
+
+  test('shows exact manifestation evidence, hashes, and proposed field diff', async ({ page }) => {
+    await page.goto('/review')
+    await page.getByRole('button', { name: /Old title/ }).click()
+
+    await expect(page.getByText('Tier A', { exact: true }).last()).toBeVisible()
+    await expect(page.getByText('9780306406157')).toBeVisible()
+    await expect(page.getByText('EPUB title page')).toBeVisible()
+    await expect(page.getByText('2'.repeat(64))).toBeVisible()
+    await expect(page.getByText('Old title', { exact: true }).last()).toBeVisible()
+    await expect(page.getByText('Exact title', { exact: true })).toBeVisible()
+  })
+
+  test('keeps Tier B evidence read-only', async ({ page }) => {
+    await page.goto('/review')
+    await page.getByRole('button', { name: /Unresolved edition/ }).click()
+
+    await expect(page.getByText('Tier B', { exact: true }).last()).toBeVisible()
+    await expect(page.getByText('Tier B cannot be authorized or queued')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Authorize exact patch' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeDisabled()
+  })
+
+  test('ignores a stale detail response after selecting another package', async ({ page }) => {
+    let releaseTierA: () => void = () => undefined
+    const tierARelease = new Promise<void>((resolve) => {
+      releaseTierA = resolve
+    })
+    let tierARequested: () => void = () => undefined
+    const tierARequest = new Promise<void>((resolve) => {
+      tierARequested = resolve
+    })
+    await page.route(/\/api\/review\/v2\/evidence-tier-a$/, async (route) => {
+      tierARequested()
+      await tierARelease
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(detailFor(tierASummary)),
+      })
+    })
+
+    await page.goto('/review')
+    await page.getByRole('button', { name: /Old title/ }).click()
+    await tierARequest
+    await page.getByRole('button', { name: /Unresolved edition/ }).click()
+    await expect(page.getByRole('heading', { name: 'Unresolved edition' })).toBeVisible()
+
+    const staleResponse = page.waitForResponse(/\/api\/review\/v2\/evidence-tier-a$/)
+    releaseTierA()
+    await staleResponse
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    }))
+
+    await expect(page.getByRole('heading', { name: 'Unresolved edition' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Authorize exact patch' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeDisabled()
+  })
+
+  test('requires authorization before queueing exactly one write', async ({ page }) => {
+    let authorizationBody: unknown
+    let applyBody: unknown
+    await page.route(/\/api\/review\/v2\/evidence-tier-a\/authorize$/, async (route) => {
+      authorizationBody = route.request().postDataJSON()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success', data: { authorization_id: 'authorization-a' } }),
+      })
+    })
+    await page.route(/\/api\/apply\/v2$/, async (route) => {
+      applyBody = route.request().postDataJSON()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'success',
+          data: {
+            operation_id: 'operation-a',
+            evidence_id: 'evidence-tier-a',
+            pilot_id: 'pilot-a',
+          },
+        }),
+      })
+    })
+
+    await page.goto('/review')
+    await page.getByRole('button', { name: /Old title/ }).click()
+    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeDisabled()
+
+    await page.getByLabel('Authorization reason').fill('Matched ISBN and title page')
+    await page.getByRole('button', { name: 'Authorize exact patch' }).click()
+    await expect.poll(() => authorizationBody).toEqual({ reason: 'Matched ISBN and title page' })
+    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeEnabled()
+
+    await page.getByRole('button', { name: 'Queue this write' }).click()
+    await expect.poll(() => applyBody).toEqual({
+      force: true,
+      evidence_id: 'evidence-tier-a',
+      authorization_id: 'authorization-a',
+    })
+    await expect(page.getByText('operation-a')).toBeVisible()
   })
 })

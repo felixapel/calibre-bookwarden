@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlmodel import JSON, Column, Field, SQLModel
 
 
@@ -141,12 +141,62 @@ class OperationLedger(SQLModel, table=True):
     rollback_cover_sha256: str | None = None
     rollback_custom: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     evidence_id: str | None = Field(default=None, index=True)
+    pilot_id: str | None = Field(default=None, index=True)
     lease_owner: str | None = Field(default=None, index=True)
     lease_expires_at: datetime | None = Field(default=None, index=True)
     error: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     completed_at: datetime | None = None
+
+
+class OperationIncidentAcknowledgement(SQLModel, table=True):
+    """Append-only operator evidence that one safe terminal V2 failure was reviewed."""
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(actor)) BETWEEN 1 AND 128",
+            name="ck_incident_ack_actor_length",
+        ),
+        CheckConstraint(
+            "length(trim(reason)) BETWEEN 12 AND 1000",
+            name="ck_incident_ack_reason_length",
+        ),
+    )
+
+    operation_id: str = Field(
+        primary_key=True,
+        foreign_key="operationledger.operation_id",
+    )
+    actor: str
+    reason: str
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class PilotSession(SQLModel, table=True):
+    """Immutable runtime binding and monotonically consumed V2 canary budget."""
+
+    __table_args__ = (
+        CheckConstraint("max_operations BETWEEN 1 AND 5", name="ck_pilotsession_max_operations"),
+        CheckConstraint(
+            "reserved_operations BETWEEN 0 AND max_operations",
+            name="ck_pilotsession_reserved_operations",
+        ),
+        CheckConstraint(
+            "state IN ('open', 'stopped', 'completed')",
+            name="ck_pilotsession_state",
+        ),
+    )
+
+    pilot_id: str = Field(primary_key=True)
+    library_root_sha256: str = Field(index=True)
+    release_digest: str
+    alembic_revision: str
+    max_operations: int = 5
+    reserved_operations: int = 0
+    state: str = Field(default="open", index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class BookWriteLock(SQLModel, table=True):

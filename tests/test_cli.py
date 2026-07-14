@@ -7,9 +7,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from click.exceptions import Exit
+from sqlmodel import Session, SQLModel, create_engine
 from typer.testing import CliRunner
 
 from calibre_ai_auditor.cli.main import _verify_backup_manifest, app
+from calibre_ai_auditor.storage.models import (
+    OperationIncidentAcknowledgement,
+    OperationLedger,
+    OutboxEvent,
+    PilotSession,
+    utc_now,
+)
 from calibre_ai_auditor.verification.restore import RestorePointStore
 
 runner = CliRunner()
@@ -19,6 +27,8 @@ def test_doctor() -> None:
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
     assert "Doctor check:" in result.stdout
+    assert "tesseract" in result.stdout
+    assert "ebook-convert" in result.stdout
 
 
 def test_scan_no_library() -> None:
@@ -82,6 +92,95 @@ def test_migrate_runs_explicit_schema_upgrade() -> None:
     assert result.exit_code == 0
     upgrade.assert_called_once()
     assert "Database schema upgraded" in result.stdout
+
+
+def test_pilot_stop_requires_confirmation_and_closes_exact_session() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            PilotSession(
+                pilot_id="pilot-stop-test",
+                library_root_sha256="a" * 64,
+                release_digest=f"sha256:{'b' * 64}",
+                alembic_revision="test-head",
+                max_operations=5,
+            )
+        )
+        session.commit()
+
+    with patch("calibre_ai_auditor.cli.main.get_engine", return_value=engine):
+        refused = runner.invoke(app, ["pilot-stop", "pilot-stop-test"])
+        stopped = runner.invoke(app, ["pilot-stop", "pilot-stop-test", "--yes"])
+
+    assert refused.exit_code == 1
+    assert "requires --yes" in refused.stdout
+    assert stopped.exit_code == 0
+    assert "pilot-stop-test stopped" in stopped.stdout
+    with Session(engine) as session:
+        assert session.get(PilotSession, "pilot-stop-test").state == "stopped"  # type: ignore[union-attr]
+
+
+def test_incident_ack_requires_exact_confirmation_and_records_append_only_evidence() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            OperationLedger(
+                operation_id="failed-v2-operation",
+                idempotency_key="failed-v2-operation",
+                operation_type="apply_metadata",
+                book_key="calibre:1",
+                policy_version="manifestation-v2",
+                pilot_id="incident-ack-pilot",
+                state="failed",
+                completed_at=utc_now(),
+            )
+        )
+        session.add(
+            PilotSession(
+                pilot_id="incident-ack-pilot",
+                library_root_sha256="a" * 64,
+                release_digest=f"sha256:{'b' * 64}",
+                alembic_revision="test-head",
+                max_operations=5,
+                reserved_operations=1,
+                state="stopped",
+            )
+        )
+        session.add(
+            OutboxEvent(
+                event_id="failed-v2-outbox",
+                aggregate_id="failed-v2-operation",
+                event_type="operation.requested",
+                status="failed",
+            )
+        )
+        session.commit()
+
+    args = [
+        "incident-ack",
+        "failed-v2-operation",
+        "--actor",
+        "on-call",
+        "--reason",
+        "Verified failure happened before Calibre mutation",
+    ]
+    with patch("calibre_ai_auditor.cli.main.get_engine", return_value=engine):
+        refused = runner.invoke(app, args)
+        acknowledged = runner.invoke(app, [*args, "--yes"])
+        repeated = runner.invoke(app, [*args, "--yes"])
+
+    assert refused.exit_code == 1
+    assert "requires --yes" in refused.stdout
+    assert acknowledged.exit_code == 0
+    assert "failed-v2-operation acknowledged" in acknowledged.stdout
+    assert repeated.exit_code == 1
+    assert "already acknowledged" in repeated.stdout
+    with Session(engine) as session:
+        evidence = session.get(OperationIncidentAcknowledgement, "failed-v2-operation")
+        assert evidence is not None
+        assert evidence.actor == "on-call"
 
 
 def test_retention_is_dry_run_and_requires_verified_backup(tmp_path: Path) -> None:

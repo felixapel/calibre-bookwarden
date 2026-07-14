@@ -24,6 +24,7 @@ from calibre_ai_auditor.web.api import (
     inspect,
     providers,
     reports,
+    review_v2,
     runs,
     verify,
 )
@@ -282,6 +283,7 @@ app.include_router(inspect.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(books.router, prefix="/api")
 app.include_router(apply.router, prefix="/api")
+app.include_router(review_v2.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")

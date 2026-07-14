@@ -81,6 +81,7 @@ markers = [
     "benchmark: marks tests as performance benchmarks (deselect with -m 'not benchmark')",
     "ocr_live: marks tests that require real OCR dependencies installed locally",
     "network: marks tests that hit network services (deselect with -m 'not network')",
+    "v2_live: required Manifestation V2 pilot integration with Calibre, OCR, PostgreSQL, and Valkey",
 ]
 addopts = "-ra --strict-markers"
 

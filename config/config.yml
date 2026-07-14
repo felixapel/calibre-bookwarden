@@ -94,6 +94,13 @@ manifestation_v2:
     min_tier_a_decisions: 50
     max_false_positive_rate: 0.0
     max_report_age_days: 30
+  supervised_pilot:
+    # Fail closed. Enable only for the documented serial, max-five canary after
+    # the Gitea integration gate and a disposable-library apply/undo drill pass.
+    enabled: false
+    pilot_id: null
+    release_digest: null
+    max_operations: 5
 
 # ─── LLM / AI ───────────────────────────────────────────────────────────────
 routing:

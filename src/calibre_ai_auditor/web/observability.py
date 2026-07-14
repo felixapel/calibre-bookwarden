@@ -8,6 +8,17 @@ from typing import Any
 
 request_id_context: ContextVar[str | None] = ContextVar("request_id", default=None)
 
+_STRUCTURED_LOG_FIELDS = (
+    "event",
+    "evidence_id",
+    "book_key",
+    "operation_id",
+    "pilot_id",
+    "outcome",
+    "tier",
+    "state",
+)
+
 
 class JsonFormatter(logging.Formatter):
     """Render stable one-line JSON logs without serializing arbitrary objects."""
@@ -22,6 +33,10 @@ class JsonFormatter(logging.Formatter):
         request_id = request_id_context.get()
         if request_id:
             payload["request_id"] = request_id
+        for field in _STRUCTURED_LOG_FIELDS:
+            value = getattr(record, field, None)
+            if isinstance(value, (str, int, float, bool)):
+                payload[field] = value[:256] if isinstance(value, str) else value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))

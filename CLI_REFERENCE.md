@@ -56,6 +56,45 @@ V2 `verify` never writes to Calibre. Supervised V2 changes use the authenticated
 `/api/review/v2/{evidence_id}/authorize` and `/api/apply/v2` endpoints; the sole
 writer performs the mutation.
 
+### `bookaudit pilot-stop`
+
+Close one exact persisted supervised V2 pilot so new reservations and queued
+V2 work fail closed at the writer boundary:
+
+```bash
+bookaudit pilot-stop PILOT_ID --yes
+```
+
+Stop app intake and the writer, then set the configured supervised-pilot flag
+to `false` before running this command. `--yes` is mandatory. The command is
+idempotent for an already stopped ID and refuses an unknown ID. It cannot cancel
+a Calibre subprocess already in progress; reconcile the ledger and recovery
+artifacts before restart.
+
+### `bookaudit incident-ack`
+
+Append an immutable operator acknowledgement for one reconciled V2 operation
+whose durable state is exactly `failed`:
+
+```bash
+bookaudit incident-ack OPERATION_ID \
+  --actor on-call-operator \
+  --reason "Verified failure occurred before mutation and Calibre is unchanged" \
+  --yes
+```
+
+The command requires a completed V2 `failed` ledger row, a failed outbox row,
+no active book-write lease, and the operation's exact persisted pilot already
+closed by `pilot-stop`. It locks that stopped pilot while appending evidence.
+It never changes or deletes the operation or outbox evidence. It rejects
+`unknown`, `restore_failed`, successful, legacy, active, open-pilot, and already
+acknowledged operations. Before using it, stop intake and the writer and compare
+live Calibre metadata with the ledger and hashed recovery artifacts.
+Acknowledgement only clears that historical failed outbox from the next-pilot
+gate and failed-operation alert; the stopped ID remains unusable and only a
+distinct, separately reviewed pilot may continue. It does not repair metadata
+or refund the consumed reservation.
+
 ### `bookaudit calibrate-v2`
 
 Derive an integrity-checksummed, advisory calibration report from unique
@@ -137,8 +176,8 @@ retention target is 30 days, with explicit operator-approved cleanup.
 
 ### `bookaudit doctor`
 
-Check system dependencies and connectivity to sidecars (Calibre CLI,
-Ollama, Tika, Qdrant, homelab inference hosts).
+Check local system dependencies, including Calibre conversion tools,
+Tesseract/OCRmyPDF, and report the configured paths.
 
 ```bash
 bookaudit doctor

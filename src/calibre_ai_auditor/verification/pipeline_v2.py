@@ -177,7 +177,17 @@ class EvidencePackageV2(BaseModel):
         if len(format_paths) != len(set(format_paths)):
             return False
         evidence_ids = [item.evidence_id for item in self.source_evidence]
-        return len(evidence_ids) == len(set(evidence_ids))
+        if len(evidence_ids) != len(set(evidence_ids)):
+            return False
+        if self.identity.tier is IdentityTier.tier_a:
+            derived_identity = resolve_manifestation(
+                formats=self.formats,
+                evidence=self.source_evidence,
+                current_metadata=self.snapshot.current_metadata,
+            )
+            if derived_identity.model_dump(mode="json") != self.identity.model_dump(mode="json"):
+                return False
+        return True
 
     def _seal_value(self) -> str:
         payload = self.model_dump(mode="json", exclude={"package_sha256"})

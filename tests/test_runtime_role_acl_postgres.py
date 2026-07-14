@@ -42,8 +42,35 @@ def test_runtime_roles_cannot_mutate_each_others_security_tables() -> None:
     try:
         with app.connect() as connection:
             connection.execute(text("SELECT count(*) FROM operationledger"))
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'pilotsession', 'SELECT,INSERT,UPDATE')")
+            ).scalar_one()
+            assert not connection.execute(
+                text("SELECT has_table_privilege(current_user, 'pilotsession', 'DELETE')")
+            ).scalar_one()
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'operationincidentacknowledgement', 'SELECT,INSERT')")
+            ).scalar_one()
+            assert not connection.execute(
+                text("SELECT has_table_privilege(current_user, 'operationincidentacknowledgement', 'UPDATE,DELETE')")
+            ).scalar_one()
         with writer.connect() as connection:
             connection.execute(text("SELECT count(*) FROM manualauthorization"))
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'pilotsession', 'SELECT')")
+            ).scalar_one()
+            assert not connection.execute(
+                text("SELECT has_table_privilege(current_user, 'pilotsession', 'INSERT,UPDATE,DELETE')")
+            ).scalar_one()
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'operationincidentacknowledgement', 'SELECT')")
+            ).scalar_one()
+            assert not connection.execute(
+                text(
+                    "SELECT has_table_privilege("
+                    "current_user, 'operationincidentacknowledgement', 'INSERT,UPDATE,DELETE')"
+                )
+            ).scalar_one()
 
         with pytest.raises(ProgrammingError) as denied_update, app.begin() as connection:
             connection.execute(text("UPDATE operationledger SET state = state WHERE false"))

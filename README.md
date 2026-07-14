@@ -10,11 +10,14 @@ ground truth and LLMs are witnesses, not generators.
 - **Last tagged version**: v1.2.1 (Content-Ground Verification + Comics Vision + MCP Server)
 - **Interface**: Full-stack WebUI (React 19 / FastAPI) + CLI
 - **Default verification contract**: V2, shadow/read-only, one book at a time
-- **V2 writes**: Explicit per-package authorization through the API and the sole writer
+- **V2 writes**: Disabled by default; the development head supports only an
+  explicitly enabled, serial, manually authorized pilot of at most five operations
 - **Runtime**: Docker/Linux recommended; native verification works with `uv`.
   The supervised writer requires Linux `/proc` descriptor passing and memfd seals.
-- **Production profile**: Approved only for supervised, per-package V2 writes;
-  unattended and legacy direct apply are disabled. Complete the operator credential checklist before exposure. See
+- **Production profile**: The current development increment is not yet approved
+  for a live library. Unattended and legacy direct apply are disabled. Promotion
+  requires the Gitea real-service gate, a disposable apply/undo drill, a clone
+  rehearsal, and reviewed canaries. See
   [docs/production-readiness.md](docs/production-readiness.md).
 
 Manifestation V2 inspects every format attached to each Calibre book, anchors
@@ -34,8 +37,10 @@ book by themselves. See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.
    produce only field values supported by two independent roots.
 6. Persist a strict, SHA-256-checksummed evidence package and continue with the next
    book even when one book fails.
-7. Apply only an explicitly authorized Tier A package after the writer verifies
-   live metadata plus every ebook path/hash and creates OPF/custom-column/cover
+7. During an explicitly enabled supervised pilot, queue only one manually
+   authorized Tier A package at a time. The writer verifies
+   the exact pilot ID/release/schema/root/budget binding, the monotonic operation
+   count, live metadata, and every ebook path/hash, then creates OPF/custom-column/cover
    rollback artifacts. Library and artifact paths are opened component by
    component beneath sealed roots; OPF and cover bytes are handed to Calibre
    through immutable descriptors rather than re-opened pathnames.
@@ -58,7 +63,7 @@ the actual book content.
 | Observability | Logs | **Prometheus `/metrics`** with counters, gauges, histograms |
 | Scale tested | Hundreds of books | **10k–50k books** per run (linear scaling) |
 
-## Core Philosophy
+## Historical v1.0 design
 
 1.  **The book is the ground truth.** Extract ISBNs, titles, authors, dates,
     publishers directly from EPUB/PDF content via deterministic rules before
@@ -79,10 +84,12 @@ the actual book content.
 
 ## Key Features
 
-- **Per-field verdict rendering** — Review page shows colored chips for
-  `confirmed` / `mismatch` / `missing` / `ambiguous` per field, with cited
-  evidence spans.
-- **Conservative auto-apply** with per-book restore points — see
+- **Manifestation V2 review** — Review shows exact sealed evidence, all format
+  hashes, source provenance, current-versus-proposed values, tier, authorization,
+  and the state of one queued operation. Tier B/C cannot be queued.
+- **Supervised serial apply** with a persisted max-five budget, exact image,
+  schema and library binding, writer-side budget reconciliation, append-only
+  acknowledgement of reviewed safe failures, and per-book restore points — see
   [docs/SAFETY.md](docs/SAFETY.md).
 - **Multi-host LLM routing** — auto-discovers 3090 (high), Unraid Ollama
   (medium), and remote providers. Tasks route by GPU class.
@@ -128,6 +135,13 @@ bookaudit hosts           # discover homelab inference hosts
 bookaudit verify --pipeline v2 --limit 100 --use-ocr
 bookaudit verify --pipeline v2 --limit 100 --use-ocr --use-llm
 bookaudit verify --pipeline v2 --limit 0 --format json > out.json
+
+# Emergency close of one persisted supervised pilot (stop app/writer first)
+bookaudit pilot-stop pilot-YYYYMMDD --yes
+
+# Only after stopping its pilot and reconciling a terminal failed operation
+bookaudit incident-ack OPERATION_ID --actor OPERATOR \
+  --reason "Verified pre-write failure and unchanged Calibre metadata" --yes
 
 # Legacy v0.9 commands (still work as fallback)
 bookaudit inspect --path "/path/to/book.epub"
@@ -182,9 +196,11 @@ bookaudit audit --run latest
 ## Testing & Benchmarks
 
 The fail-closed verification script runs locked formatting, lint, typing,
-backend/integration tests, Komf integration and CLI smoke checks. CI adds real
-PostgreSQL concurrency/ACL tests, the 50k metadata gate, dependency audits,
-desktop/mobile browser tests, image scanning and the Compose contract.
+backend/integration tests, Komf integration and CLI smoke checks. Gitea CI adds
+real PostgreSQL concurrency/ACL tests, the required no-skip Calibre/Tesseract/
+PostgreSQL/Valkey V2 apply-readback-undo round trip, the 50k metadata gate,
+dependency audits, desktop/mobile browser tests, image scanning and the Compose
+contract.
 
 ### Backend (pytest)
 

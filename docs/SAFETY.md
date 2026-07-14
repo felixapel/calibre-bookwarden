@@ -33,8 +33,9 @@ By default, the application operates in a completely read-only mode:
   the optional LLM witness.
 - **Audit** (legacy v0.9): Fetches candidate metadata from external providers.
 
-**The default Docker configuration mounts the `library` directory as read-only (`:ro`).**
-**The default configuration has `BOOKAUDIT_READ_ONLY=true`.**
+**The app mounts the library read-only (`:ro`) and defaults to
+`BOOKAUDIT_READ_ONLY=true`. Only the separately fenced writer has a read-write
+mount, while the supervised V2 pilot kill switch defaults to disabled.**
 
 ## What Can Write?
 
@@ -67,19 +68,31 @@ A supervised V2 correction requires all of the following:
    field-lock-filtered patch.
 4. `POST /api/apply/v2` with `force=true`, the explicit evidence ID, and its
    exact authorization ID.
-5. Revalidation by the sole privileged writer, including unchanged live Calibre
+5. An open persisted pilot whose ID is immutably bound to the canonical library
+   root hash, exact release digest, current Alembic head, and a reservation
+   budget between one and five. A fresh writer heartbeat must match that binding.
+6. Exactly one reserved operation: any nonterminal ledger operation or
+   unpublished outbox event rejects the request. The only exception is a
+   terminal V2 `failed` outbox with a separate append-only operator
+   acknowledgement; `unknown` and `restore_failed` can never be acknowledged
+   through this path. Batch payloads are invalid and consumed reservations are
+   not refunded. The stored reservation count must equal the number of
+   pilot-bound ledger rows at both the API and writer boundaries.
+7. Revalidation by the sole privileged writer, including the still-open pilot,
+   exact configured pilot ID, release, schema, root and max-operation binding,
+   unchanged live Calibre
    values, the exact library root sealed into the package, attached-format
    membership/order, and the SHA-256 of every ebook before and after write.
    Every path component is opened relative to a descriptor-anchored root with
    no symlink following; checking only the final component is insufficient.
-6. A hashed OPF backup and restore point before the metadata command. `#edition`
+8. A hashed OPF backup and restore point before the metadata command. `#edition`
    changes additionally preserve the previous custom-column value; cover
    changes preserve and hash the previous cover. Artifact directories are also
    created with descriptor-relative no-follow operations. Before Calibre reads
    an OPF or cover, the verified bytes are copied into an immutable sealed
    descriptor and passed to the child process; a pathname replacement after
    validation cannot alter the consumed bytes.
-7. Read-back verification. A partial write is restored; missing or inconsistent
+9. Read-back verification. A partial write is restored; missing or inconsistent
    recovery evidence becomes an error/unknown state instead of being guessed.
 
 Allowed V2 fields are `title`, `authors`, namespaced `identifiers`, `languages`,
@@ -91,6 +104,31 @@ Tier A automatic mode is disabled unconditionally. Calibration reports remain
 useful advisory measurements, but their checksum is not an authenticated
 attestation and cannot unlock a writer. `bookaudit apply` and the legacy
 `POST /api/apply` route are disabled in every profile.
+
+The operational kill switch is both configured and durable. Disable
+`manifestation_v2.supervised_pilot.enabled`, stop app/writer intake, and run
+`bookaudit pilot-stop PILOT_ID --yes`. The persisted stopped state makes queued
+work fail writer revalidation. It cannot interrupt a Calibre subprocess already
+in progress, so the documented stop order and reconciliation procedure remain
+mandatory.
+
+A terminal `failed` operation can stop future pilots because its failed outbox
+is intentionally retained. After stopping intake/writer and proving from live
+Calibre plus recovery evidence that the operation is safely quiescent, use
+`bookaudit incident-ack OPERATION_ID --actor ... --reason ... --yes`. This adds
+one insert-only acknowledgement; it does not edit the ledger/outbox, clear an
+uncertain state, reopen a pilot, or refund budget. The command requires the
+operation's exact persisted pilot to be stopped under lock and rejects
+`unknown`, `restore_failed`, or an open/missing pilot. Only a distinct reviewed
+pilot ID can continue. Legacy V1 apply operations are rejected again at the
+writer boundary before Calibre metadata is read, even if an old requested row
+remains.
+
+The queue and active-failure metric do not trust an acknowledgement row alone.
+They rejoin it to a completed V2 `failed` operation, failed outbox, absent book
+lease, stopped historical pilot, and a distinct current pilot ID. A forged row
+for an open, missing, current, uncertain, or still-leased pilot remains a hard
+stop and remains visible to alerting.
 
 ---
 
@@ -180,10 +218,11 @@ the book's metadata before the change.
    intend to test writing.
 4. Ensure `.state` and `.artifacts` directories are writable to store logs,
    evidence packages, restore points, and backups safely.
-5. **Calibrate first** — follow the calibration runbook before trusting
-   auto-apply on real books.
+5. **Calibrate and rehearse first** — require the no-skip Gitea real-service
+   gate, a disposable apply/undo, and a restored-clone rehearsal before any live
+   supervised canary.
 6. **Back up your restore points** — `tar czf restore_backup.tar.gz .artifacts/restore/`
    gives you a single-file archive of all restore points.
-7. **Trust the gate** — `auto_apply_eligible: false` is the engine telling
-   you "don't trust this fix without looking". Read the per-field verdicts
-   and the proposed patch before approving.
+7. **Trust the tier and pilot gates** — Tier B/C, a mismatched writer binding,
+   a nonempty outbox, another nonterminal operation, or an exhausted budget are
+   stop conditions, not prompts to override the code.

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { mockApi } from './helpers/api-mock'
 import { setApiKey } from './helpers/auth'
 
-test.describe('Verify (v1.0) page', () => {
+test.describe('Manifestation V2 Verify page', () => {
   test.beforeEach(async ({ page }) => {
     await setApiKey(page)
     await mockApi(page, /\/api\/config/, {
@@ -17,6 +17,7 @@ test.describe('Verify (v1.0) page', () => {
   test('renders the Verify page with empty state', async ({ page }) => {
     await page.goto('/verify')
     await expect(page.locator('text=Verify Library').first()).toBeVisible()
+    await expect(page.getByText(/Manifestation V2/).first()).toBeVisible()
     await expect(page.locator('text=No verify runs yet')).toBeVisible()
   })
 
@@ -34,10 +35,12 @@ test.describe('Verify (v1.0) page', () => {
     await expect(checkbox).toBeVisible()
   })
 
-  test('Run v1.0 Verify button submits to /api/verify', async ({ page }) => {
+  test('Run Manifestation V2 button submits the explicit safe contract', async ({ page }) => {
     let verifyCalled = false
     let requestedLimit: number | null = null
     let requestedUseLlm = false
+    let requestedPipeline: string | null = null
+    let requestedUseOcr = false
     await page.route(/\/api\/verify/, async (route) => {
       if (route.request().method() === 'POST') {
         verifyCalled = true
@@ -45,6 +48,8 @@ test.describe('Verify (v1.0) page', () => {
           const body = JSON.parse(route.request().postData() ?? '{}')
           requestedLimit = body.limit ?? null
           requestedUseLlm = body.use_llm ?? false
+          requestedPipeline = body.pipeline ?? null
+          requestedUseOcr = body.use_ocr ?? false
         } catch {}
         await route.fulfill({
           status: 200,
@@ -65,10 +70,12 @@ test.describe('Verify (v1.0) page', () => {
     })
     await page.goto('/verify')
     await page.locator('input[type="number"]').fill('10')
-    await page.click('button:has-text("Run v1.0 Verify")')
+    await page.click('button:has-text("Run Manifestation V2")')
     await expect.poll(() => verifyCalled).toBe(true)
     expect(requestedLimit).toBe(10)
     expect(requestedUseLlm).toBe(false)
+    expect(requestedPipeline).toBe('v2')
+    expect(requestedUseOcr).toBe(true)
   })
 
   test('shows live run progress with action counters when run is active', async ({ page }) => {
@@ -107,10 +114,10 @@ test.describe('Verify (v1.0) page', () => {
             total: 100,
             completed: 42,
             counts: {
-              no_change: 25,
-              suggest_fix: 12,
-              needs_review: 4,
-              defer: 1,
+              shadowed: 25,
+              review: 12,
+              deferred: 4,
+              failed: 1,
             },
             verdicts: [],
           },
@@ -118,9 +125,9 @@ test.describe('Verify (v1.0) page', () => {
       })
     })
     await page.goto('/verify')
-    await page.click('button:has-text("Run v1.0 Verify")')
+    await page.click('button:has-text("Run Manifestation V2")')
     await expect(page.locator('text=verify_active_001')).toBeVisible()
-    await expect(page.locator('text=No change')).toBeVisible()
+    await expect(page.getByText('Tier A shadowed', { exact: true })).toBeVisible()
     await expect(page.locator('text=25').first()).toBeVisible()
     await expect(page.locator('text=42/100')).toBeVisible()
   })
@@ -139,7 +146,9 @@ test.describe('Verify (v1.0) page', () => {
                 finished_at: '2026-07-05T11:05:00+00:00',
                 total: 50,
                 completed: 50,
-                counts: { no_change: 40, suggest_fix: 8, needs_review: 2, defer: 0 },
+                pipeline_version: 'manifestation-v2',
+                mode: 'shadow',
+                counts: { shadowed: 40, review: 8, deferred: 2, failed: 0 },
               },
               {
                 run_id: 'verify_running_001',
@@ -148,7 +157,9 @@ test.describe('Verify (v1.0) page', () => {
                 finished_at: null,
                 total: 100,
                 completed: 25,
-                counts: { no_change: 18, suggest_fix: 5, needs_review: 2, defer: 0 },
+                pipeline_version: 'manifestation-v2',
+                mode: 'shadow',
+                counts: { shadowed: 18, review: 5, deferred: 2, failed: 0 },
               },
             ],
           },

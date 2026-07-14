@@ -13,17 +13,20 @@ import typer
 from sqlalchemy import text
 from sqlmodel import Session, col, desc, select
 
+from calibre_ai_auditor.apply.coordinator import PilotGuard, acknowledge_v2_failure
 from calibre_ai_auditor.apply.engine import ApplyEngine
 from calibre_ai_auditor.audit.engine import run_audit
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
-from calibre_ai_auditor.storage.db import get_engine, init_db
+from calibre_ai_auditor.storage.db import expected_schema_revision, get_engine, init_db
 from calibre_ai_auditor.storage.models import (
     BookRecord,
     Change,
+    PilotSession,
     Run,
+    utc_now,
 )
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
@@ -77,7 +80,14 @@ def doctor(ctx: typer.Context) -> None:
     """
     settings: Settings = ctx.obj
     typer.echo("Doctor check:")
-    tools = ["calibredb", "ebook-meta", "fetch-ebook-metadata", "ocrmypdf"]
+    tools = [
+        "calibredb",
+        "ebook-meta",
+        "ebook-convert",
+        "fetch-ebook-metadata",
+        "tesseract",
+        "ocrmypdf",
+    ]
     for tool in tools:
         path = shutil.which(tool)
         status = typer.style("FOUND", fg=typer.colors.GREEN) if path else typer.style("MISSING", fg=typer.colors.RED)
@@ -93,6 +103,61 @@ def migrate(ctx: typer.Context) -> None:
     settings: Settings = ctx.obj
     init_db(settings)
     typer.secho("Database schema upgraded to head.", fg=typer.colors.GREEN)
+
+
+@app.command("pilot-stop")
+def pilot_stop(
+    ctx: typer.Context,
+    pilot_id: Annotated[str, typer.Argument(help="Exact supervised pilot ID to close")],
+    yes: Annotated[bool, typer.Option("--yes", help="Confirm closing the exact pilot session")] = False,
+) -> None:
+    """Close one persisted supervised V2 pilot so queued work fails closed."""
+    if not yes:
+        typer.secho("Stopping a supervised pilot requires --yes.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    settings: Settings = ctx.obj
+    engine = get_engine(settings)
+    with Session(engine) as session:
+        pilot = session.exec(select(PilotSession).where(PilotSession.pilot_id == pilot_id).with_for_update()).first()
+        if pilot is None:
+            typer.secho(f"Pilot session not found: {pilot_id}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if pilot.state != "stopped":
+            pilot.state = "stopped"
+            pilot.updated_at = utc_now()
+            session.add(pilot)
+            session.commit()
+    typer.secho(f"Supervised V2 pilot {pilot_id} stopped.", fg=typer.colors.GREEN)
+
+
+@app.command("incident-ack")
+def incident_ack(
+    ctx: typer.Context,
+    operation_id: Annotated[str, typer.Argument(help="Exact failed V2 operation ID")],
+    actor: Annotated[str, typer.Option("--actor", help="Operator identity recorded in the audit trail")],
+    reason: Annotated[str, typer.Option("--reason", help="Evidence that the terminal failure is safe to clear")],
+    yes: Annotated[bool, typer.Option("--yes", help="Confirm the exact incident acknowledgement")] = False,
+) -> None:
+    """Acknowledge one reviewed, quiescent V2 failure without deleting its evidence."""
+    if not yes:
+        typer.secho("Acknowledging a supervised V2 incident requires --yes.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    settings: Settings = ctx.obj
+    engine = get_engine(settings)
+    with Session(engine) as session:
+        try:
+            acknowledge_v2_failure(
+                session,
+                operation_id=operation_id,
+                actor=actor,
+                reason=reason,
+            )
+            session.commit()
+        except ValueError as exc:
+            session.rollback()
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+    typer.secho(f"Supervised V2 incident {operation_id} acknowledged.", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -980,14 +1045,29 @@ def writer(
         current_user, revision = writer_guard.execute(
             text("SELECT current_user, (SELECT version_num FROM alembic_version)")
         ).one()
-        from calibre_ai_auditor.storage.db import expected_schema_revision
-
         if current_user != "bookaudit_writer" or revision != expected_schema_revision():
             writer_guard.close()
             typer.secho("Writer database role or schema revision is invalid", fg=typer.colors.RED)
             raise typer.Exit(1)
     cli = CalibreCLI(settings.library.path)
-    metadata_writer = MetadataWriter(cli, ApplyEngine(cli, settings.storage.artifacts_dir))
+    pilot_settings = settings.manifestation_v2.supervised_pilot
+    runtime_pilot = None
+    if pilot_settings.enabled and pilot_settings.pilot_id and pilot_settings.release_digest:
+        canonical_library_root = str(Path(os.path.normpath(os.path.abspath(settings.library.path))))
+        runtime_pilot = PilotGuard(
+            enabled=True,
+            pilot_id=pilot_settings.pilot_id,
+            library_root=canonical_library_root,
+            release_digest=pilot_settings.release_digest,
+            alembic_revision=expected_schema_revision(),
+            max_operations=pilot_settings.max_operations,
+            writer_ready=True,
+        )
+    metadata_writer = MetadataWriter(
+        cli,
+        ApplyEngine(cli, settings.storage.artifacts_dir),
+        pilot=runtime_pilot,
+    )
     heartbeat_owner = str(uuid4())
 
     # All claims and external writes use the same PostgreSQL connection that
@@ -1004,12 +1084,19 @@ def writer(
             if writer_guard is not None and not writer_guard_is_held(writer_guard):
                 raise RuntimeError("Metadata writer lost its PostgreSQL advisory lock")
             if settings.queue.backend == "valkey":
-                from calibre_ai_auditor.apply.heartbeat import publish_writer_heartbeat
+                from calibre_ai_auditor.apply.heartbeat import library_root_sha256, publish_writer_heartbeat
 
                 publish_writer_heartbeat(
                     settings.queue.valkey_url,
                     heartbeat_owner,
                     timeout=settings.queue.connect_timeout_seconds,
+                    release_digest=pilot_settings.release_digest if pilot_settings.enabled else None,
+                    alembic_revision=expected_schema_revision() if pilot_settings.enabled else None,
+                    library_root_sha256=(
+                        library_root_sha256(settings.library.path) if pilot_settings.enabled else None
+                    ),
+                    pilot_id=pilot_settings.pilot_id if pilot_settings.enabled else None,
+                    max_operations=pilot_settings.max_operations if pilot_settings.enabled else None,
                 )
             operation_id = claim_next_operation(session)
             if operation_id:
