@@ -18,7 +18,7 @@ from calibre_ai_auditor.apply.artifacts import (
     set_metadata_from_artifact,
     verify_artifact,
 )
-from calibre_ai_auditor.calibre.cli import CalibreCLI
+from calibre_ai_auditor.calibre.cli import VOLATILE_METADATA_FIELDS, CalibreCLI
 from calibre_ai_auditor.security.files import (
     copy_file_beneath,
     ensure_secure_directory,
@@ -259,7 +259,8 @@ class ApplyEngine:
         change: Change,
     ) -> bool:
         special = {"cover", "#edition", "edition_statement"}
-        if not all(observed.get(field) == value for field, value in expected.items() if field not in special):
+        ignored = special | VOLATILE_METADATA_FIELDS
+        if not all(observed.get(field) == value for field, value in expected.items() if field not in ignored):
             return False
         for column, value in (change.before_custom or {}).items():
             observed_value = observed.get(column, observed.get("edition_statement", ""))

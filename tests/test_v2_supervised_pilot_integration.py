@@ -323,7 +323,7 @@ def test_api_to_writer_readback_and_undo_with_real_services(
                     writer_ready=True,
                 ),
             ).process(session, operation_id)
-            assert applied.state == "succeeded"
+            assert applied.state == "succeeded", applied.error
             assert applied.change_id is not None
             change_id = applied.change_id
 

@@ -20,7 +20,7 @@ from calibre_ai_auditor.apply.artifacts import (
 )
 from calibre_ai_auditor.apply.coordinator import PilotGuard, load_v2_package, validate_apply_operation
 from calibre_ai_auditor.apply.engine import ApplyEngine
-from calibre_ai_auditor.calibre.cli import CalibreCLI
+from calibre_ai_auditor.calibre.cli import VOLATILE_METADATA_FIELDS, CalibreCLI
 from calibre_ai_auditor.security.files import ensure_secure_directory, sha256_file_beneath
 from calibre_ai_auditor.storage.models import BookRecord, BookWriteLock, Change, OperationLedger, OutboxEvent, utc_now
 from calibre_ai_auditor.storage.operations import transition_operation
@@ -140,7 +140,8 @@ def reconcile_incomplete_operations(
             operation.observed_metadata = observed
             if operation.policy_version == "manifestation-v2":
                 try:
-                    _verify_v2_live_files(session, cli, operation, observed)
+                    _verify_v2_live_files(session, cli, operation, observed, allow_relocation=True)
+                    _align_verified_calibre_paths(operation, observed)
                 except (OSError, ValueError) as exc:
                     if change is None:
                         _mark_unknown(operation, f"V2 ebook snapshot changed: {exc}")
@@ -321,7 +322,9 @@ class MetadataWriter:
         transition_operation(operation, "verifying")
         if operation.policy_version == "manifestation-v2":
             try:
-                _verify_v2_live_files(session, self.cli, operation, self.cli.show_metadata(book.calibre_book_id))
+                post_write = self.cli.show_metadata(book.calibre_book_id)
+                _verify_v2_live_files(session, self.cli, operation, post_write, allow_relocation=True)
+                _align_verified_calibre_paths(operation, post_write)
             except (OSError, ValueError) as exc:
                 transition_operation(operation, "restoring")
                 try:
@@ -516,6 +519,8 @@ def fail_operation(session: Session, operation_id: str, error: str) -> None:
 
 def _matches_patch(observed: dict[str, Any], patch: dict[str, Any]) -> bool:
     for field, expected in patch.items():
+        if field in VOLATILE_METADATA_FIELDS:
+            continue
         if field == "edition_statement":
             if str(observed.get("#edition") or observed.get("edition_statement") or "") != str(expected or ""):
                 return False
@@ -572,6 +577,8 @@ def _verify_v2_live_files(
     cli: CalibreCLI,
     operation: OperationLedger,
     live_metadata: dict[str, Any],
+    *,
+    allow_relocation: bool = False,
 ) -> None:
     if not operation.evidence_id:
         raise ValueError("V2 operation has no evidence package")
@@ -588,14 +595,37 @@ def _verify_v2_live_files(
     if sealed_root != configured_root:
         raise ValueError("configured Calibre library differs from the sealed snapshot root")
     live_paths = _metadata_file_paths(live_metadata)
-    if live_paths != package.snapshot.files:
-        raise ValueError("live Calibre format membership differs from the sealed snapshot")
+    if len(live_paths) != len(set(live_paths)):
+        raise ValueError("live Calibre format membership contains duplicate paths")
     expected_hashes = {item.path: item.sha256 for item in package.formats}
     if list(expected_hashes) != package.snapshot.files:
         raise ValueError("sealed format evidence is incomplete or reordered")
-    for path in live_paths:
-        if _secure_library_file_sha256(path, configured_root) != expected_hashes[path]:
-            raise ValueError(f"ebook content hash differs for {Path(path).name}")
+    if not allow_relocation:
+        if live_paths != package.snapshot.files:
+            raise ValueError("live Calibre format membership differs from the sealed snapshot")
+        for path in live_paths:
+            if _secure_library_file_sha256(path, configured_root) != expected_hashes[path]:
+                raise ValueError(f"ebook content hash differs for {Path(path).name}")
+        return
+
+    expected_formats = sorted((item.format.casefold(), item.sha256) for item in package.formats)
+    live_formats = sorted(
+        (Path(path).suffix.removeprefix(".").casefold(), _secure_library_file_sha256(path, configured_root))
+        for path in live_paths
+    )
+    if live_formats != expected_formats:
+        raise ValueError("live Calibre formats or content differ from the sealed snapshot")
+
+
+def _align_verified_calibre_paths(operation: OperationLedger, observed: dict[str, Any]) -> None:
+    """Accept Calibre-managed relocation only after format and hash verification."""
+    if operation.target_metadata is None:
+        raise ValueError("operation target metadata is unavailable")
+    target = dict(operation.target_metadata)
+    for field in ("formats", "path"):
+        if field in target and field in observed:
+            target[field] = observed[field]
+    operation.target_metadata = target
 
 
 def _require_artifact(

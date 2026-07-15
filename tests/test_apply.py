@@ -89,14 +89,22 @@ def test_apply_patch_restores_backup_and_records_failed_attempt(
 
     mock_cli.export_opf.side_effect = export_opf
     mock_cli.set_metadata.side_effect = [RuntimeError("metadata write failed"), None]
-    mock_cli.show_metadata.return_value = {"title": "Old Title", "publisher": "Old Publisher"}
+    mock_cli.show_metadata.return_value = {
+        "title": "Old Title",
+        "publisher": "Old Publisher",
+        "last_modified": "after-restore",
+    }
     engine = ApplyEngine(mock_cli, tmp_path)
     book = BookRecord(
         book_key="calibre:1",
         run_id="test_run",
         calibre_book_id=1,
         source="calibre",
-        current_metadata={"title": "Old Title", "publisher": "Old Publisher"},
+        current_metadata={
+            "title": "Old Title",
+            "publisher": "Old Publisher",
+            "last_modified": "before-write",
+        },
     )
 
     with Session(db_engine) as write_session:

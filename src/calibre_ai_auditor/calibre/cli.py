@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 DC = "http://purl.org/dc/elements/1.1/"
 OPF = "http://www.idpf.org/2007/opf"
 
+# Calibre updates this field as a consequence of metadata writes. It is not part
+# of the user-authored metadata contract and cannot be restored from OPF.
+VOLATILE_METADATA_FIELDS = frozenset({"last_modified"})
+
 
 class CalibreCLIError(Exception):
     """Raised when a Calibre CLI command fails."""
