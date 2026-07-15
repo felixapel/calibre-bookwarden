@@ -205,6 +205,24 @@ def test_exact_internal_identifier_and_structured_source_yield_tier_a() -> None:
     assert result.field_decisions["title"].resolved_value == "The Example Book"
 
 
+def test_calibre_scalar_core_values_do_not_create_redundant_patch() -> None:
+    result = resolve_manifestation(
+        formats=[_format("EPUB")],
+        evidence=_exact_manifestation_evidence(),
+        current_metadata={
+            "title": "The Example Book",
+            "authors": "Ada Author",
+            "languages": "eng",
+            "identifiers": {"isbn": ISBN},
+        },
+    )
+
+    assert result.tier is IdentityTier.tier_a
+    assert result.field_decisions["authors"].status is FieldDecisionStatus.unchanged
+    assert result.field_decisions["languages"].status is FieldDecisionStatus.unchanged
+    assert result.auto_patch == {}
+
+
 def test_embedded_identifier_alone_cannot_anchor_exact_manifestation() -> None:
     evidence = _exact_manifestation_evidence()
     evidence[0] = evidence[0].model_copy(update={"source_kind": EvidenceSourceKind.embedded_metadata})

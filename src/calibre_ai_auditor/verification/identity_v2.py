@@ -279,10 +279,14 @@ def _text_key(value: str) -> str:
 def _value_key(field: str, value: Any) -> str:
     if field in {"title", "publisher", "series", "edition_statement"} and isinstance(value, str):
         return _text_key(value)
-    if field == "authors" and isinstance(value, list):
-        return json.dumps(sorted(_text_key(str(item)) for item in value), separators=(",", ":"))
-    if field == "languages" and isinstance(value, list):
-        return json.dumps(sorted(str(item).strip().lower() for item in value), separators=(",", ":"))
+    if field == "authors" and isinstance(value, (list, str)):
+        authors = value if isinstance(value, list) else value.split("&")
+        normalized = sorted(_text_key(str(item)) for item in authors if str(item).strip())
+        return json.dumps(normalized, separators=(",", ":"))
+    if field == "languages" and isinstance(value, (list, str)):
+        languages = value if isinstance(value, list) else value.replace(";", ",").split(",")
+        normalized = sorted(str(item).strip().lower() for item in languages if str(item).strip())
+        return json.dumps(normalized, separators=(",", ":"))
     if field == "identifiers" and isinstance(value, dict):
         value = _normalize_identifiers({str(key): str(item) for key, item in value.items()})
     return json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"), default=str)
