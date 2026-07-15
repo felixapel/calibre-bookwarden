@@ -2,13 +2,19 @@
 
 `calibre-ai-auditor` supports Manga, Comics, Light Novels, and Web Novels (via `manga_mode` and CBZ/CBR handling). v1.1 work focuses on vision LLM + OCR enhancements for better metadata fixing on comic covers and archives.
 
-## Current Status (v1.1 partial implementation)
+## Current status (partial, experimental provider integration)
 
 - **Fields**: `volume`, `chapter` (as decimal), `series_position` added to core `Metadata` model.
 - **Vision LLM**: `VisionVerifier` now uses comic-aware schema and prompt for extracting series/volume/chapter from covers; `verify_comic_cover()` helper added.
 - **Extractor**: `extractors/comics.py` parses ComicInfo.xml "Chapter" + normalizes volume/chapter.
 - **Extractor support**: CBZ/CBR ingestion and ComicInfo.xml already present; vision/OCR now better aligned for comics.
-- Full engine rule integration, auto-apply, and Komf are complete (central pipeline in comics/pipeline.py wires vision + Komf; decimal chapter supported).
+- Comic fields and deterministic rules are wired into the historical V1 engine.
+  Manifestation V2 remains supervised and has no comic-specific auto-apply.
+- The central comic pipeline can call Komf only when explicitly enabled. The
+  adapter is disabled by default, returns no candidates on unavailable,
+  malformed, or empty responses, and never fabricates volume/chapter metadata.
+  Its endpoint contract has not yet been validated against a pinned Komf
+  deployment, so it is not a complete supported integration.
 
 The architecture is prepared to support deeper integrations with Komga, Kavita, and Komf.
 
@@ -23,7 +29,8 @@ The architecture is prepared to support deeper integrations with Komga, Kavita, 
 
 The metadata provider hierarchy will dynamically switch if `manga_mode` is enabled or if the file extension is `.cbz`/`.cbr`:
 *   **Primary Extraction**: Read `ComicInfo.xml` inside the archive.
-*   **Specialized Providers**: Query AniList/MAL/MangaUpdates via Komf (or native integrations).
+*   **Specialized Providers**: A future validated adapter may query
+    AniList/MAL/MangaUpdates through Komf or native integrations.
 *   **Image Analysis**: OCR fallback will specifically target the cover or first few pages to extract Japanese/English titles and author names.
 
 ## Volume vs Chapter Logic
@@ -41,4 +48,8 @@ In the future, `calibre-ai-auditor` can act as a sidecar for Komga and Kavita, s
 
 ## Komf as Resolver Inspiration
 
-Komf (Komga Metadata Fetcher) provides excellent inspiration for matching logic. We will look to adapt its multi-provider fallback strategies specifically for the nuanced metadata of translated works (e.g., handling Romaji vs Kanji titles).
+Komf (Komga Metadata Fetcher) provides useful matching ideas for translated
+works such as Romaji/Kanji title handling. Before treating it as a data source,
+pin a supported Komf version, document one real API contract, add recorded
+success/error fixtures, and measure candidate precision on a reviewed comic
+corpus. Until then, empty or unknown responses remain review-only no-ops.

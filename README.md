@@ -7,8 +7,9 @@ ground truth and LLMs are witnesses, not generators.
 ## Status
 
 - **Development head**: Manifestation V2 exact-edition auditor
-- **Last tagged version**: v1.2.1 (Content-Ground Verification + Comics Vision + MCP Server)
-- **Interface**: Full-stack WebUI (React 19 / FastAPI) + CLI
+- **Package version**: 1.2.1; the latest repository tag is `v1.2.0` and Gitea
+  currently has no published release
+- **Interface**: Supervised local WebUI (React 19 / FastAPI) + CLI
 - **Default verification contract**: V2, shadow/read-only, one book at a time
 - **V2 writes**: Disabled by default; the development head supports only an
   explicitly enabled, serial, manually authorized pilot of at most five operations
@@ -40,8 +41,11 @@ book by themselves. See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.
 7. During an explicitly enabled supervised pilot, queue only one manually
    authorized Tier A package at a time. The writer verifies
    the exact pilot ID/release/schema/root/budget binding, the monotonic operation
-   count, live metadata, and every ebook path/hash, then creates OPF/custom-column/cover
-   rollback artifacts. Library and artifact paths are opened component by
+   count, live metadata, and every pre-write ebook path/hash. After Calibre
+   performs a metadata-driven directory move, the writer accepts new paths only
+   when the unique live format/SHA-256 multiset still matches the seal; all
+   other metadata remains under full readback. It then creates OPF/custom-column/
+   cover rollback artifacts. Library and artifact paths are opened component by
    component beneath sealed roots; OPF and cover bytes are handed to Calibre
    through immutable descriptors rather than re-opened pathnames.
 
@@ -58,10 +62,10 @@ the actual book content.
 | Auto-apply | Manual review queue | **Conservative auto-apply gate** (≥80% confidence, no high-risk flags, per-book restore point) |
 | Undo | OPF backup only | **RestorePointStore**: OPF + cover + secure file copy + JSON snapshot, 30-day retention target |
 | Resume | None | **PostgreSQL ledger/outbox** with single-writer crash reconciliation |
-| OCR | None | **Multi-provider OCR router** (Tesseract / PaddleOCR / Surya) by page hint |
+| OCR | None | **OCR routing** with Tesseract and optional PaddleOCR |
 | Inference | Single Ollama | **Multi-host discovery** (3090 + 5060 Ti + 1660 SUPER + remote) |
 | Observability | Logs | **Prometheus `/metrics`** with counters, gauges, histograms |
-| Scale tested | Hundreds of books | **10k–50k books** per run (linear scaling) |
+| Scale tested | Hundreds of books | Resolver and metadata microbenchmarks up to 50k synthetic records; full-library throughput is unproven |
 
 ## Historical v1.0 design
 
@@ -93,8 +97,8 @@ the actual book content.
   [docs/SAFETY.md](docs/SAFETY.md).
 - **Multi-host LLM routing** — auto-discovers 3090 (high), Unraid Ollama
   (medium), and remote providers. Tasks route by GPU class.
-- **Multi-tier OCR** — Tesseract always available; PaddleOCR + Surya behind
-  the `[ocr]` optional extra.
+- **OCR routing** — Tesseract is the baseline; the `[ocr]` optional extra adds
+  PaddleOCR. Surya is not packaged by this project.
 - **WebUI Verify page** — start a verify run from the browser, watch live
   progress, drill into per-book verdicts.
 - **Privacy by default** — `allow_remote_text: false` and `allow_remote_images:
@@ -116,7 +120,7 @@ docker compose --profile maintenance run --rm migrate
 docker compose up -d writer app
 ```
 
-WebUI at <http://localhost:8080>. For full OCR providers:
+WebUI at <http://localhost:8080>. To add optional PaddleOCR support:
 
 ```bash
 pip install -e .[ocr]
@@ -161,6 +165,7 @@ bookaudit audit --run latest
 - **[docs/architecture/target-advanced-architecture.md](docs/architecture/target-advanced-architecture.md)** — Detailed v1.0 component breakdown
 - **[docs/architecture/integration-decisions.md](docs/architecture/integration-decisions.md)** — Architecture Decision Records
 - **[docs/decisions/ADR-002-exact-manifestation-v2.md](docs/decisions/ADR-002-exact-manifestation-v2.md)** — Exact-edition V2 trust and write contract
+- **[docs/decisions/ADR-003-supervised-local-auditor-scope.md](docs/decisions/ADR-003-supervised-local-auditor-scope.md)** — Product scope and explicit non-goals
 - **[docs/architecture/v1_scope_decisions.md](docs/architecture/v1_scope_decisions.md)** — What's in / out of v1.0
 - **[docs/research/PEER_PROJECTS.md](docs/research/PEER_PROJECTS.md)** — Comparison vs `paperless-gpt`, `book-memex`, etc.
 
@@ -186,8 +191,8 @@ bookaudit audit --run latest
   LLMs only adjudicate, never replace.
 - **Read-Only by Default.** The application never modifies your library unless
   you explicitly opt in.
-- **Deterministic before generative.** 8 deterministic rules cover ~95% of
-  fields correctly. LLMs handle the remaining ~5% ambiguities.
+- **Deterministic before generative.** Rules run before optional model evidence;
+  their real coverage and precision must be measured on a reviewed corpus.
 - **Privacy-Centric.** Remote LLMs receive minimal context, capped by
   strict token limits and privacy filters.
 - **Fail-safe, not fail-fast.** A failed LLM call is a `needs_review`, not
@@ -195,8 +200,8 @@ bookaudit audit --run latest
 
 ## Testing & Benchmarks
 
-The fail-closed verification script runs locked formatting, lint, typing,
-backend/integration tests, Komf integration and CLI smoke checks. Gitea CI adds
+The local verification script runs locked formatting, lint, typing,
+hermetic backend/integration tests and a CLI smoke check. Gitea CI adds
 real PostgreSQL concurrency/ACL tests, the required no-skip Calibre/Tesseract/
 PostgreSQL/Valkey V2 apply-readback-undo round trip, the 50k metadata gate,
 dependency audits, desktop/mobile browser tests, image scanning and the Compose
@@ -205,8 +210,8 @@ contract.
 ### Backend (pytest)
 
 ```bash
-# Fast unit + integration tests (~5s, no benchmarks)
-pytest -m "not benchmark and not ocr_live and not network"
+# Deterministic local gate (live-service tests remain in Gitea)
+./scripts/verify-calibre-gate.sh
 
 # Full benchmark suite (~45s)
 pytest --benchmark-only tests/benchmarks/

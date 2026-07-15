@@ -89,6 +89,14 @@ Manifestation V2 is the default `verify` contract and follows these rules.
    SHA-256.
    Ebook paths are opened beneath that root with descriptor-relative no-follow
    traversal for every component, closing parent-directory substitution races.
+   Calibre may move a book directory as a consequence of a metadata change.
+   Pre-write verification therefore remains exact-path and exact-hash; after a
+   write or crash recovery, a relocation is accepted only when live paths are
+   unique, every path remains beneath the sealed root, and the complete
+   `(format, SHA-256)` multiset equals the sealed package. Only `path` and
+   `formats` are then aligned in the full readback target. `last_modified` is
+   treated as Calibre-managed and non-restorable; all other unpatched metadata
+   remains mandatory and corruption triggers rollback.
 10. Calibre writes use only the canonical adapter fields: title, authors,
     namespaced identifiers, languages, publisher, pubdate, series,
     series_index, `#edition`, and a local manifestation-bound cover artifact.

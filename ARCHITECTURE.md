@@ -8,6 +8,10 @@ decision record. The historical v1.0 engine remains documented below.
 This document is the canonical overview. Detailed component breakdowns
 live in `docs/architecture/`.
 
+The accepted product boundary is a local, supervised Calibre metadata auditor,
+not a general library-management platform or unattended writer. See
+[ADR-003](docs/decisions/ADR-003-supervised-local-auditor-scope.md).
+
 ## Open-Source Inspirations
 
 | Project | Inspiration |
@@ -66,9 +70,12 @@ Important boundaries:
   `schema_version=2`; `decision` stays null so legacy V1 apply cannot consume
   them accidentally.
 - The V2 public apply path always requires authorization bound to the package
-  checksum and canonical patch. The writer rehashes every live format before and
-  after metadata mutation. Automatic V2 apply and all public legacy apply paths
-  are disabled; calibration output is advisory only.
+  checksum and canonical patch. The writer verifies exact sealed paths before
+  mutation. If Calibre relocates a book directory during the write, post-write
+  verification requires unique paths beneath the same root and the identical
+  format/SHA-256 multiset before aligning only Calibre-managed path fields.
+  Automatic V2 apply and all public legacy apply paths are disabled;
+  calibration output is advisory only.
 
 See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) for the tier,
 provenance, privacy, and rollback invariants.
@@ -175,7 +182,7 @@ Never downgrades a risk flag set by the deterministic engine.
 Per-page routing between OCR backends:
 - Tesseract — default, always available, fast on clean text
 - PaddleOCR — better on clean scans + CJK, GPU or CPU (optional `[ocr]` extra)
-- Surya — best on noisy scans / multilingual / handwriting (optional `[ocr]` extra)
+- Surya — historical routing option; not packaged or supported by this project
 
 Routing decision per page based on a page-type classifier (`clean_scan` /
 `noisy_scan` / `multilingual` / `table_heavy`).
@@ -265,8 +272,9 @@ LM Studio.
 
 1. **The book is the ground truth.** Content extraction always runs first;
    LLMs only adjudicate, never replace.
-2. **Deterministic before generative.** 8 deterministic rules cover ~95% of
-   fields correctly. LLMs handle the remaining ~5% ambiguities.
+2. **Deterministic before generative.** Deterministic rules run before optional
+   model evidence. Their coverage and precision must be measured on a reviewed
+   corpus rather than assumed.
 3. **Never downgrade a risk flag.** Once the deterministic engine sets
    `author_swap` / `isbn_conflict` / etc., the LLM witness cannot remove
    it — it can only add more risk_flags.

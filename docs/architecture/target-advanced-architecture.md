@@ -4,14 +4,19 @@ This document defines the production-grade target architecture for
 `calibre-ai-auditor` v1.0. The canonical overview lives at the repo
 root: [../../ARCHITECTURE.md](../../ARCHITECTURE.md).
 
+This is a historical v1.0 design record. Manifestation V2 and
+[ADR-003](../decisions/ADR-003-supervised-local-auditor-scope.md) supersede its
+auto-apply and product-scope direction.
+
 ---
 
 ## 1. Principles
 
 1.  **The book is the ground truth.** Content extraction always runs first.
     LLMs only adjudicate, never replace.
-2.  **Deterministic before generative.** 8 deterministic rules cover ~95% of
-    fields correctly. The LLM witness handles the remaining ~5% ambiguities.
+2.  **Deterministic before generative.** Rules run before an optional LLM
+    witness. Coverage and precision require a reviewed corpus; no fixed
+    percentage is asserted.
 3.  **Safety & Non-Destructive Mutations.** Every apply creates a per-book
     restore point (OPF + cover + hardlinked file + JSON snapshot) with a
     30-day TTL. Bulk undo by run_id is supported.
@@ -214,7 +219,8 @@ flowchart TD
 ```
 
 Routing decision per page based on a per-page classifier hint. Tesseract is
-always available; PaddleOCR + Surya require the `[ocr]` optional extra.
+the baseline and PaddleOCR is available through `[ocr]`. Surya is not packaged
+by this project.
 
 ---
 

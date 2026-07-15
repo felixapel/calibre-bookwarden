@@ -1,8 +1,9 @@
 # Installation Guide
 
 The `calibre-ai-auditor` development head can be installed natively for CLI
-use or deployed with Docker. Manifestation V2 verification is available in the
-CLI and API; the current WebUI review flow still renders the legacy V1 shape.
+use or deployed with Docker. Manifestation V2 verification and supervised
+review are available in the CLI, API, and WebUI. V1 records remain
+historical/read-only.
 
 ## Prerequisites
 
@@ -20,7 +21,7 @@ The v1.0 engine uses these system packages:
 - `tesseract-ocr` + `tesseract-osd` + language packs (for `ocrmypdf` + OCR router)
 - `ghostscript` (PDF processing)
 - `qpdf` (PDF manipulation)
-- `libgomp` (OpenMP for PaddleOCR/Surya — only with `[ocr]` extra)
+- `libgomp` (OpenMP for PaddleOCR — only with `[ocr]` extra)
 - `libpng-dev`, `libjpeg-dev` (image libs for cover extraction)
 
 Install on Debian/Ubuntu:
@@ -80,7 +81,7 @@ For standalone use or development on the host:
     # Filesystem ingest watcher (watch a folder for new books)
     pip install -e ".[ingest]"
 
-    # PaddleOCR + Surya (v1.0 OCR providers — better quality on scanned PDFs)
+    # PaddleOCR (optional; Surya is not packaged by this project)
     pip install -e ".[ocr]"
     # Requires: libgomp, libpng-dev, libjpeg-dev, ~2 GB disk
 

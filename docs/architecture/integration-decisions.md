@@ -110,9 +110,10 @@ v1.0 introduces the **ContentVerificationEngine** + per-field
 1.  **The book file is the ground truth.** Content extraction always runs
     first; LLMs only adjudicate, never replace.
 2.  **Eight deterministic rules per field** (title / authors / isbn /
-    publisher / date / language / series / series_index) cover ~95% of
-    fields correctly. Rules have cited `EvidenceSpan`s so any decision can
-    be traced back to the source.
+    publisher / date / language / series / series_index) run before the
+    optional witness. Their coverage and precision must be measured on a
+    reviewed corpus. Rules have cited `EvidenceSpan`s so any decision can be
+    traced back to the source.
 3.  **LLMWitness is called only for `ambiguous` fields** — never as the
     primary source. Witness responses are cached by prompt-hash
     (`WitnessCache`) for replay. The witness is forbidden from removing a
@@ -243,12 +244,12 @@ backend can't be optimal for all pages.
 `multilingual` / `table_heavy` / `text_present`) and dispatches to:
 - Tesseract (always available, fast on clean text)
 - PaddleOCR (best on clean scans + CJK; optional `[ocr]` extra)
-- Surya (best on noisy scans / handwriting; optional `[ocr]` extra)
+- Surya (historical design option; not packaged by this project)
 
 ### Consequences
 - **Capability-aware**: each page gets the OCR it needs
-- **Optional**: Tesseract is always the fallback; PaddleOCR + Surya are
-  opt-in via `pip install -e .[ocr]`
+- **Optional**: Tesseract is the fallback and PaddleOCR is opt-in via
+  `pip install -e .[ocr]`; Surya requires separate, unsupported installation
 - **Measured**: OCR comparison benchmark in
   `tests/benchmarks/test_bench_ocr_comparison.py` lets users compare on
   their own corpus

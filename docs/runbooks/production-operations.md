@@ -78,7 +78,7 @@ BOOKAUDIT_REQUIRE_WRITER_READY=true docker compose up -d --force-recreate app
 Confirm authenticated `/api/health/ready` after re-enabling the writer gate. A
 clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12 restored the then
 current Alembic head `b18f4c2d7a90` and the runtime ACLs successfully. The
-Manifestation V2 supervised-pilot development head is now `a72c9d4e8f31`;
+Manifestation V2 supervised-pilot Alembic head is now `a72c9d4e8f31`;
 repeat the clean upgrade and backup/restore drill before promoting that schema.
 Its downgrade refuses to discard any persisted pilot, pilot-bound operation, or
 incident acknowledgement.

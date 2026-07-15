@@ -1,9 +1,10 @@
 # Testing Guide
 
-`calibre-ai-auditor` retains the tagged v1.2.1 unit, integration, E2E, and
-benchmark suites and adds Manifestation V2 contract, pipeline, persistence,
-security, writer, calibration, and migration coverage. Exact test totals are
-reported by each run instead of being treated as a permanent contract.
+`calibre-ai-auditor` package version 1.2.1 includes unit, integration, E2E, and
+benchmark suites plus Manifestation V2 contract, pipeline, persistence,
+security, writer, calibration, and migration coverage. The latest repository
+tag is `v1.2.0`; exact test totals are reported by each run instead of being
+treated as a permanent contract.
 
 ```
 tests/
@@ -59,10 +60,11 @@ same bounded EPUB extractor used in production; Tesseract remains a separate
 non-authoritative observation and a deterministic structured-catalog fixture
 provides the independent external root.
 
-The hermetic backend gate excludes benchmarks, live OCR, and network tests:
+The deterministic local gate excludes benchmarks, live OCR, network tests, and
+the two suites that require disposable PostgreSQL/Valkey/Calibre services:
 
 ```bash
-pytest -q -m "not benchmark and not ocr_live and not network"
+./scripts/verify-calibre-gate.sh
 ```
 
 Tests requiring `calibredb`, PostgreSQL, Valkey, optional FastMCP, or live OCR
@@ -76,13 +78,13 @@ database or schema. A test that creates or drops application tables must not
 leave a shared migrated database for a later test. Use an isolated database per
 destructive phase, or migrate a clean database again before the next phase.
 
-Gitea run 20 (run ID `1698`) on 2026-07-15 demonstrated why this is a release
-gate: the backend reached the real Calibre crash-recovery test after the shared
-database had lost `bookrecord`, producing one `UndefinedTable` failure after
-351 passes. Downstream jobs therefore did not run. Until the lifecycle is
-isolated and a new run for the exact head is fully green, the supervised V2
-pilot is not promotable. See
-[Production readiness](docs/production-readiness.md#latest-exact-commit-gate-evidence).
+Gitea run 20 (run ID `1698`) exposed a shared-schema `UndefinedTable` failure.
+The destructive PostgreSQL suites were isolated, and canonical Gitea run 24
+(run ID `1737`) completed successfully on 2026-07-15 for exact commit
+`4a0d6d2326c0ef642fcdcc68e693a1f72632aa1f`, including the required real
+Calibre/Tesseract/PostgreSQL/Valkey round trip. This clears the repository CI
+blocker but does not replace clone rehearsal or reviewed live canaries. See
+[Production readiness](docs/production-readiness.md#baseline-exact-commit-gate-evidence).
 
 ## 1. Unit tests (pytest)
 
@@ -96,7 +98,7 @@ Pure-function tests covering the v1.0 deterministic rules + helpers.
   source .venv/bin/activate
   pytest -m "not benchmark and not ocr_live and not network"
   ```
-- **Speed**: ~5s for the full unit + integration suite.
+- **Speed**: environment-dependent; use the run's reported duration.
 
 ## 2. Integration tests
 
@@ -154,7 +156,8 @@ The v1.0 engine is benchmarked across 8 dimensions to detect regressions.
   - `host_discovery` — live health-check of 3 homelab hosts
   - `restore_point` — per-book restore point creation/cleanup
   - `extraction` — EPUB snippet extraction throughput
-  - `ocr_comparison` — Tesseract / PaddleOCR / Surya on 3 synthetic PDFs
+  - `ocr_comparison` — optional OCR backends on synthetic PDFs; Surya is not
+    installed by the project `[ocr]` extra
 - **Run**:
   ```bash
   pytest --benchmark-only tests/benchmarks/
@@ -234,8 +237,8 @@ uv run ruff format --check .
 # Type check
 uv run mypy src
 
-# Fast tests (unit + integration + web)
-uv run pytest -m "not benchmark and not ocr_live and not network"
+# Deterministic local backend gate
+./scripts/verify-calibre-gate.sh
 
 # WebUI E2E
 cd webui
@@ -245,7 +248,8 @@ npm run lint -- --max-warnings=0
 npm run e2e
 ```
 
-All four gates must pass before opening a PR.
+All applicable gates must pass before opening a Gitea PR. Changes that touch
+real-service, browser, or image boundaries also require their Gitea jobs.
 
 ## 9. Adding new tests
 

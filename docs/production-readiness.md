@@ -10,28 +10,29 @@ The earlier `v1.2.1` operational assessment does not automatically approve this
 new schema, API, WebUI, pilot ledger, or writer binding. Promotion is per exact
 commit and immutable image digest.
 
-## Latest exact-commit gate evidence
+## Baseline exact-commit gate evidence
 
-On 2026-07-15, canonical Gitea run 20 (run ID `1698`) completed with failure for
-commit `b5cc9fa519033c0efa8b6258e0dd9b6a144f6dee` on
+On 2026-07-15, canonical Gitea run 24 (run ID `1737`) completed successfully for
+commit `4a0d6d2326c0ef642fcdcc68e693a1f72632aa1f` on
 `feat/v1-content-verification`.
 
-- The backend reported 351 passed, 1 skipped and 45 deselected tests, but failed
-  `test_sigkill_after_partial_calibre_write_is_restored_on_restart` because the
-  shared disposable PostgreSQL database no longer contained `bookrecord`.
-- The required Manifestation V2 integration, benchmarks, WebUI and production
-  image jobs had no runner and zero duration after the backend failure. Their
-  `completed` entries are dependency short-circuits, not successful gates.
-- Local green suites do not replace this failed canonical run. The next
-  promotable commit must receive a new automatically triggered Gitea run whose
-  backend and every dependent required job complete successfully. Do not
-  manually rerun Actions to manufacture that evidence.
+- `Backend (pytest + mypy + ruff)` completed successfully after destructive
+  PostgreSQL suites were isolated from later migrated-schema tests.
+- `Manifestation V2 required integration` reported exactly one pass and no
+  skips for the real Calibre/Tesseract/PostgreSQL/Valkey API → authorization →
+  writer → readback → undo round trip.
+- Benchmarks, WebUI E2E, and the production image contract also completed; the
+  run conclusion is `success` for the exact SHA above.
+- The run was triggered by the pushed commit. No Gitea Action was manually
+  rerun.
 
-Before another promotion attempt, isolate every schema-destructive PostgreSQL
-test phase in its own disposable database/schema or reapply migrations before
-the next phase. An `UndefinedTable` result is a hard gate failure, never an
-acceptable environmental skip. Live-library writes remain blocked regardless
-of the other local verification evidence.
+This supersedes the failed run `1698` and clears the repository CI blocker. It
+does not approve a live library: immutable image review, operator-owned backup
+and restore evidence, a restored-clone rehearsal, and explicitly reviewed
+canaries remain outstanding promotion gates.
+
+Every later commit still requires its own automatically triggered Gitea run;
+this baseline must not be presented as evidence for a different SHA.
 
 ## Required promotion evidence
 
