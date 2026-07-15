@@ -23,3 +23,23 @@ async def test_openlibrary_probe() -> None:
 
     assert result["ok"] is True
     assert "openlibrary" in result["provider"]
+
+
+@pytest.mark.asyncio
+async def test_komf_probe_fails_when_provider_returns_no_candidates() -> None:
+    settings = Settings()
+    provider = MagicMock()
+    provider.fetch_candidates = AsyncMock(return_value=[])
+    registry = MagicMock()
+    registry.providers = {"komf": provider}
+
+    with patch("calibre_ai_auditor.providers.testing.ProviderRegistry", return_value=registry) as registry_cls:
+        result = await probe_provider_connectivity(settings, "komf")
+
+    assert result == {
+        "provider": "komf",
+        "ok": False,
+        "message": "Provider returned no candidates for probe query",
+    }
+    registry_cls.assert_called_once()
+    assert registry_cls.call_args.kwargs == {"enable_komf": True}

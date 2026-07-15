@@ -17,7 +17,7 @@ async def probe_provider_connectivity(settings: Settings, provider_name: str) ->
     """Run a lightweight connectivity probe against a metadata provider."""
     library_path = settings.library.path
     cli = CalibreCLI(library_path) if library_path else CalibreCLI(None)
-    registry = ProviderRegistry(cli)
+    registry = ProviderRegistry(cli, enable_komf=provider_name == "komf")
     provider = registry.providers.get(provider_name)
     if provider is None:
         raise ValueError(f"Unknown provider: {provider_name}")
@@ -75,6 +75,12 @@ async def probe_provider_connectivity(settings: Settings, provider_name: str) ->
 
     try:
         candidates = await provider.fetch_candidates(title=PROBE_TITLE, authors=PROBE_AUTHORS)
+        if not candidates:
+            return {
+                "provider": provider_name,
+                "ok": False,
+                "message": "Provider returned no candidates for probe query",
+            }
         return {
             "provider": provider_name,
             "ok": True,

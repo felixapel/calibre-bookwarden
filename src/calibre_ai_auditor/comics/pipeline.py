@@ -87,7 +87,7 @@ async def enrich_comic_observations(
 
             lib_path = getattr(getattr(settings, "library", None), "path", None)
             cli = CalibreCLI(lib_path)
-            reg = ProviderRegistry(cli)
+            reg = ProviderRegistry(cli, enable_komf=use_komf)
             komf = reg.providers.get("komf")
             if komf:
                 title = (
@@ -102,7 +102,7 @@ async def enrich_comic_observations(
                         best = candidates[0]
                         # Merge komf (decimal chapter)
                         for k in ("volume", "chapter", "series_position"):
-                            val = getattr(best, k, None)
+                            val = getattr(best.metadata, k, None)
                             if val is not None and (k not in comic_meta or comic_meta.get(k) is None):
                                 comic_meta[k] = val
                         if best.metadata.series and not comic_meta.get("series"):
