@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import inspect
 from sqlmodel import Session, SQLModel, create_engine
 
 import calibre_ai_auditor.storage.db as db_module
@@ -58,6 +59,8 @@ async def test_vision_verifier_success(tmp_path: Any) -> None:
             assert result["authors"] == ["Author One"]
             assert result["isbn"] == "9781234567890"
             assert result["confidence"] == 0.95
+
+    assert "covervisioncache" not in inspect(create_engine(f"sqlite:///{db_file}")).get_table_names()
 
     db_module._engine = None
 

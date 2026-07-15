@@ -50,11 +50,6 @@ class VisionVerifier:
         if sha256 or phash:
             try:
                 engine = get_engine(self.settings)
-                # Ensure the cache table exists (e.g. in test environments)
-                from sqlmodel import SQLModel
-
-                SQLModel.metadata.create_all(engine)
-
                 cached_response = None
                 with Session(engine) as session:
                     # 1. Try exact SHA-256 match
