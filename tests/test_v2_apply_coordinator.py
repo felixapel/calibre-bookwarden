@@ -5,7 +5,6 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
-from sqlalchemy.engine import make_url
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.apply.coordinator import (
@@ -408,13 +407,8 @@ def test_v2_writer_rejects_a_reset_pilot_budget_counter() -> None:
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN is not configured")
-def test_postgres_serializes_concurrent_different_pilot_ids() -> None:
-    dsn = os.environ["TEST_POSTGRES_DSN"]
-    if "test" not in (make_url(dsn).database or "").lower():
-        pytest.fail("TEST_POSTGRES_DSN must name an unmistakably disposable test database")
-    engine = create_engine(dsn)
-    SQLModel.metadata.drop_all(engine)
-    SQLModel.metadata.create_all(engine)
+def test_postgres_serializes_concurrent_different_pilot_ids(isolated_postgres_dsn: str) -> None:
+    engine = create_engine(isolated_postgres_dsn)
     try:
         queued_inputs: list[tuple[str, str, str]] = []
         with Session(engine) as setup:
@@ -460,7 +454,6 @@ def test_postgres_serializes_concurrent_different_pilot_ids() -> None:
             assert len(check.exec(select(OperationLedger)).all()) == 1
             assert len(check.exec(select(PilotSession)).all()) == 1
     finally:
-        SQLModel.metadata.drop_all(engine)
         engine.dispose()
 
 

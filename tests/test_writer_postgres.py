@@ -3,8 +3,7 @@
 import os
 
 import pytest
-from sqlalchemy.engine import make_url
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from calibre_ai_auditor.apply.guard import acquire_writer_guard, writer_guard_is_held
 from calibre_ai_auditor.apply.writer import claim_next_operation
@@ -13,14 +12,8 @@ from calibre_ai_auditor.storage.operations import create_operation
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN is not configured")
-def test_postgres_allows_only_one_active_operation_per_book() -> None:
-    dsn = os.environ["TEST_POSTGRES_DSN"]
-    database = make_url(dsn).database or ""
-    if "test" not in database.lower():
-        pytest.fail("TEST_POSTGRES_DSN must name an unmistakably disposable test database")
-    engine = create_engine(dsn)
-    SQLModel.metadata.drop_all(engine)
-    SQLModel.metadata.create_all(engine)
+def test_postgres_allows_only_one_active_operation_per_book(isolated_postgres_dsn: str) -> None:
+    engine = create_engine(isolated_postgres_dsn)
     try:
         with Session(engine) as setup:
             setup.add(BookRecord(book_key="calibre:99", run_id="run-99", calibre_book_id=99))
@@ -50,12 +43,12 @@ def test_postgres_allows_only_one_active_operation_per_book() -> None:
             assert claim_next_operation(worker_two, lease_owner="worker-two") is None
         assert second_id != first_id
     finally:
-        SQLModel.metadata.drop_all(engine)
+        engine.dispose()
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN is not configured")
-def test_postgres_writer_guard_fails_closed_when_owner_connection_closes() -> None:
-    engine = create_engine(os.environ["TEST_POSTGRES_DSN"])
+def test_postgres_writer_guard_fails_closed_when_owner_connection_closes(disposable_postgres_dsn: str) -> None:
+    engine = create_engine(disposable_postgres_dsn)
     owner = engine.connect()
     contender = engine.connect()
     try:
