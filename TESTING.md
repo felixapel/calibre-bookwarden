@@ -69,6 +69,21 @@ Tests requiring `calibredb`, PostgreSQL, Valkey, optional FastMCP, or live OCR
 skip when that dependency is genuinely absent. Those skips must be rerun in the
 Gitea target environment before production promotion.
 
+### PostgreSQL test database lifecycle
+
+Every PostgreSQL integration phase must own an unmistakably disposable
+database or schema. A test that creates or drops application tables must not
+leave a shared migrated database for a later test. Use an isolated database per
+destructive phase, or migrate a clean database again before the next phase.
+
+Gitea run 20 (run ID `1698`) on 2026-07-15 demonstrated why this is a release
+gate: the backend reached the real Calibre crash-recovery test after the shared
+database had lost `bookrecord`, producing one `UndefinedTable` failure after
+351 passes. Downstream jobs therefore did not run. Until the lifecycle is
+isolated and a new run for the exact head is fully green, the supervised V2
+pilot is not promotable. See
+[Production readiness](docs/production-readiness.md#latest-exact-commit-gate-evidence).
+
 ## 1. Unit tests (pytest)
 
 Pure-function tests covering the v1.0 deterministic rules + helpers.

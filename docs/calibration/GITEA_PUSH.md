@@ -75,6 +75,21 @@ curl -H "Authorization: token $GITEA_TOKEN" \
   "$GITEA_URL/api/v1/repos/felix/calibre-ai-auditor/actions/runs?labels=v1-tests"
 ```
 
+From a checkout whose `gitea` remote points at the canonical repository, prefer
+the authenticated `tea` views for an auditable status check:
+
+```bash
+tea actions runs list --remote gitea
+tea actions runs view <run-id> --remote gitea
+tea actions runs logs <run-id> --job <job-id> --remote gitea
+```
+
+Only `Status: completed` together with `Conclusion: success` for the exact head
+SHA is green evidence. A dependent job showing zero duration and no runner after
+an upstream failure was not executed and must not be counted as passing. Keep
+the original run and logs as failure evidence; a later authorized push should
+trigger a fresh run naturally.
+
 Do not assume push authorization from implementation work. Inspect the exact
 branch, status, diff, commits, remote, and existing Gitea Actions first. Never
 manually rerun Gitea Actions unless the operator explicitly requests it.
