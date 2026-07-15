@@ -252,5 +252,8 @@ async def inspect_upload(
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {exc}") from exc
 
-    package = await _build_inspection_package(dest, settings, no_providers=no_providers)
-    return {"status": "success", "data": package}
+    try:
+        package = await _build_inspection_package(dest, settings, no_providers=no_providers)
+        return {"status": "success", "data": package}
+    finally:
+        dest.unlink(missing_ok=True)
