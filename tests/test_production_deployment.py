@@ -85,6 +85,28 @@ def test_release_workflow_publishes_only_after_full_gates() -> None:
     assert "|| true" not in legacy_gate
 
 
+def test_local_gate_uses_executable_checks_without_textual_completion_markers() -> None:
+    gate = (ROOT / "scripts" / "verify-calibre-gate.sh").read_text()
+
+    for command in (
+        "uv lock --check",
+        "uv sync --frozen --extra dev",
+        "uv run ruff check .",
+        "uv run ruff format --check .",
+        "uv run mypy src",
+        "uv run pytest",
+        "uv run bookaudit --help",
+    ):
+        assert command in gate
+    for textual_gate in ("pending markers", "rg komf", "all mandatory checks passed"):
+        assert textual_gate not in gate.lower()
+
+
+def test_webui_uses_only_the_npm_lockfile() -> None:
+    assert (ROOT / "webui" / "package-lock.json").is_file()
+    assert not (ROOT / "webui" / "pnpm-lock.yaml").exists()
+
+
 def test_all_production_gates_force_real_retention_services() -> None:
     workflows = (
         ROOT / ".gitea" / "workflows" / "v1-tests.yml",
