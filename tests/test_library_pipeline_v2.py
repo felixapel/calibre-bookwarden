@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from calibre_ai_auditor.extractors.multiformat import FormatInspection
+from calibre_ai_auditor.providers.evidence_v2 import CompositeEvidenceEnricher
 from calibre_ai_auditor.verification.identity_v2 import (
     EvidenceSourceKind,
     FormatEvidence,
@@ -17,6 +20,7 @@ from calibre_ai_auditor.verification.pipeline_v2 import (
     AuditMode,
     BookAuditState,
     BookSnapshot,
+    BookSourceDescriptor,
     EvidenceEnrichment,
     LibraryAuditPipeline,
     LibraryRunStatus,
@@ -77,7 +81,11 @@ def _internal_inspection(path: Path) -> FormatInspection:
 
 
 class _ExactProviderEvidence:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def collect(self, _book: object, _inspections: object) -> list[SourceEvidence]:
+        self.calls += 1
         common = {
             "root_id": "google-books:exact-volume",
             "source_kind": EvidenceSourceKind.provider_structured,
@@ -100,6 +108,70 @@ class _RecordingApplier:
     async def apply(self, package: object) -> str:
         self.packages.append(package)
         return "applied"
+
+
+class _FakeRemoteCalibre:
+    source_kind = "calibre_content_server"
+    fingerprint = "c" * 64
+
+    def __init__(
+        self,
+        *,
+        changed_after_export: bool = False,
+        revision_changed_after_export: bool = False,
+        formats: tuple[str, ...] = ("EPUB",),
+    ) -> None:
+        self.changed_after_export = changed_after_export
+        self.revision_changed_after_export = revision_changed_after_export
+        self.formats = formats
+        self.metadata_reads = 0
+        self.active_exports = 0
+        self.max_active_exports = 0
+
+    @property
+    def raw_formats(self) -> list[str]:
+        return [f"/remote/private.{item.lower()}" for item in self.formats]
+
+    def list_books(self) -> list[dict[str, Any]]:
+        return [{"id": 1, "title": "Wrong", "formats": self.raw_formats}]
+
+    def show_metadata(self, book_id: int) -> dict[str, Any]:
+        self.metadata_reads += 1
+        title = "Changed concurrently" if self.changed_after_export and self.metadata_reads > 1 else "Wrong"
+        return {
+            "id": book_id,
+            "title": title,
+            "authors": "Ada Author",
+            "formats": self.raw_formats,
+            "last_modified": (
+                "2026-07-16T10:01:00+00:00"
+                if self.revision_changed_after_export and self.metadata_reads > 1
+                else "2026-07-16T10:00:00+00:00"
+            ),
+        }
+
+    def format_references(self, book_id: int, raw_formats: object) -> list[str]:
+        assert raw_formats == self.raw_formats
+        return [f"calibre-server:{self.fingerprint}:{book_id}:{item}" for item in self.formats]
+
+    def format_from_reference(self, reference: str) -> str:
+        format_name = reference.rsplit(":", 1)[-1]
+        assert format_name in self.formats
+        return format_name
+
+    @contextmanager
+    def export_format(self, book_id: int, format_name: str, *, scratch_root: Path) -> Iterator[Path]:
+        assert book_id == 1
+        assert format_name in self.formats
+        self.active_exports += 1
+        self.max_active_exports = max(self.max_active_exports, self.active_exports)
+        path = scratch_root / f"materialized.{format_name.lower()}"
+        path.write_bytes(b"remote ebook bytes")
+        try:
+            yield path
+        finally:
+            path.unlink()
+            self.active_exports -= 1
 
 
 @pytest.mark.asyncio
@@ -133,6 +205,200 @@ async def test_shadow_pipeline_processes_all_formats_and_one_book_at_a_time(tmp_
     assert events.index(("calibre:1", BookAuditState.shadowed)) < events.index(
         ("calibre:2", BookAuditState.snapshotting)
     )
+
+
+@pytest.mark.asyncio
+async def test_remote_pipeline_seals_logical_references_and_cleans_materialized_files(tmp_path: Path) -> None:
+    source = _FakeRemoteCalibre()
+    inspected: list[Path] = []
+
+    def inspector(path: Path) -> FormatInspection:
+        assert source.active_exports == 1
+        assert path.exists()
+        inspected.append(path)
+        return _internal_inspection(path)
+
+    result = await LibraryAuditPipeline(
+        cli=source,
+        inspector=inspector,
+        evidence_enricher=_ExactProviderEvidence(),
+        scratch_root=tmp_path,
+    ).run(run_id="remote-run")
+
+    package = result.packages[0]
+    logical = f"calibre-server:{source.fingerprint}:1:EPUB"
+    assert package.book_key == f"calibre-server:{source.fingerprint}:1"
+    assert package.snapshot.source == BookSourceDescriptor(
+        kind="calibre_content_server",
+        fingerprint=source.fingerprint,
+        access_mode="read_only",
+    )
+    assert package.snapshot.files == [logical]
+    assert package.formats[0].path == logical
+    assert package.verify_seal()
+    assert source.active_exports == 0
+    assert inspected
+    assert not inspected[0].exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_remote_pipeline_materializes_at_most_one_format_at_a_time(tmp_path: Path) -> None:
+    source = _FakeRemoteCalibre(formats=("EPUB", "PDF"))
+    enricher = _ExactProviderEvidence()
+
+    result = await LibraryAuditPipeline(
+        cli=source,
+        inspector=_internal_inspection,
+        evidence_enricher=enricher,
+        scratch_root=tmp_path,
+    ).run(run_id="remote-multiformat")
+
+    assert source.max_active_exports == 1
+    assert enricher.calls == 1
+    assert len(result.packages[0].formats) == 2
+    assert result.packages[0].verify_seal()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_remote_composite_splits_file_and_aggregate_enrichment(tmp_path: Path) -> None:
+    source = _FakeRemoteCalibre(formats=("EPUB", "PDF"))
+
+    class FileEnricher:
+        requires_materialized_files = True
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def collect(self, _book: object, inspections: list[FormatInspection]) -> list[SourceEvidence]:
+            self.calls += 1
+            assert len(inspections) == 1
+            assert Path(inspections[0].format_evidence.path).exists()
+            return []
+
+    class AggregateEnricher:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def collect(self, _book: object, inspections: list[FormatInspection]) -> list[SourceEvidence]:
+            self.calls += 1
+            assert len(inspections) == 2
+            assert all(item.format_evidence.path.startswith("calibre-server:") for item in inspections)
+            return []
+
+    file_enricher = FileEnricher()
+    aggregate_enricher = AggregateEnricher()
+    result = await LibraryAuditPipeline(
+        cli=source,
+        inspector=_internal_inspection,
+        evidence_enricher=CompositeEvidenceEnricher([file_enricher, aggregate_enricher]),
+        scratch_root=tmp_path,
+    ).run(run_id="remote-composite")
+
+    assert file_enricher.calls == 2
+    assert aggregate_enricher.calls == 1
+    assert source.max_active_exports == 1
+    assert result.packages[0].verify_seal()
+
+
+@pytest.mark.asyncio
+async def test_remote_pipeline_defers_a_book_changed_during_export(tmp_path: Path) -> None:
+    source = _FakeRemoteCalibre(changed_after_export=True)
+
+    result = await LibraryAuditPipeline(
+        cli=source,
+        inspector=_internal_inspection,
+        evidence_enricher=_ExactProviderEvidence(),
+        scratch_root=tmp_path,
+    ).run(run_id="remote-drift")
+
+    package = result.packages[0]
+    assert package.state is BookAuditState.source_changed
+    assert package.identity.risk_flags == ["source_changed"]
+    assert package.formats == []
+    assert package.verify_seal()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_remote_pipeline_defers_a_source_revision_change_outside_canonical_fields(tmp_path: Path) -> None:
+    source = _FakeRemoteCalibre(revision_changed_after_export=True)
+
+    result = await LibraryAuditPipeline(
+        cli=source,
+        inspector=_internal_inspection,
+        evidence_enricher=_ExactProviderEvidence(),
+        scratch_root=tmp_path,
+    ).run(run_id="remote-revision-drift")
+
+    assert result.packages[0].state is BookAuditState.source_changed
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_remote_pipeline_redacts_materialized_paths_from_failures(tmp_path: Path) -> None:
+    source = _FakeRemoteCalibre()
+
+    def failing_inspector(path: Path) -> FormatInspection:
+        raise RuntimeError(f"could not inspect {path}")
+
+    result = await LibraryAuditPipeline(
+        cli=source,
+        inspector=failing_inspector,
+        scratch_root=tmp_path,
+    ).run(run_id="remote-redaction")
+
+    package = result.packages[0]
+    assert package.state is BookAuditState.failed
+    assert str(tmp_path) not in package.model_dump_json()
+    assert package.error == "Remote content inspection failed"
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_remote_pipeline_continues_after_malformed_format_metadata(tmp_path: Path) -> None:
+    class Source:
+        source_kind = "calibre_content_server"
+        fingerprint = "f" * 64
+
+        def list_books(self) -> list[dict[str, Any]]:
+            return [
+                {"id": 1, "title": "Bad", "formats": ["malformed"]},
+                {"id": 2, "title": "Good", "formats": ["/remote/good.epub"]},
+            ]
+
+        def show_metadata(self, book_id: int) -> dict[str, Any]:
+            return self.list_books()[book_id - 1]
+
+        def format_references(self, book_id: int, _raw_formats: object) -> list[str]:
+            if book_id == 1:
+                raise ValueError("invalid remote format")
+            return [f"calibre-server:{self.fingerprint}:2:EPUB"]
+
+        def format_from_reference(self, _reference: str) -> str:
+            return "EPUB"
+
+        @contextmanager
+        def export_format(self, book_id: int, _format: str, *, scratch_root: Path) -> Iterator[Path]:
+            assert book_id == 2
+            path = scratch_root / "good.epub"
+            path.write_bytes(b"ebook")
+            try:
+                yield path
+            finally:
+                path.unlink()
+
+    result = await LibraryAuditPipeline(
+        cli=Source(),
+        inspector=_internal_inspection,
+        evidence_enricher=_ExactProviderEvidence(),
+        scratch_root=tmp_path,
+    ).run(run_id="remote-malformed")
+
+    assert [package.state for package in result.packages] == [BookAuditState.failed, BookAuditState.shadowed]
+    assert result.status is LibraryRunStatus.completed_with_errors
+    assert all(package.verify_seal() for package in result.packages)
 
 
 @pytest.mark.asyncio

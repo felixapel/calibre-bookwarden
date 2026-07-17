@@ -70,16 +70,22 @@ class SQLAuditStore:
         payload = package.model_dump(mode="json")
         with Session(self.engine) as session:
             book = session.exec(select(BookRecord).where(BookRecord.book_key == package.book_key)).first()
-            files = [
-                {"path": path, "format": path.rsplit(".", 1)[-1].upper() if "." in path else "UNKNOWN"}
-                for path in package.snapshot.files
-            ]
+            source = package.snapshot.source.kind if package.snapshot.source is not None else "calibre"
+            format_by_reference = {item.path: item.format.upper() for item in package.formats}
+            files = []
+            for path in package.snapshot.files:
+                format_name = format_by_reference.get(path)
+                if format_name is None and package.snapshot.source is not None:
+                    format_name = path.rsplit(":", 1)[-1]
+                if format_name is None:
+                    format_name = path.rsplit(".", 1)[-1].upper() if "." in path else "UNKNOWN"
+                files.append({"path": path, "format": format_name})
             if book is None:
                 book = BookRecord(
                     book_key=package.book_key,
                     run_id=package.run_id,
                     calibre_book_id=package.snapshot.calibre_book_id,
-                    source="calibre",
+                    source=source,
                     files=files,
                     current_metadata=package.snapshot.current_metadata,
                     status=package.state.value,
@@ -87,6 +93,7 @@ class SQLAuditStore:
             else:
                 book.run_id = package.run_id
                 book.calibre_book_id = package.snapshot.calibre_book_id
+                book.source = source
                 book.files = files
                 book.current_metadata = package.snapshot.current_metadata
                 book.status = package.state.value
@@ -137,7 +144,8 @@ class SQLAuditStore:
             session.commit()
 
     def resumable_book_keys(self) -> set[str]:
-        terminal = {state.value for state in TERMINAL_BOOK_STATES if state is not BookAuditState.failed}
+        retryable = {BookAuditState.failed, BookAuditState.source_changed}
+        terminal = {state.value for state in TERMINAL_BOOK_STATES if state not in retryable}
         with Session(self.engine) as session:
             rows = session.exec(select(VerificationResult).where(VerificationResult.run_id == self.run_id)).all()
             resumable: set[str] = set()

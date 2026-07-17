@@ -79,27 +79,36 @@ Your personal Calibre library runs on **`192.168.0.122:8081`** (with WebUI on
 `8080` / HTTPS GUI on `8181`).
 
 > [!IMPORTANT]
-> **DO NOT mount your personal Calibre library direct directory to the
-> write-path of this application.** Any writes/metadata patches applied to a
-> live personal library could corrupt the library database or modify files
-> directly.
+> **DO NOT mount the active personal Calibre library directory into this
+> application.** A mount flag alone does not prove a consistent read boundary
+> for a live SQLite WAL or FUSE-backed library, and any write-path exposure can
+> corrupt the database or modify files directly.
 
-To safely test and audit:
-1.  **Staging Mode**: Mount a copy of your Calibre library folder to the
-    application's `/library` volume, leaving the primary personal Calibre
-    library completely untouched.
-2.  **Mount Read-Only**: If you mount your personal Calibre library directly
-    for scanning and intelligence purposes, always append `:ro` in the
-    docker volume mount to ensure it is strictly read-only:
-    ```yaml
-    volumes:
-      - /path/to/personal/calibre/library:/library:ro
-    ```
-3.  **Read-Only Env Enforcement**: Keep the write-path disabled globally by
-    setting:
-    ```env
-    BOOKAUDIT_LIBRARY__READ_ONLY=true
-    ```
+For an active personal library, do not copy `metadata.db`, attach SSHFS, or
+mount its WAL/FUSE-backed directory directly, including with `:ro`. Use the
+capability-limited Content Server source through an operator-created loopback
+SSH tunnel and an independently verified read-only Calibre account. The
+auditor neither creates that account nor changes the server:
+
+```bash
+bookaudit inventory \
+  --content-server http://127.0.0.1:18086 \
+  --library-id EXACT_LIBRARY_ID \
+  --username READONLY_USER \
+  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
+  --output reports/unraid-audit/inventory.json
+```
+
+Run this natively in the tunnel's network namespace. Review the aggregate-only
+report, run `bookaudit migrate`, and only with explicit operator authorization
+continue with `bookaudit verify-content-server --limit 1`. That command remains
+shadow-only and its evidence cannot reach the writer.
+
+Direct library mounts are reserved for a disposable generated library or a
+restored clone that is isolated from the active server. Keep such a clone mount
+read-only during verification and retain `BOOKAUDIT_LIBRARY__READ_ONLY=true`.
+Follow [ADR-004](decisions/ADR-004-read-only-content-server-inventory.md) and
+the [disposable lab runbook](runbooks/disposable-calibre-lab.md).
 
 ---
 
@@ -116,21 +125,22 @@ The full flow:
 
 ---
 
-## 5. Performance expectations on this homelab
+## 5. Performance measurement on this homelab
 
-Dev container baseline (Calibre CLI not available):
-- Engine: ~8,300 books/sec
-- Per-rule median: <2ms
-- LLM witness cache hit: ~107µs
+Full-library throughput, provider latency, OCR cost, and GPU routing performance
+on this homelab are unknown until measured. Synthetic resolver microbenchmarks
+do not predict Content Server export, ebook parsing, OCR, or network throughput.
 
-On the Unraid box (RTX 3090 + 5060 Ti):
-- Engine: expect ~25,000-30,000 books/sec (3-4× faster)
-- LLM witness latency: 500-2000ms per call (network bound)
-- OCR (Tesseract on 5060 Ti): ~100ms per page
+Run the locked benchmarks on disposable data and record the exact commit,
+hardware, dependency versions, corpus shape, and command with each result:
 
-Run `pytest --benchmark-only tests/benchmarks/` on Unraid to capture
-real numbers; commit them to `tests/benchmarks/BASELINE.md` for
-regression detection.
+```bash
+uv run pytest --benchmark-only tests/benchmarks/
+```
+
+Do not turn an unreviewed local run into a production expectation. Measure a
+small operator-approved shadow sample before choosing concurrency or estimating
+a full-library duration.
 
 ---
 

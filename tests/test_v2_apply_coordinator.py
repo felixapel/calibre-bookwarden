@@ -26,7 +26,7 @@ from calibre_ai_auditor.storage.models import (
     utc_now,
 )
 from calibre_ai_auditor.verification.pipeline_v2 import EvidencePackageV2
-from tests.v2_fixtures import build_exact_tier_a_package
+from tests.v2_fixtures import as_remote_package, build_exact_tier_a_package
 
 
 def _v2_package(*, calibre_book_id: int = 8, suffix: str = "") -> EvidencePackageV2:
@@ -141,6 +141,33 @@ def test_v2_queue_requires_exact_authorization() -> None:
                 evidence_id=package.evidence_id,
                 authorization_id="wrong-authorization",
                 pilot=_pilot_guard(),
+            )
+
+
+def test_v2_authorization_rejects_remote_content_server_evidence() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    package = as_remote_package(_v2_package())
+    book = BookRecord(
+        book_key=package.book_key,
+        run_id=package.run_id,
+        calibre_book_id=package.snapshot.calibre_book_id,
+        status="shadowed",
+        source="calibre_content_server",
+        current_metadata=package.snapshot.current_metadata,
+        files=[{"path": path} for path in package.snapshot.files],
+    )
+
+    with Session(engine) as session:
+        session.add(book)
+        session.commit()
+        with pytest.raises(ValueError, match="remote Content Server"):
+            create_v2_manual_authorization(
+                session,
+                book=book,
+                package=package,
+                actor="operator",
+                reason="Remote evidence must remain read-only",
             )
 
 

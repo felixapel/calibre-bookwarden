@@ -1,9 +1,11 @@
 import asyncio
+import getpass
 import hashlib
 import json as json_lib
 import logging
 import os
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -17,9 +19,11 @@ from calibre_ai_auditor.apply.coordinator import PilotGuard, acknowledge_v2_fail
 from calibre_ai_auditor.apply.engine import ApplyEngine
 from calibre_ai_auditor.audit.engine import run_audit
 from calibre_ai_auditor.calibre.cli import CalibreCLI
+from calibre_ai_auditor.calibre.content_server import ContentServerError, ContentServerSource, aggregate_inventory
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
+from calibre_ai_auditor.security.files import SecurePathError, ensure_secure_directory, write_bytes_beneath
 from calibre_ai_auditor.storage.db import expected_schema_revision, get_engine, init_db
 from calibre_ai_auditor.storage.models import (
     BookRecord,
@@ -31,6 +35,17 @@ from calibre_ai_auditor.storage.models import (
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 logger = logging.getLogger(__name__)
+
+
+def _require_current_schema(engine: Any) -> None:
+    """Fail closed when runtime state has not been migrated explicitly."""
+    try:
+        with engine.connect() as connection:
+            revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+    except Exception as exc:
+        raise ValueError("database schema is unavailable; run `bookaudit migrate` explicitly") from exc
+    if revision != expected_schema_revision():
+        raise ValueError("database schema is not current; run `bookaudit migrate` explicitly")
 
 
 async def _audit_run(
@@ -95,6 +110,184 @@ def doctor(ctx: typer.Context) -> None:
 
     typer.echo(f"\nLibrary path: {settings.library.path}")
     typer.echo(f"DB path:      {settings.storage.sqlite_path}")
+
+
+@app.command()
+def inventory(
+    content_server: Annotated[
+        str,
+        typer.Option("--content-server", help="Loopback URL for an SSH-tunneled Calibre Content Server"),
+    ],
+    library_id: Annotated[str, typer.Option("--library-id", help="Exact Content Server library id")],
+    username: Annotated[str, typer.Option("--username", help="Read-only Content Server user")],
+    source_identity: Annotated[
+        str,
+        typer.Option("--source-identity", help="Stable verified SSH host fingerprint or equivalent identity"),
+    ],
+    password_stdin: Annotated[
+        bool,
+        typer.Option("--password-stdin", help="Read exactly one password line from standard input"),
+    ] = False,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Optional private JSON path beneath the current project directory"),
+    ] = None,
+) -> None:
+    """Inventory a remote Calibre library without DB, provider, OCR, or LLM state."""
+    if password_stdin:
+        password = sys.stdin.readline().rstrip("\r\n")
+    else:
+        password = getpass.getpass("Calibre Content Server password: ")
+    if not password:
+        typer.secho("Inventory failed: an empty password is not allowed", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+    try:
+        source = ContentServerSource(
+            content_server,
+            library_id=library_id,
+            username=username,
+            source_identity=source_identity,
+            password=password,
+        )
+        report = aggregate_inventory(source.list_books(), source_fingerprint=source.fingerprint)
+        payload = (json_lib.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n").encode()
+        if output is None:
+            typer.echo(payload.decode(), nl=False)
+            return
+        root = Path(os.path.abspath(Path.cwd()))
+        target = Path(os.path.abspath(output))
+        if target == root or not target.is_relative_to(root):
+            raise ValueError("output must be beneath the current project directory")
+        parent = ensure_secure_directory(target.parent)
+        os.chmod(parent, 0o700, follow_symlinks=False)
+        write_bytes_beneath(root, target, payload, mode=0o600)
+        typer.echo(f"Private inventory written: {target}")
+    except (ContentServerError, OSError, SecurePathError, ValueError) as exc:
+        typer.secho(f"Inventory failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+
+@app.command("verify-content-server")
+def verify_content_server(
+    ctx: typer.Context,
+    content_server: Annotated[
+        str,
+        typer.Option("--content-server", help="Loopback URL for an SSH-tunneled Calibre Content Server"),
+    ],
+    library_id: Annotated[str, typer.Option("--library-id", help="Exact Content Server library id")],
+    username: Annotated[str, typer.Option("--username", help="Read-only Content Server user")],
+    source_identity: Annotated[
+        str,
+        typer.Option("--source-identity", help="Stable verified SSH host fingerprint or equivalent identity"),
+    ],
+    scratch_root: Annotated[
+        Path,
+        typer.Option("--scratch-root", help="Private directory for short-lived exported formats"),
+    ],
+    password_stdin: Annotated[
+        bool,
+        typer.Option("--password-stdin", help="Read exactly one password line from standard input"),
+    ] = False,
+    limit: Annotated[int, typer.Option("--limit", min=0, help="Max books to verify (0 = unlimited)")] = 1,
+    run_id: Annotated[str | None, typer.Option("--run-id", help="Resume an existing remote V2 run id")] = None,
+    use_llm: Annotated[bool, typer.Option("--use-llm/--no-llm")] = False,
+    use_ocr: Annotated[bool, typer.Option("--use-ocr/--no-ocr")] = True,
+    use_vision: Annotated[bool, typer.Option("--use-vision/--no-vision")] = False,
+    allow_remote_text: Annotated[bool, typer.Option("--allow-remote-text/--deny-remote-text")] = False,
+    allow_remote_images: Annotated[bool, typer.Option("--allow-remote-images/--deny-remote-images")] = False,
+    allow_public_providers: Annotated[
+        bool,
+        typer.Option(
+            "--allow-public-providers/--deny-public-providers",
+            help="Permit exact identifier lookups at allowlisted public metadata providers",
+        ),
+    ] = False,
+    format: Annotated[str, typer.Option("--format", help="Report format: text|json")] = "text",
+) -> None:
+    """Run a persisted, shadow-only V2 audit through a read-only Content Server."""
+    from calibre_ai_auditor.verification.pipeline_v2 import AuditMode
+    from calibre_ai_auditor.verification.service_v2 import build_v2_enricher, run_persisted_library_audit
+
+    if format not in {"text", "json"}:
+        typer.secho("Error: --format must be text or json.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+    if use_llm or use_vision or allow_remote_text or allow_remote_images:
+        typer.secho(
+            "Remote verification currently permits local extraction/OCR and optional exact public providers only.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(2)
+    password = (
+        sys.stdin.readline().rstrip("\r\n") if password_stdin else getpass.getpass("Calibre Content Server password: ")
+    )
+    if not password:
+        typer.secho("Remote verification failed: an empty password is not allowed", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
+    settings: Settings = ctx.obj
+    final_run_id = run_id or f"remote_verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
+    try:
+        source = ContentServerSource(
+            content_server,
+            library_id=library_id,
+            username=username,
+            source_identity=source_identity,
+            password=password,
+        )
+        private_scratch = ensure_secure_directory(scratch_root)
+        engine = get_engine(settings)
+        _require_current_schema(engine)
+        enricher = build_v2_enricher(
+            settings,
+            use_llm=use_llm,
+            use_ocr=use_ocr,
+            use_vision=use_vision,
+            run_allows_remote_text=allow_remote_text,
+            run_allows_remote_images=allow_remote_images,
+            use_public_providers=allow_public_providers,
+        )
+        result = asyncio.run(
+            run_persisted_library_audit(
+                cli=source,
+                database_engine=engine,
+                run_id=final_run_id,
+                limit=limit,
+                mode=AuditMode.shadow,
+                evidence_enricher=enricher,
+                use_llm=use_llm,
+                settings=settings,
+                scratch_root=private_scratch,
+            )
+        )
+    except (ContentServerError, OSError, SecurePathError, ValueError) as exc:
+        typer.secho(f"Remote verification failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+    verdicts = [
+        {
+            "book_key": package.book_key,
+            "state": package.state.value,
+            "tier": package.identity.tier.value,
+            "risk_flags": package.identity.risk_flags,
+        }
+        for package in result.packages
+    ]
+    if format == "json":
+        typer.echo(
+            json_lib.dumps(
+                {"run_id": final_run_id, "status": result.status.value, "verdicts": verdicts},
+                indent=2,
+            )
+        )
+    else:
+        typer.echo(
+            f"Remote shadow audit processed {len(verdicts)} books (run_id={final_run_id}, status={result.status.value})"
+        )
+        for verdict in verdicts:
+            typer.echo(
+                f"  {verdict['book_key']} state={verdict['state']} tier={verdict['tier']} "
+                f"flags={','.join(verdict['risk_flags']) or '-'}"
+            )
 
 
 @app.command()

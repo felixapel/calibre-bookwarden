@@ -10,6 +10,8 @@ historical/read-only.
 - **Calibre**: Required (for native install) or available in the container (Docker)
 - **Python**: 3.12+ (for native install)
 - **Docker & Docker Compose**: Recommended for full stack deployment
+- **Architecture**: The pinned Docker Calibre artifact is x86_64. Native
+  installs may use another architecture if their `calibredb` is compatible.
 - **Linux kernel interfaces**: Required for supervised V2 writes. The writer
   uses `/proc/self/fd`, inherited descriptors, and sealed `memfd` objects so
   Calibre cannot reopen a substituted artifact pathname. Non-Linux native
@@ -61,6 +63,20 @@ The Docker deployment includes all sidecar services (**PostgreSQL**,
     - **WebUI**: <http://localhost:8080>
     - **API Docs**: <http://localhost:8080/docs>
     - **Prometheus metrics**: <http://localhost:8080/api/metrics>
+
+The application image installs the official Calibre 9.11.0 x86_64 release and
+verifies its pinned SHA-512 during the build. Reproduce the isolated Content
+Server safety gate without mounting a real library:
+
+```bash
+uv run python scripts/disposable_calibre_lab.py run
+```
+
+Remote Content Server inventory additionally requires a compatible local
+`calibredb`, an operator-created SSH tunnel bound to loopback, an independently
+verified read-only Calibre account, and the exact library ID and SSH host
+fingerprint. Follow
+[the disposable lab runbook](docs/runbooks/disposable-calibre-lab.md) first.
 
 ---
 

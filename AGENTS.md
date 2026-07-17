@@ -67,6 +67,16 @@ or real-service boundaries require the corresponding Gitea gate. A failed
 required validation blocks progression unless the exception is explicit and
 documented.
 
+Changes to `ContentServerSource`, its CLI boundary, the disposable Compose
+fixture, or the pinned Calibre image also require:
+
+```bash
+uv run python scripts/disposable_calibre_lab.py run
+```
+
+Treat this as a local mechanism gate only. The pushed exact commit still needs
+its automatically triggered Gitea evidence; never rerun Actions manually.
+
 ## Documentation
 
 Keep README, roadmap, runbooks, and ADRs aligned with executable behavior. Do

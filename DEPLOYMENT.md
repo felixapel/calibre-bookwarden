@@ -19,18 +19,22 @@ Gitea Actions is the canonical development and pull-request gate. Mirror/release
 automation is outside the normal development workflow and must not be invoked
 without an explicit release request.
 
-The runtime layer installs Debian's Calibre package, so rebuilding the same
-commit can resolve different OS package versions. The release contract is the
-single digest that is scanned, boot-tested, attested, signed, and only then
-tagged—not bit-for-bit reproducibility across later rebuilds. Vendor-unfixed
-HIGH/CRITICAL findings have a fail-closed review expiry in the release workflow;
-fixed findings always block publication.
+The runtime layer installs the official Calibre 9.11.0 x86_64 artifact and
+verifies its pinned SHA-512 during the build. The immutable release digest is
+still the deployment identity that is scanned, boot-tested, attested, signed,
+and only then tagged. Vendor-unfixed HIGH/CRITICAL findings have a fail-closed
+review expiry in the release workflow; fixed findings always block publication.
 
 ---
 
 ## 2. Service Stack (Docker Compose)
 
 We use **Docker Compose Profiles** to manage complexity.
+
+`compose.disposable-calibre.yml` is a local safety-test fixture, not a
+production stack. It publishes no host port, accepts no library mount override,
+and must never be pointed at a live Calibre directory. Run it only through
+`scripts/disposable_calibre_lab.py`, which verifies cleanup.
 
 ### Optional integrations
 The default production stack starts only the required services. The `optional`

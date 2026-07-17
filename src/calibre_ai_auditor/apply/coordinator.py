@@ -86,6 +86,8 @@ def _book_file_paths(book: BookRecord) -> list[str]:
 
 
 def _validate_v2_book_snapshot(book: BookRecord, package: EvidencePackageV2) -> None:
+    if package.snapshot.source is not None:
+        raise ValueError("remote Content Server evidence cannot be authorized for writing")
     if (
         package.error is not None
         or package.state.value != "shadowed"

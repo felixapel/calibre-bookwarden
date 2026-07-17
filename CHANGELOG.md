@@ -8,6 +8,15 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A capability-limited Calibre Content Server source for aggregate-only
+  inventory and one-book-at-a-time Manifestation V2 shadow verification through
+  a loopback tunnel. Remote packages use source-bound logical references,
+  detect source changes, deny cloud/provider egress by default, and can never
+  authorize a writer operation.
+- A disposable Calibre 9.11.0 safety lab with generated CC0 EPUB/PDF/AZW3
+  fixtures, a read-only `calibredb` wrapper, ACL denial checks, whole-library
+  regular-file hash comparison, scratch validation, and zero-resource cleanup
+  verification.
 - V2-native WebUI review with paginated/filterable sealed evidence, exact
   format hashes and provenance, current-versus-patch comparison, disabled Tier
   B/C controls, one-package authorization, and sanitized operation polling.
@@ -28,6 +37,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The application image installs the official Calibre 9.11.0 x86_64 artifact
+  pinned by SHA-512 instead of resolving the mutable Debian Calibre package.
 - `POST /api/apply/v2` accepts exactly one `evidence_id` and one matching
   `authorization_id`; batch-shaped payloads are rejected.
 - V2 queueing now rejects stale/mismatched writers, reused or closed pilot IDs,

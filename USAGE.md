@@ -42,6 +42,48 @@ metadata, attached-format membership, paths, and ebook hashes have not changed,
 creates rollback artifacts, applies canonical fields, and reads the result back.
 See [docs/API.md](docs/API.md) for request bodies.
 
+### Remote Content Server inventory and shadow verification
+
+When direct filesystem access would increase risk, create an SSH tunnel outside
+the auditor and point the capability-limited source at its loopback endpoint.
+First collect aggregate counts only:
+
+```bash
+bookaudit inventory \
+  --content-server http://127.0.0.1:18086 \
+  --library-id EXACT_LIBRARY_ID \
+  --username READONLY_USER \
+  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
+  --output reports/remote-audit/inventory.json
+```
+
+`inventory` does not open the auditor database or initialize providers, OCR,
+vision, or LLMs. Its optional output must remain beneath the current working
+directory and is created mode `0600`. It contains aggregate counts and format
+statistics, never titles, authors, identifiers, filenames, or paths.
+
+After reviewing that result, migrate the local auditor database and verify one
+book in shadow mode:
+
+```bash
+bookaudit migrate
+bookaudit verify-content-server \
+  --content-server http://127.0.0.1:18086 \
+  --library-id EXACT_LIBRARY_ID \
+  --username READONLY_USER \
+  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
+  --scratch-root reports/remote-audit/scratch \
+  --limit 1 --use-ocr
+```
+
+The remote command requires an already-current schema. It defaults to one book,
+local OCR enabled, public providers disabled, and all LLM, vision, remote-text,
+and remote-image egress rejected. If the remote record or format set changes
+during inspection, the result is `source_changed`. Remote evidence remains
+ineligible for writer authorization. See the
+[disposable lab runbook](docs/runbooks/disposable-calibre-lab.md) before using a
+real server.
+
 ## 2. WebUI Manifestation V2 workflow
 
 The WebUI starts shadow V2 audits and reviews their sealed evidence. It never

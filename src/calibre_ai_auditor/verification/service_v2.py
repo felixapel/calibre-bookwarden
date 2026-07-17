@@ -41,6 +41,23 @@ class FrozenLibraryReader:
         return cast(dict[str, Any], self.cli.show_metadata(book_id))
 
     @property
+    def source_kind(self) -> str | None:
+        return cast(str | None, getattr(self.cli, "source_kind", None))
+
+    @property
+    def fingerprint(self) -> str | None:
+        return cast(str | None, getattr(self.cli, "fingerprint", None))
+
+    def format_references(self, book_id: int, raw_formats: object) -> list[str]:
+        return cast(list[str], self.cli.format_references(book_id, raw_formats))
+
+    def format_from_reference(self, reference: str) -> str:
+        return cast(str, self.cli.format_from_reference(reference))
+
+    def export_format(self, book_id: int, format_name: str, *, scratch_root: Path) -> Any:
+        return self.cli.export_format(book_id, format_name, scratch_root=scratch_root)
+
+    @property
     def library_path(self) -> Path | None:
         raw = getattr(self.cli, "library_path", None)
         return Path(raw) if raw is not None else None
@@ -54,6 +71,7 @@ def build_v2_enricher(
     use_vision: bool = False,
     run_allows_remote_text: bool,
     run_allows_remote_images: bool = False,
+    use_public_providers: bool = True,
 ) -> EvidenceEnricher:
     enrichers: list[Any] = []
     ocr_settings = settings.recognition_v2.ocr
@@ -101,7 +119,8 @@ def build_v2_enricher(
         )
     # Recognition runs first so a checksum-valid candidate can drive an exact
     # provider lookup without becoming authoritative on its own.
-    enrichers.append(StructuredEvidenceEnricher.from_settings(settings))
+    if use_public_providers:
+        enrichers.append(StructuredEvidenceEnricher.from_settings(settings))
     if use_llm:
         enrichers.append(
             MinimalEvidenceLLMEnricher(
@@ -137,6 +156,7 @@ async def run_persisted_library_audit(
     books: list[dict[str, Any]] | None = None,
     settings: Settings | None = None,
     applier: PackageApplier | None = None,
+    scratch_root: Path | None = None,
 ) -> LibraryAuditResult:
     if mode is AuditMode.tier_a_auto:
         raise ValueError(
@@ -145,7 +165,12 @@ async def run_persisted_library_audit(
     books = sorted(books if books is not None else cli.list_books(), key=lambda item: int(item["id"]))
     if limit > 0:
         books = books[:limit]
-    book_keys = [f"calibre:{int(item['id'])}" for item in books]
+    source_kind = getattr(cli, "source_kind", None)
+    if source_kind == "calibre_content_server":
+        fingerprint = str(getattr(cli, "fingerprint", ""))
+        book_keys = [f"calibre-server:{fingerprint}:{int(item['id'])}" for item in books]
+    else:
+        book_keys = [f"calibre:{int(item['id'])}" for item in books]
     store = SQLAuditStore(database_engine, run_id)
     store.start(book_keys=book_keys, mode=mode.value, use_llm=use_llm)
     reader = FrozenLibraryReader(cli, books)
@@ -157,6 +182,7 @@ async def run_persisted_library_audit(
         applier=applier,
         auto_apply_enabled=False,
         calibration_valid=False,
+        scratch_root=scratch_root,
     )
     try:
         result = await pipeline.run(

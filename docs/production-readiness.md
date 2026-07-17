@@ -34,6 +34,19 @@ canaries remain outstanding promotion gates.
 Every later commit still requires its own automatically triggered Gitea run;
 this baseline must not be presented as evidence for a different SHA.
 
+## Local Content Server mechanism evidence
+
+On 2026-07-16, the local disposable gate passed with checksum-pinned Calibre
+9.11.0 and five generated CC0 records. It observed five formats and five
+shadow-review results, rejected the restricted account's write probe, found the
+same regular-file paths, sizes, and SHA-256 values before and after inspection,
+left scratch empty, and removed every run-scoped Docker resource.
+
+This is local mechanism evidence only. It does not replace the automatically
+triggered Gitea run for the pushed exact commit, authorize a connection to the
+live server, establish the target account's ACLs, or approve any writer action.
+See the [disposable lab runbook](runbooks/disposable-calibre-lab.md).
+
 ## Required promotion evidence
 
 All of these gates are mandatory for the same commit and release digest:
@@ -79,6 +92,10 @@ checkbox.
 - Tier A still requires manual authorization of one exact sealed package. Tier
   B/C, title-only lookup, LLM confidence, vision alone and a single OCR engine
   cannot authorize a write.
+- Content Server packages are always shadow-only. The remote adapter uses a
+  loopback tunnel, a capability-limited command set, private ephemeral scratch,
+  source-change detection, and logical format references; the apply coordinator
+  rejects these packages regardless of review state.
 - Writer exclusivity uses a PostgreSQL session advisory lock. A privileged host
   process that directly changes the bind mount is outside this trust boundary.
 - Every apply preserves hashed OPF/custom-column/cover recovery evidence and

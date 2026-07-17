@@ -1,0 +1,141 @@
+services:
+  fixture-builder:
+    build:
+      context: .
+    image: calibre-ai-auditor-lab:${LAB_RUN_ID:?LAB_RUN_ID is required}
+    user: "10001:10001"
+    entrypoint: ["python", "/app/scripts/disposable_calibre_fixture.py"]
+    command: ["build"]
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - type: volume
+        source: lab-library
+        target: /lab-library
+      - type: volume
+        source: lab-auth
+        target: /lab-auth
+      - type: volume
+        source: lab-state
+        target: /state
+      - type: volume
+        source: lab-credentials
+        target: /credentials
+
+  calibre-server:
+    image: calibre-ai-auditor-lab:${LAB_RUN_ID:?LAB_RUN_ID is required}
+    user: "10001:10001"
+    entrypoint: ["/opt/calibre/calibre-server"]
+    command:
+      - /library/Calibre_Lab
+      - --port
+      - "8086"
+      - --listen-on
+      - 127.0.0.1
+      - --enable-auth
+      - --disable-local-write
+      - --disable-fallback-to-detected-interface
+      - --disable-use-bonjour
+      - --userdb
+      - /auth/users.sqlite
+      - --max-jobs
+      - "1"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [offline]
+    volumes:
+      - type: volume
+        source: lab-library
+        target: /library
+      - type: volume
+        source: lab-auth
+        target: /auth
+        read_only: true
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--show-error", "--output", "/dev/null", "http://127.0.0.1:8086/"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  audit-client:
+    image: calibre-ai-auditor-lab:${LAB_RUN_ID:?LAB_RUN_ID is required}
+    user: "10001:10001"
+    entrypoint: ["python", "/app/scripts/disposable_calibre_fixture.py"]
+    command: ["calibredb-version"]
+    network_mode: service:calibre-server
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      BOOKAUDIT_PROFILE: default
+      BOOKAUDIT_DATABASE__BACKEND: sqlite
+      BOOKAUDIT_DB_PATH: /state/bookaudit.db
+      BOOKAUDIT_ARTIFACTS_DIR: /state/artifacts
+      BOOKAUDIT_READ_ONLY: "true"
+      BOOKAUDIT_OLLAMA_ENABLED: "false"
+      BOOKAUDIT_CALIBRE_READ_ONLY_COMMANDS: "1"
+      BOOKAUDIT_CALIBRE_COMMAND_LOG: /state/calibredb-commands.jsonl
+    volumes:
+      - type: volume
+        source: lab-state
+        target: /state
+      - type: volume
+        source: lab-credentials
+        target: /credentials
+        read_only: true
+
+  attestor:
+    image: calibre-ai-auditor-lab:${LAB_RUN_ID:?LAB_RUN_ID is required}
+    user: "10001:10001"
+    entrypoint: ["python", "/app/scripts/disposable_calibre_fixture.py"]
+    command: ["attest"]
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - type: volume
+        source: lab-library
+        target: /library
+        read_only: true
+      - type: volume
+        source: lab-state
+        target: /state
+        read_only: true
+
+  web-smoke:
+    profiles: ["web"]
+    image: calibre-ai-auditor-lab:${LAB_RUN_ID:?LAB_RUN_ID is required}
+    user: "10001:10001"
+    entrypoint: ["python", "/app/scripts/disposable_calibre_fixture.py"]
+    command: ["web-smoke"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [web]
+
+networks:
+  offline:
+    internal: true
+  web:
+    internal: false
+
+volumes:
+  lab-library:
+  lab-auth:
+  lab-state:
+  lab-credentials:

@@ -13,8 +13,12 @@ ground truth and LLMs are witnesses, not generators.
 - **Default verification contract**: V2, shadow/read-only, one book at a time
 - **V2 writes**: Disabled by default; the development head supports only an
   explicitly enabled, serial, manually authorized pilot of at most five operations
-- **Runtime**: Docker/Linux recommended; native verification works with `uv`.
+- **Runtime**: Docker/Linux x86_64 recommended; the image pins the official
+  Calibre 9.11.0 x86_64 artifact. Native verification works with `uv`.
   The supervised writer requires Linux `/proc` descriptor passing and memfd seals.
+- **Remote inventory**: A capability-limited Content Server adapter supports
+  aggregate inventory and one-book-at-a-time shadow verification through an
+  operator-created loopback SSH tunnel. It cannot authorize writes.
 - **Production profile**: The current development increment is not yet approved
   for a live library. Unattended and legacy direct apply are disabled. Promotion
   requires the Gitea real-service gate, a disposable apply/undo drill, a clone
@@ -105,6 +109,9 @@ the actual book content.
   false` block sending snippets to cloud LLMs unless explicitly enabled.
 - **Read-Only by Default** — the application never modifies your library unless
   you explicitly opt in.
+- **Disposable Content Server gate** — a pinned Calibre 9.11.0 lab generates
+  CC0 fixtures and proves ACL denial, unchanged library hashes, empty scratch,
+  and complete cleanup before any live-library access is considered.
 
 ## Quick Start (Docker)
 
@@ -140,6 +147,29 @@ bookaudit verify --pipeline v2 --limit 100 --use-ocr
 bookaudit verify --pipeline v2 --limit 100 --use-ocr --use-llm
 bookaudit verify --pipeline v2 --limit 0 --format json > out.json
 
+# Aggregate-only inventory through an existing SSH tunnel to Content Server.
+# The password is prompted securely and the output contains no titles/authors/paths.
+bookaudit inventory \
+  --content-server http://127.0.0.1:18086 \
+  --library-id EXACT_LIBRARY_ID \
+  --username READONLY_USER \
+  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
+  --output reports/unraid-audit/inventory.json
+
+# After reviewing the aggregate inventory, audit one remote book in shadow mode.
+# Use a Calibre account independently verified as read-only.
+bookaudit migrate
+bookaudit verify-content-server \
+  --content-server http://127.0.0.1:18086 \
+  --library-id EXACT_LIBRARY_ID \
+  --username READONLY_USER \
+  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
+  --scratch-root reports/unraid-audit/scratch \
+  --limit 1 --use-ocr
+
+# Reproduce the isolated safety gate without mounting a real library.
+uv run python scripts/disposable_calibre_lab.py run
+
 # Emergency close of one persisted supervised pilot (stop app/writer first)
 bookaudit pilot-stop pilot-YYYYMMDD --yes
 
@@ -166,6 +196,7 @@ bookaudit audit --run latest
 - **[docs/architecture/integration-decisions.md](docs/architecture/integration-decisions.md)** — Architecture Decision Records
 - **[docs/decisions/ADR-002-exact-manifestation-v2.md](docs/decisions/ADR-002-exact-manifestation-v2.md)** — Exact-edition V2 trust and write contract
 - **[docs/decisions/ADR-003-supervised-local-auditor-scope.md](docs/decisions/ADR-003-supervised-local-auditor-scope.md)** — Product scope and explicit non-goals
+- **[docs/decisions/ADR-004-read-only-content-server-inventory.md](docs/decisions/ADR-004-read-only-content-server-inventory.md)** — Remote inventory trust boundary
 - **[docs/architecture/v1_scope_decisions.md](docs/architecture/v1_scope_decisions.md)** — What's in / out of v1.0
 - **[docs/research/PEER_PROJECTS.md](docs/research/PEER_PROJECTS.md)** — Comparison vs `paperless-gpt`, `book-memex`, etc.
 
@@ -178,6 +209,7 @@ bookaudit audit --run latest
 - **[docs/SAFETY.md](docs/SAFETY.md)** — Read-only mode + restore points
 - **[docs/production-readiness.md](docs/production-readiness.md)** — Current
   production gate evidence, trust boundaries, and operator prerequisites
+- **[docs/runbooks/disposable-calibre-lab.md](docs/runbooks/disposable-calibre-lab.md)** — Isolated Calibre 9.11 Content Server safety gate
 
 ### Quality & calibration
 - **[TESTING.md](TESTING.md)** — Unit / integration / E2E / benchmark strategy
@@ -213,15 +245,15 @@ contract.
 # Deterministic local gate (live-service tests remain in Gitea)
 ./scripts/verify-calibre-gate.sh
 
-# Full benchmark suite (~45s)
-pytest --benchmark-only tests/benchmarks/
+# Full benchmark suite (duration depends on the host)
+uv run pytest --benchmark-only tests/benchmarks/
 
 # OCR comparison (requires real OCR deps)
-pip install -e .[ocr]
-pytest -m ocr_live tests/benchmarks/test_bench_ocr_comparison.py
+uv sync --extra ocr
+uv run pytest -m ocr_live tests/benchmarks/test_bench_ocr_comparison.py
 
 # With coverage
-pytest --cov=src --cov-report=html
+uv run pytest --cov=src --cov-report=html
 ```
 
 Baseline numbers are tracked in [tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md).

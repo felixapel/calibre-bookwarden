@@ -327,6 +327,12 @@ Two-tier:
 
 ## 17. Calibre Integration
 
+This historical V1 target describes local `CalibreCLI` integration. Active
+remote libraries are governed instead by
+[ADR-004](../decisions/ADR-004-read-only-content-server-inventory.md): a
+separate capability-limited Content Server adapter for aggregate inventory and
+shadow-only V2 evidence. It does not broaden this local write-back interface.
+
 Hybrid model:
 - **Read-Only**: subprocess `calibredb list --for-machine --fields all` for
   speed + safety.

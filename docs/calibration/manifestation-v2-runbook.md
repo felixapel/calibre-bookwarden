@@ -92,6 +92,15 @@ The package also seals the absolute Calibre library root. A writer configured
 for any other root rejects the package. Symlinks in that root, ebook parent
 directories, or the artifacts tree are hard failures rather than aliases.
 
+For an active remote library, do not substitute a direct mount for the command
+above. First run aggregate `bookaudit inventory` through an operator-created
+loopback SSH tunnel, migrate the local auditor database, and then start with
+`bookaudit verify-content-server --limit 1`. Remote packages use source-bound
+logical references, return `source_changed` if membership changes, and can
+populate the reviewed corpus, but they are permanently ineligible for the
+writer. Any apply/readback/undo rehearsal must use a restored isolated clone.
+See [ADR-004](../decisions/ADR-004-read-only-content-server-inventory.md).
+
 ## 3. Optional LLM and vision experiments
 
 Local LLM text:

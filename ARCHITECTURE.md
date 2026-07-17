@@ -80,6 +80,39 @@ Important boundaries:
 See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) for the tier,
 provenance, privacy, and rollback invariants.
 
+### Read-only Content Server source
+
+`ContentServerSource` adds a second V2 input boundary without treating the
+remote Calibre database or filesystem as a local mount:
+
+```mermaid
+flowchart LR
+  S[Operator-created SSH tunnel on loopback] --> C[Calibre Content Server]
+  C --> A[Capability-limited calibredb adapter]
+  A --> I[Aggregate inventory or exact book lookup]
+  I --> X[One-format export to private scratch]
+  X --> V[Manifestation V2 inspection]
+  V --> E[(Sealed remote evidence)]
+  E --> R[Human review only]
+```
+
+- The adapter accepts only loopback Content Server URLs and the `list` and
+  exact-book `export` operations. Credentials are passed on standard input and
+  are neither persisted nor included in errors.
+- Aggregate inventory does not initialize the database, providers, OCR, vision,
+  or LLMs and contains no titles, authors, identifiers, paths, or filenames.
+- Verification exports one format at a time into mode-private scratch. Persisted
+  packages use logical remote references rather than host paths.
+- A source fingerprint and Calibre book ID form the durable key
+  `calibre-server:<fingerprint>:<id>`. The adapter compares record revision and
+  format membership before and after inspection; a change produces
+  `source_changed`, never a guessed verdict.
+- Remote packages are shadow-only. The apply coordinator rejects them even if a
+  caller attempts to present an authorization.
+
+The disposable gate, threat model, and operator boundary are recorded in
+[ADR-004](docs/decisions/ADR-004-read-only-content-server-inventory.md).
+
 ## Core Flow (v1.0)
 
 ```mermaid

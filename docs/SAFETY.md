@@ -37,6 +37,28 @@ By default, the application operates in a completely read-only mode:
 `BOOKAUDIT_READ_ONLY=true`. Only the separately fenced writer has a read-write
 mount, while the supervised V2 pilot kill switch defaults to disabled.**
 
+### Live remote library boundary
+
+For an active remote library, prefer `bookaudit inventory` and
+`bookaudit verify-content-server` through an operator-created SSH tunnel bound
+to loopback. This source is deliberately separate from the general
+`CalibreCLI`: it accepts only `list`, exact lookup, and one-format export,
+passes the password on standard input, and persists logical references instead
+of remote or scratch paths.
+
+Inventory is aggregate-only and initializes no database, providers, OCR,
+vision, or LLMs. Remote verification uses a private ephemeral scratch directory,
+rechecks source revision and format membership after inspection, and returns
+`source_changed` if either moved. Public providers require explicit consent;
+LLM, vision, remote text, and remote images are rejected. All remote evidence
+is shadow-only and is rejected by the writer boundary.
+
+Do not replace this boundary with a direct mount of an active WAL/FUSE-backed
+library, even if the mount is labeled `:ro`. Direct mounts are reserved for a
+disposable or restored clone. Run the
+[disposable Content Server gate](runbooks/disposable-calibre-lab.md) before any
+operator-authorized live connection.
+
 ## What Can Write?
 
 Write operations only occur when explicitly instructed and confirmed by

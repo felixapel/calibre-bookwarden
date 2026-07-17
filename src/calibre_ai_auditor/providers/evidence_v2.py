@@ -565,16 +565,42 @@ class CompositeEvidenceEnricher:
     def __init__(self, enrichers: list[Any]) -> None:
         self.enrichers = enrichers
 
-    async def collect(
+    async def _collect_selected(
         self,
+        enrichers: list[Any],
         book: BookSnapshot,
         inspections: list[FormatInspection],
     ) -> EvidenceEnrichment:
         combined = EvidenceEnrichment()
-        for enricher in self.enrichers:
+        for enricher in enrichers:
             result = await enricher.collect(book, inspections)
             normalized = result if isinstance(result, EvidenceEnrichment) else EvidenceEnrichment(evidence=result)
             combined.evidence.extend(normalized.evidence)
             combined.privacy_receipts.extend(normalized.privacy_receipts)
             combined.warnings.extend(normalized.warnings)
         return combined
+
+    async def collect_materialized(
+        self,
+        book: BookSnapshot,
+        inspection: FormatInspection,
+    ) -> EvidenceEnrichment:
+        """Run only enrichers that require the exported ebook to remain present."""
+        selected = [item for item in self.enrichers if getattr(item, "requires_materialized_files", False)]
+        return await self._collect_selected(selected, book, [inspection])
+
+    async def collect_aggregate(
+        self,
+        book: BookSnapshot,
+        inspections: list[FormatInspection],
+    ) -> EvidenceEnrichment:
+        """Run provider and text-only enrichment once over all logical formats."""
+        selected = [item for item in self.enrichers if not getattr(item, "requires_materialized_files", False)]
+        return await self._collect_selected(selected, book, inspections)
+
+    async def collect(
+        self,
+        book: BookSnapshot,
+        inspections: list[FormatInspection],
+    ) -> EvidenceEnrichment:
+        return await self._collect_selected(self.enrichers, book, inspections)

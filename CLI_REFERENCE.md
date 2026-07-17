@@ -3,7 +3,9 @@
 `bookaudit` is the primary command-line tool for managing the
 calibre-ai-auditor. `verify` defaults to the Manifestation V2 engine. All commands run from the project root
 with the venv activated (`source .venv/bin/activate`) or inside the Docker
-container (`docker compose exec app bookaudit ...`).
+container (`docker compose exec app bookaudit ...`). Content Server commands
+should normally run natively in the same network namespace as the loopback SSH
+tunnel; a container-local `127.0.0.1` cannot reach a tunnel on the host.
 
 ## Global Options
 
@@ -55,6 +57,45 @@ bookaudit verify --limit 0 --format json > manifestation-v2-audit.json
 V2 `verify` never writes to Calibre. Supervised V2 changes use the authenticated
 `/api/review/v2/{evidence_id}/authorize` and `/api/apply/v2` endpoints; the sole
 writer performs the mutation.
+
+### `bookaudit inventory` and `bookaudit verify-content-server`
+
+Use an operator-created SSH tunnel and an independently verified read-only
+Calibre account to inspect a live remote library. Inventory emits aggregate
+counts only. Remote verification persists sealed V2 evidence with logical
+source references, processes one book at a time, and remains shadow-only.
+
+```bash
+bookaudit inventory \
+  --content-server http://127.0.0.1:18086 \
+  --library-id EXACT_LIBRARY_ID --username READONLY_USER \
+  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT
+
+bookaudit verify-content-server \
+  --content-server http://127.0.0.1:18086 \
+  --library-id EXACT_LIBRARY_ID --username READONLY_USER \
+  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
+  --scratch-root reports/remote-scratch --limit 1 --use-ocr
+```
+
+Passwords are prompted without echo by default; `--password-stdin` is intended
+for a protected secret pipe. Start with `--limit 1` and review the persisted
+sample before increasing the limit. `--limit 0` means the full library. The
+source identity must be stable across tunnel restarts and derived from a
+separately verified SSH host fingerprint (or an equivalent immutable identity),
+not from the local tunnel port. The
+scratch directory must be private and is used only for short-lived exported
+formats. Public metadata providers are denied unless
+`--allow-public-providers` is explicit; the current remote command rejects LLM
+and vision use even when the general project configuration enables them. Remote
+evidence cannot be authorized by the supervised writer.
+
+`inventory` is independent of the auditor database and does not initialize
+providers, OCR, vision, or LLMs. Its optional output must be below the current
+working directory and is created mode `0600`. `verify-content-server` requires
+the configured database to be at the current Alembic revision; run
+`bookaudit migrate` first. Its `--run-id` resumes only the same source-bound run
+and frozen membership; omit it to generate a new run.
 
 ### `bookaudit pilot-stop`
 

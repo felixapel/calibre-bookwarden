@@ -9,6 +9,32 @@
 
 ---
 
+## Manifestation V2 source records
+
+Manifestation V2 stores its strict schema inside
+`EvidencePackage.observations` with `schema_version=2`; the legacy `decision`
+column remains null so V1 consumers cannot apply a V2 result accidentally.
+
+- A local Calibre record uses `book_key=calibre:<id>` and seals local format
+  paths and hashes beneath the configured library root.
+- A Content Server record uses
+  `book_key=calibre-server:<source_fingerprint>:<id>`. Its snapshot includes a
+  non-secret source descriptor and `source_revision_sha256`; formats are logical
+  remote references, not paths on either host.
+- Remote formats exist on local disk only in a private per-run scratch tree
+  while each format is inspected. The persistent package retains hashes,
+  provenance, and logical locators but not those temporary paths.
+- The remote record revision and format set are re-read after inspection. Any
+  difference produces terminal package state `source_changed` and prevents a
+  normal identity decision.
+- Content Server packages are evidence for review only and are structurally
+  ineligible for the local supervised writer.
+
+See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) and
+[ADR-004](docs/decisions/ADR-004-read-only-content-server-inventory.md).
+
+---
+
 ## 1. Database Schema (SQLModel)
 
 ### Runs (`Run`)

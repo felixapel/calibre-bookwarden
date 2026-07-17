@@ -27,14 +27,15 @@ perform unattended bulk writes. See
 | `v1.2` | **MCP Server**: legacy V1 read model for Hermes | [PARTIAL] |
 | `v1.2.x` | **Production hardening**: release integrity, writer recovery, retention, operations | [DONE] |
 | `Manifestation V2` | **Exact edition audit**: all formats, evidence tiers, supervised correction | [IMPLEMENTED; PILOT REQUIRED] |
+| `Remote Content Server` | **Read-only intake**: aggregate inventory and source-bound shadow audit | [IMPLEMENTED; LIVE USE REQUIRES OPERATOR SCOPE] |
 
 ---
 
 ## Manifestation V2 development head
 
 The V2 backend is implemented behind a versioned contract and defaults to
-shadow verification. It freezes Calibre membership, processes one book at a
-time, hashes and inspects every attached format, runs bounded recognition,
+shadow verification. It freezes local or Content Server membership, processes
+one book at a time, hashes and inspects every attached format, runs bounded recognition,
 queries structured providers only by one checksum-valid ISBN, resolves Tier
 A/B/C identity, and persists a sealed evidence package.
 
@@ -60,9 +61,12 @@ See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) and the
 
 ## Current critical path
 
-1. **Read-only inventory data:** with explicit operator authorization, collect
-   only aggregate format, language, valid/missing ISBN, multi-format, and
-   incomplete-field distributions from the intended library. Do not write.
+1. **Read-only inventory data:** the capability-limited Content Server adapter
+   and disposable local gate are implemented. With explicit operator
+   authorization, use the verified loopback tunnel/account/library identity to
+   collect only aggregate format, language, valid/missing ISBN, multi-format,
+   and incomplete-field distributions from the intended library. Then review a
+   single `--limit 1` shadow audit. Do not write or widen scope implicitly.
 2. **Reviewed corpus:** build a stratified sample of approximately 100 books
    whose exact manifestation and proposed patch are labeled by a human. Measure
    Tier A/B/C distribution, exact-identity precision, patch precision, provider

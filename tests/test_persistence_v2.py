@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from calibre_ai_auditor.storage.models import EvidencePackage, VerificationResult, VerificationRun
+from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, VerificationResult, VerificationRun
 from calibre_ai_auditor.verification.identity_v2 import (
     FormatEvidence,
     FormatEvidenceStatus,
@@ -21,6 +24,7 @@ from calibre_ai_auditor.verification.pipeline_v2 import (
     NullEvidenceEnricher,
 )
 from calibre_ai_auditor.verification.service_v2 import run_persisted_library_audit
+from tests.v2_fixtures import as_remote_package
 
 
 def _package() -> EvidencePackageV2:
@@ -82,6 +86,34 @@ def test_store_persists_sealed_v2_package_without_forging_legacy_decision() -> N
     assert store.resumable_book_keys() == {"calibre:1"}
 
 
+def test_store_preserves_remote_source_and_format_without_path_inference() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    package = as_remote_package(_package())
+    store = SQLAuditStore(engine, "run-v2")
+    store.start(book_keys=[package.book_key], mode="shadow", use_llm=False)
+
+    store.record_package(package)
+
+    with Session(engine) as session:
+        book = session.exec(select(BookRecord)).one()
+    assert book.source == "calibre_content_server"
+    assert book.files == [{"path": package.snapshot.files[0], "format": "EPUB"}]
+
+
+def test_local_package_seal_remains_compatible_with_pre_remote_payload() -> None:
+    import hashlib
+    import json
+
+    package = _package()
+    payload = package.model_dump(mode="json", exclude={"package_sha256"})
+    payload["snapshot"].pop("source")
+    payload["snapshot"].pop("source_revision_sha256")
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+
+    assert package.package_sha256 == hashlib.sha256(encoded).hexdigest()
+
+
 def test_store_rejects_unsealed_or_tampered_packages() -> None:
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
@@ -91,6 +123,29 @@ def test_store_rejects_unsealed_or_tampered_packages() -> None:
 
     with pytest.raises(ValueError, match="seal"):
         store.record_package(package)
+
+
+def test_resume_retries_a_source_changed_book() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    store = SQLAuditStore(engine, "run-v2")
+    store.start(book_keys=["calibre:1"], mode="shadow", use_llm=False)
+    base = _package()
+    changed = base.model_copy(
+        update={
+            "state": BookAuditState.source_changed,
+            "formats": [],
+            "identity": ManifestationResolution(
+                tier=IdentityTier.tier_c,
+                risk_flags=["source_changed"],
+            ),
+            "error": "source changed",
+            "package_sha256": None,
+        }
+    ).seal()
+    store.record_package(changed)
+
+    assert store.resumable_book_keys() == set()
 
 
 def test_resume_rejects_changed_frozen_library_membership() -> None:
@@ -170,3 +225,51 @@ async def test_persisted_audit_resumes_without_reprocessing_terminal_books(tmp_p
     assert second.packages == []
     with Session(engine) as session:
         assert len(session.exec(select(EvidencePackage)).all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_persisted_audit_preserves_remote_reader_capabilities(tmp_path: Path) -> None:
+    class RemoteCLI:
+        source_kind = "calibre_content_server"
+        fingerprint = "d" * 64
+
+        def list_books(self):
+            return [{"id": 7, "title": "Private", "formats": ["/remote/book.unknown"]}]
+
+        def show_metadata(self, _book_id: int):
+            return {"id": 7, "title": "Private", "formats": ["/remote/book.unknown"]}
+
+        def format_references(self, book_id: int, _raw_formats: object) -> list[str]:
+            return [f"calibre-server:{self.fingerprint}:{book_id}:UNKNOWN"]
+
+        def format_from_reference(self, _reference: str) -> str:
+            return "UNKNOWN"
+
+        @contextmanager
+        def export_format(self, _book_id: int, _format: str, *, scratch_root: Path) -> Iterator[Path]:
+            path = scratch_root / "book.unknown"
+            path.write_bytes(b"not a supported ebook")
+            try:
+                yield path
+            finally:
+                path.unlink()
+
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    result = await run_persisted_library_audit(
+        cli=RemoteCLI(),
+        database_engine=engine,
+        run_id="remote-v2",
+        limit=0,
+        mode=AuditMode.shadow,
+        evidence_enricher=NullEvidenceEnricher(),
+        use_llm=False,
+        scratch_root=tmp_path,
+    )
+
+    expected_key = f"calibre-server:{'d' * 64}:7"
+    assert result.snapshot.book_keys == [expected_key]
+    with Session(engine) as session:
+        book = session.exec(select(BookRecord)).one()
+    assert book.book_key == expected_key
+    assert book.source == "calibre_content_server"

@@ -71,6 +71,29 @@ Tests requiring `calibredb`, PostgreSQL, Valkey, optional FastMCP, or live OCR
 skip when that dependency is genuinely absent. Those skips must be rerun in the
 Gitea target environment before production promotion.
 
+## Disposable Content Server gate
+
+The remote-source mechanism has a separate destructive-test boundary that
+never mounts a live library:
+
+```bash
+uv run python scripts/disposable_calibre_lab.py run
+```
+
+The runner accepts only a local Unix Docker socket, builds the checksum-pinned
+Calibre 9.11.0 image, generates five CC0 books with correct, mismatched,
+multi-format, no-format, and image-only cases, and exercises inventory plus a
+full shadow audit. It fails unless the restricted account is denied a write,
+every regular library file retains the same relative path, size, and SHA-256,
+scratch is empty, and every lab container, network, volume, and image is
+removed. `--web-smoke` is optional and non-gating. Generated reports are
+ignored and must not be committed.
+
+Static coverage lives in `tests/test_content_server_source.py`,
+`tests/test_inventory_cli.py`, and `tests/test_disposable_calibre_lab.py`.
+Passing this gate approves only the adapter mechanism; it is not authorization
+to connect to, audit, or modify a live Calibre server.
+
 ### PostgreSQL test database lifecycle
 
 Every PostgreSQL integration phase must own an unmistakably disposable

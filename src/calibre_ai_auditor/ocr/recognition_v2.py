@@ -132,6 +132,8 @@ def _seed_candidate_identifier(inspection: FormatInspection, isbn: str, evidence
 class OCRRecognitionEnricher:
     """OCR bounded PDF front matter and require cross-engine agreement for authority."""
 
+    requires_materialized_files = True
+
     def __init__(
         self,
         *,
@@ -264,6 +266,8 @@ def _valid_cover(path: Path) -> bool:
 
 class VisionRecognitionEnricher:
     """Use cover vision for review context under an explicit image-egress gate."""
+
+    requires_materialized_files = True
 
     def __init__(
         self,

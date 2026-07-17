@@ -14,7 +14,12 @@ from calibre_ai_auditor.verification.identity_v2 import (
     SourceEvidence,
     resolve_manifestation,
 )
-from calibre_ai_auditor.verification.pipeline_v2 import BookAuditState, BookSnapshot, EvidencePackageV2
+from calibre_ai_auditor.verification.pipeline_v2 import (
+    BookAuditState,
+    BookSnapshot,
+    BookSourceDescriptor,
+    EvidencePackageV2,
+)
 
 ISBN = "9780306406157"
 
@@ -164,4 +169,39 @@ def build_exact_tier_a_package(
         formats=formats,
         source_evidence=sources,
         identity=identity,
+    ).seal()
+
+
+def as_remote_package(
+    package: EvidencePackageV2,
+    *,
+    fingerprint: str = "c" * 64,
+) -> EvidencePackageV2:
+    """Rebind a valid fixture to logical Content Server references."""
+    book_key = f"calibre-server:{fingerprint}:{package.snapshot.calibre_book_id}"
+    references = [f"{book_key}:{item.format.upper()}" for item in package.formats]
+    formats = [
+        item.model_copy(update={"path": reference}) for item, reference in zip(package.formats, references, strict=True)
+    ]
+    snapshot = package.snapshot.model_copy(
+        update={
+            "book_key": book_key,
+            "files": references,
+            "library_root": None,
+            "source": BookSourceDescriptor(
+                kind="calibre_content_server",
+                fingerprint=fingerprint,
+            ),
+            "source_revision_sha256": "e" * 64,
+            "snapshot_sha256": "0" * 64,
+        }
+    )
+    snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})
+    return package.model_copy(
+        update={
+            "book_key": book_key,
+            "snapshot": snapshot,
+            "formats": formats,
+            "package_sha256": None,
+        }
     ).seal()
