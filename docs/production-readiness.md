@@ -49,13 +49,21 @@ Local evidence for exact SHA `3eb4830511ca736afe7b9038b9aeb31a947c4471`:
   (`run_id=bookaudit-lab-c061dc89ec39`, Calibre 9.11.0, ACL write rejected,
   library identical, cleanup completed).
 
-**Outstanding for this SHA at push time:** automatically triggered Gitea Actions
-evidence. Local gates are not a substitute for the required V2 pilot, WebUI, or
-production-image jobs.
+### Gitea exact-commit evidence (current development head)
 
-Push of `c497ad6` to Gitea triggered run 27 (run ID `1785`) automatically.
-Record the final conclusion of that run when every required job completes; do
-not treat a partial in-progress run as promotion evidence.
+| SHA | Run | Result |
+|---|---|---|
+| `c497ad64b1c57ace9e767d7d11f95256be75b12c` | run 27 / ID `1785` | **success** (all required jobs) |
+| `ee9e5016b3e2573947e4e622d142f6578970a4d3` (HEAD docs) | run 28 / ID `1786` | **success** (all required jobs) |
+
+Both runs were triggered by automatic push. No Gitea Action was manually
+rerun. Jobs observed green on each: Backend, Manifestation V2 required
+integration (1 passed / 0 skipped), Benchmarks, WebUI E2E, Production image
+contract.
+
+`ee9e501` is documentation and `.gitignore` only relative to the merge tip
+`3eb4830` / evidence SHA `c497ad6`; treat `1786` as the current HEAD CI
+baseline.
 
 ### Local shadow stack evidence (workstation, pilot off)
 
