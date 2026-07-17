@@ -26,13 +26,32 @@ commit `4a0d6d2326c0ef642fcdcc68e693a1f72632aa1f` on
 - The run was triggered by the pushed commit. No Gitea Action was manually
   rerun.
 
-This supersedes the failed run `1698` and clears the repository CI blocker. It
-does not approve a live library: immutable image review, operator-owned backup
-and restore evidence, a restored-clone rehearsal, and explicitly reviewed
-canaries remain outstanding promotion gates.
+This supersedes the failed run `1698` and clears the repository CI blocker for
+that SHA only. It does not approve a live library: immutable image review,
+operator-owned backup and restore evidence, a restored-clone rehearsal, and
+explicitly reviewed canaries remain outstanding promotion gates.
 
 Every later commit still requires its own automatically triggered Gitea run;
 this baseline must not be presented as evidence for a different SHA.
+
+### Development head after main unification (local only)
+
+On 2026-07-17, `main` (`92b88ee`, v1.2.1 release/retention recovery) was merged
+into `feat/v1-content-verification` as commit `3eb4830`. The merge tree was
+unchanged relative to the pre-merge feature tip: the V2 head already contained
+the release content; the merge only made `main` a git ancestor.
+
+Local evidence for exact SHA `3eb4830511ca736afe7b9038b9aeb31a947c4471`:
+
+- `./scripts/verify-calibre-gate.sh` passed (ruff, format, mypy, hermetic
+  pytest: 442 passed, 7 skipped for missing optional/live deps, 44 deselected).
+- `uv run python scripts/disposable_calibre_lab.py run` passed
+  (`run_id=bookaudit-lab-c061dc89ec39`, Calibre 9.11.0, ACL write rejected,
+  library identical, cleanup completed).
+
+**Outstanding for this SHA:** automatically triggered Gitea Actions evidence
+after push. Local gates are not a substitute for the required V2 pilot,
+WebUI, or production-image jobs.
 
 ## Local Content Server mechanism evidence
 
@@ -41,6 +60,9 @@ On 2026-07-16, the local disposable gate passed with checksum-pinned Calibre
 shadow-review results, rejected the restricted account's write probe, found the
 same regular-file paths, sizes, and SHA-256 values before and after inspection,
 left scratch empty, and removed every run-scoped Docker resource.
+
+Reconfirmed on 2026-07-17 for SHA `3eb4830` (report
+`reports/disposable-calibre/bookaudit-lab-c061dc89ec39.json`).
 
 This is local mechanism evidence only. It does not replace the automatically
 triggered Gitea run for the pushed exact commit, authorize a connection to the
