@@ -49,9 +49,45 @@ Local evidence for exact SHA `3eb4830511ca736afe7b9038b9aeb31a947c4471`:
   (`run_id=bookaudit-lab-c061dc89ec39`, Calibre 9.11.0, ACL write rejected,
   library identical, cleanup completed).
 
-**Outstanding for this SHA:** automatically triggered Gitea Actions evidence
-after push. Local gates are not a substitute for the required V2 pilot,
-WebUI, or production-image jobs.
+**Outstanding for this SHA at push time:** automatically triggered Gitea Actions
+evidence. Local gates are not a substitute for the required V2 pilot, WebUI, or
+production-image jobs.
+
+Push of `c497ad6` to Gitea triggered run 27 (run ID `1785`) automatically.
+Record the final conclusion of that run when every required job completes; do
+not treat a partial in-progress run as promotion evidence.
+
+### Local shadow stack evidence (workstation, pilot off)
+
+On 2026-07-17, against fixture library content under
+`BOOKAUDIT_LIBRARY_HOST_PATH` (copied from `fake_library/`), with
+`BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` and image tag
+`calibre-ai-auditor:1.2.1-shadow`:
+
+- `./scripts/prepare-production.sh` passed (mode-0600 `.env`).
+- Alembic migrated to head `a72c9d4e8f31`.
+- Compose services `postgres`, `valkey`, `writer`, `app` healthy;
+  authenticated `GET /api/health/ready` returned `status=ready` with fresh
+  writer heartbeat and `pilot_binding=null`.
+- Port bound to loopback only: `127.0.0.1:18080`.
+- Supervised pilot remained disabled; auto-apply disabled.
+- Paired backup drill produced
+  `backups/20260717T070821Z/{bookaudit.dump,writer-artifacts.tar.gz,manifest.json}`
+  with SHA-256 entries for both halves; stack returned to `ready` after restart.
+- V2 shadow verify via API (`limit=2`, no OCR/LLM/vision) completed as run
+  `verify_20260717_071101_7008a904` with counts `{"review": 2}` (Tier B for
+  both fixture books).
+
+**Local-only note:** the stock production Compose file mounts the library
+read-only on `app`. Calibre 9.11 still attempts a case-sensitivity write probe
+during `calibredb list`, which fails on that RO mount. The local smoke used
+uncommitted `compose.shadow-local.yml` to remount the **fixture** library RW on
+`app` only. Live libraries must continue to use Content Server (ADR-004) or a
+restored clone via the documented writer boundary — do not treat the local
+override as production policy.
+
+This workstation stack is **shadow operational evidence**, not a Gitea release
+digest, not a live-library inventory, and not write-pilot approval.
 
 ## Local Content Server mechanism evidence
 

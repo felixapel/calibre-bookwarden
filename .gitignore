@@ -173,3 +173,7 @@ playwright-report/
 .benchmarks/baseline.json
 webui/test-results/
 webui/playwright-report/
+compose.shadow-local.yml
+backups/
+library/
+.env.dev-incomplete.bak
