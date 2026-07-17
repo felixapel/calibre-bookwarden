@@ -55,21 +55,20 @@ Local evidence for exact SHA `3eb4830511ca736afe7b9038b9aeb31a947c4471`:
   (`run_id=bookaudit-lab-c061dc89ec39`, Calibre 9.11.0, ACL write rejected,
   library identical, cleanup completed).
 
-### Gitea exact-commit evidence (current development head)
+### Gitea exact-commit evidence (Certificate A HEAD)
 
 | SHA | Run | Result |
 |---|---|---|
-| `c497ad64b1c57ace9e767d7d11f95256be75b12c` | run 27 / ID `1785` | **success** (all required jobs) |
-| `ee9e5016b3e2573947e4e622d142f6578970a4d3` (HEAD docs) | run 28 / ID `1786` | **success** (all required jobs) |
+| **`e2528df7dbac76df0b83ce8526b9a42f82e3327a`** (Certificate A) | run **31** / ID **`1799`** | **success** (all required jobs) |
+| `c497ad64b1c57ace9e767d7d11f95256be75b12c` | run 27 / ID `1785` | success (prior baseline) |
+| `ee9e5016b3e2573947e4e622d142f6578970a4d3` | run 28 / ID `1786` | success (prior baseline) |
 
-Both runs were triggered by automatic push. No Gitea Action was manually
-rerun. Jobs observed green on each: Backend, Manifestation V2 required
-integration (1 passed / 0 skipped), Benchmarks, WebUI E2E, Production image
-contract.
+Run 31 was triggered by automatic push of the MCP packaging fix. No Gitea
+Action was manually rerun. Jobs green: Backend, Manifestation V2 required
+integration (**1 passed**, 0 skipped — log asserts `1 passed` and rejects
+`SKIPPED`), Benchmarks, WebUI E2E, Production image contract.
 
-`ee9e501` is documentation and `.gitignore` only relative to the merge tip
-`3eb4830` / evidence SHA `c497ad6`; treat `1786` as the current HEAD CI
-baseline.
+Treat **`e2528df` / run 1799** as the Certificate A CI baseline for this goal.
 
 ### Local shadow stack evidence (workstation, pilot off)
 
@@ -107,7 +106,7 @@ digest, not a live-library inventory, and not write-pilot approval.
 
 | Gate | Evidence |
 |---|---|
-| Gitea green (automatic) | Runs **27** (`1785`, `c497ad6`) and **28** (`1786`, `ee9e501`): Backend, V2 pilot (1 pass / 0 skip), WebUI E2E, Production image — all success. Later HEAD commits must re-prove via their own automatic runs. |
+| Gitea green (automatic) | **Run 31** (`1799`, SHA `e2528df`): Backend, V2 pilot (**1 passed** / 0 skip), WebUI E2E, Production image — all success. Prior baselines: runs 27–28. |
 | Stack ready | `GET /api/health/ready` → `status=ready`, schema `a72c9d4e8f31`, writer `fresh=true`, `pilot_binding=null`; loopback `127.0.0.1:18080`. |
 | Pilot / auto-apply | Env: both `ENABLED=false`; `BOOKAUDIT_READ_ONLY=true`. |
 | Backup + restore | Paired dump+artifacts+manifest under `backups/20260717T075240Z-certA/` (DB sha256 `2a991d0d…`, artifacts sha256 `e250f6e1…`). Clean volume wipe, `pg_restore` exit 0, alembic head restored to `a72c9d4e8f31`, post-restore ready with writer fresh. |
