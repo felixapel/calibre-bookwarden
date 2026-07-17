@@ -2,13 +2,19 @@
 
 ## Current decision
 
-The Manifestation V2 supervised-pilot development head is **not yet approved
-for writes to a live Calibre library**. It is read-only/shadow by default.
-Legacy direct apply and unattended V2 apply are disabled in every profile.
+**Certificate A (shadow production)** is the active operational bar for this
+workstation stack: compose is up with pilot and auto-apply **disabled**,
+readiness green, backup+restore drilled, MCP read tools exercised against the
+deployed database, and Gitea gates green for documented SHAs.
 
-The earlier `v1.2.1` operational assessment does not automatically approve this
-new schema, API, WebUI, pilot ledger, or writer binding. Promotion is per exact
-commit and immutable image digest.
+The Manifestation V2 supervised-pilot development head is **not approved for
+writes to a live Calibre library**. It is read-only/shadow by default. Legacy
+direct apply and unattended V2 apply are disabled in every profile. Certificate
+B (live canaries) remains out of scope until a reviewed corpus and clone apply
+drill are complete.
+
+The earlier `v1.2.1` operational assessment does not automatically approve live
+writes. Write promotion is still per exact commit and immutable image digest.
 
 ## Baseline exact-commit gate evidence
 
@@ -96,6 +102,21 @@ override as production policy.
 
 This workstation stack is **shadow operational evidence**, not a Gitea release
 digest, not a live-library inventory, and not write-pilot approval.
+
+### Certificate A completion evidence (2026-07-17)
+
+| Gate | Evidence |
+|---|---|
+| Gitea green (automatic) | Runs **27** (`1785`, `c497ad6`) and **28** (`1786`, `ee9e501`): Backend, V2 pilot (1 pass / 0 skip), WebUI E2E, Production image — all success. Later HEAD commits must re-prove via their own automatic runs. |
+| Stack ready | `GET /api/health/ready` → `status=ready`, schema `a72c9d4e8f31`, writer `fresh=true`, `pilot_binding=null`; loopback `127.0.0.1:18080`. |
+| Pilot / auto-apply | Env: both `ENABLED=false`; `BOOKAUDIT_READ_ONLY=true`. |
+| Backup + restore | Paired dump+artifacts+manifest under `backups/20260717T075240Z-certA/` (DB sha256 `2a991d0d…`, artifacts sha256 `e250f6e1…`). Clean volume wipe, `pg_restore` exit 0, alembic head restored to `a72c9d4e8f31`, post-restore ready with writer fresh. |
+| MCP read path | Production image ships `[mcp]` (fastmcp). In-container tools: `list_recent_runs`, `get_run_metrics`, `query_book_audit` returned non-error structured data for live run `run_ingest_20260717_071018`. Hermes VM `192.168.0.179` was unreachable (no route); local container MCP is the Certificate A evidence. |
+| Content Server inventory | **Not run** this session (operator tunnel/credentials not available). Does not block Certificate A when other gates hold. Use ADR-004 path when ready. |
+
+MCP packaging change: the production Docker image now installs the `mcp` extra
+so `bookaudit mcp` works without a second install. Tool callables remain
+importable without FastMCP for tests and programmatic smoke.
 
 ## Local Content Server mechanism evidence
 

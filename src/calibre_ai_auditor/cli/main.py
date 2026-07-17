@@ -1162,7 +1162,7 @@ def mcp(
     Intended for Hermes and other MCP clients. Run via: bookaudit mcp
     """
     try:
-        from calibre_ai_auditor.mcp_server import mcp as mcp_app
+        from calibre_ai_auditor.mcp_server import run_stdio_server
     except ImportError as e:
         typer.secho(
             "MCP support not installed. Install with: uv pip install -e '.[mcp]' (or pip install fastmcp)",
@@ -1171,7 +1171,11 @@ def mcp(
         raise typer.Exit(1) from e
 
     typer.echo("Starting calibre-audit MCP server (stdio)...")
-    mcp_app.run()
+    try:
+        run_stdio_server()
+    except ImportError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
 
 
 @app.command()

@@ -16,7 +16,9 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
 WORKDIR /build
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
+# Include the mcp extra so Hermes/stdio MCP works in production without a
+# secondary install step. OCR/paddle remain optional and are not pulled in.
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable --extra mcp
 
 FROM python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS runtime
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

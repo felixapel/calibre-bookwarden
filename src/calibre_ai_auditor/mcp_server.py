@@ -6,6 +6,7 @@ Exposes read-only tools over the existing verification/storage surface:
 - query_book_audit: fetch persisted BookRecord + latest BookVerdict (via EvidencePackage)
 - list_problematic_books: books needing attention (status + risk), decimal chapter safe
 - get_run_metrics: aggregates from BookRecord by run
+- list_recent_runs: discovery helper
 
 Reuses:
 - ContentVerificationEngine / BookVerdict / FieldVerdict models (via persisted decision)
@@ -14,6 +15,9 @@ Reuses:
 - web/api patterns for querying
 
 Strictly read-only. No DB mutations, no apply paths.
+
+Tool functions are always importable. Starting the STDIO server requires the
+optional ``mcp`` extra (fastmcp).
 
 Run:
   bookaudit mcp
@@ -24,6 +28,7 @@ Or directly (after `pip install fastmcp` or `uv pip install -e '.[mcp]'`):
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from sqlmodel import Session, desc, select
@@ -36,12 +41,18 @@ logger = logging.getLogger(__name__)
 
 try:
     from fastmcp import FastMCP
-except ImportError as _e:  # pragma: no cover - optional dep
-    raise ImportError(
-        "fastmcp is required for the MCP server. Install with: uv pip install -e '.[mcp]' or pip install fastmcp"
-    ) from _e
+except ImportError:  # pragma: no cover - optional dep
+    FastMCP = None  # type: ignore[misc, assignment]
+    mcp: Any = None
+else:
+    mcp = FastMCP("calibre-audit")
 
-mcp = FastMCP("calibre-audit")
+
+def _tool[F: Callable[..., Any]](fn: F) -> F:
+    """Register with FastMCP when available; always return the plain callable."""
+    if mcp is not None:
+        return mcp.tool(fn)  # type: ignore[no-any-return]
+    return fn
 
 
 def _open_session() -> Session:
@@ -60,7 +71,7 @@ def _latest_evidence(session: Session, book_key: str) -> EvidencePackage | None:
     ).first()
 
 
-@mcp.tool
+@_tool
 def query_book_audit(book_key: str) -> dict[str, Any]:
     """Return the BookRecord and latest persisted audit verdict (BookVerdict shape) for a book.
 
@@ -98,7 +109,7 @@ def query_book_audit(book_key: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool
+@_tool
 def list_problematic_books(
     limit: int = 50,
     status: str | None = None,
@@ -142,12 +153,9 @@ def list_problematic_books(
                 "series_position": meta.get("series_position"),
                 "calibre_id": b.calibre_book_id,
             }
-            # If caller wants only risky ones, we still return; caller or later join can filter
-            # For now include risk_flags if we can cheaply get them from latest pkg
             pkg = _latest_evidence(session, b.book_key)
             row["risk_flags"] = (pkg.risk_flags if pkg else []) or []
             if has_risk and not row["risk_flags"] and b.status not in ("needs_review", "suggest_fix"):
-                # still include if status is explicitly problematic
                 pass
             out.append(row)
             if len(out) >= safe_limit:
@@ -155,7 +163,7 @@ def list_problematic_books(
         return out
 
 
-@mcp.tool
+@_tool
 def get_run_metrics(run_id: str | None = None) -> dict[str, Any]:
     """Aggregate simple metrics for a run (or the most recent run).
 
@@ -192,8 +200,7 @@ def get_run_metrics(run_id: str | None = None) -> dict[str, Any]:
         }
 
 
-# Convenience: also expose a lightweight runs list for discovery
-@mcp.tool
+@_tool
 def list_recent_runs(limit: int = 10) -> list[dict[str, Any]]:
     """List the most recent audit/verify runs (read-only)."""
     safe_limit = max(1, min(int(limit or 10), 100))
@@ -210,5 +217,14 @@ def list_recent_runs(limit: int = 10) -> list[dict[str, Any]]:
         ]
 
 
-if __name__ == "__main__":
+def run_stdio_server() -> None:
+    """Start the FastMCP STDIO server. Requires the optional ``mcp`` extra."""
+    if mcp is None:
+        raise ImportError(
+            "fastmcp is required for the MCP server. Install with: uv pip install -e '.[mcp]' or pip install fastmcp"
+        )
     mcp.run()
+
+
+if __name__ == "__main__":
+    run_stdio_server()

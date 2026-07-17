@@ -19,12 +19,10 @@ from typing import Any
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-# Skip entire module if fastmcp not installed (optional dep)
-fastmcp = pytest.importorskip("fastmcp")
-
 from calibre_ai_auditor.mcp_server import (  # noqa: E402
     get_run_metrics,
     list_problematic_books,
+    list_recent_runs,
     mcp,
     query_book_audit,
 )
@@ -155,11 +153,20 @@ def mcp_test_db_fixture(tmp_path: Any) -> Generator[tuple[Any, Session], None, N
     settings_mod.load_settings = original_load  # type: ignore[assignment]
 
 
-def test_mcp_server_object_exists() -> None:
-    """FastMCP server instance is created and has tools registered."""
+def test_mcp_server_object_exists_when_fastmcp_installed() -> None:
+    """FastMCP server instance is created when the optional extra is present."""
+    pytest.importorskip("fastmcp")
     assert mcp is not None
     # FastMCP exposes tools via internal registry in recent versions; just ensure no crash
     assert hasattr(mcp, "tool") or hasattr(mcp, "_tool_manager")
+
+
+def test_mcp_tool_functions_importable_without_fastmcp() -> None:
+    """Read tools remain plain callables even if FastMCP is absent."""
+    assert callable(query_book_audit)
+    assert callable(list_problematic_books)
+    assert callable(get_run_metrics)
+    assert callable(list_recent_runs)
 
 
 def test_query_book_audit_returns_verdict_and_preserves_decimals(mcp_test_db: tuple[Any, Session]) -> None:
@@ -223,11 +230,9 @@ def test_get_run_metrics_latest_when_no_run_id(mcp_test_db: tuple[Any, Session])
 
 
 def test_list_recent_runs(mcp_test_db: tuple[Any, Session]) -> None:
-    # The helper is exposed as a tool too
-    from calibre_ai_auditor.mcp_server import list_recent_runs
-
     runs = list_recent_runs(limit=5)
     assert isinstance(runs, list)
-    if runs:
-        assert "run_id" in runs[0]
-        assert runs[0]["run_id"] == "mcp_test_run"
+    assert runs, "seeded mcp_test_run must appear"
+    assert "run_id" in runs[0]
+    assert runs[0]["run_id"] == "mcp_test_run"
+    assert runs[0]["status"] == "completed"

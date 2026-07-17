@@ -19,10 +19,12 @@ ground truth and LLMs are witnesses, not generators.
 - **Remote inventory**: A capability-limited Content Server adapter supports
   aggregate inventory and one-book-at-a-time shadow verification through an
   operator-created loopback SSH tunnel. It cannot authorize writes.
-- **Production profile**: The current development increment is not yet approved
-  for a live library. Unattended and legacy direct apply are disabled. Promotion
-  requires the Gitea real-service gate, a disposable apply/undo drill, a clone
-  rehearsal, and reviewed canaries. See
+- **Production profile**: **Certificate A (shadow production)** is supported on
+  a production-profile Compose stack with pilot and auto-apply disabled,
+  readiness, backup/restore, and MCP read tools. It is **not** approval for live
+  Calibre writes. Unattended and legacy direct apply stay disabled. Live write
+  promotion (Certificate B) still requires a reviewed corpus, disposable
+  apply/undo, restored-clone rehearsal, and serial canaries. See
   [docs/production-readiness.md](docs/production-readiness.md).
 
 Manifestation V2 inspects every format attached to each Calibre book, anchors
