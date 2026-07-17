@@ -39,13 +39,13 @@ from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, Run
 
 logger = logging.getLogger(__name__)
 
+mcp: Any = None
 try:
-    from fastmcp import FastMCP
-except ImportError:  # pragma: no cover - optional dep
-    FastMCP = None  # type: ignore[misc, assignment]
-    mcp: Any = None
+    from fastmcp import FastMCP as _FastMCP
+except ImportError:  # pragma: no cover - optional dep for STDIO server only
+    pass
 else:
-    mcp = FastMCP("calibre-audit")
+    mcp = _FastMCP("calibre-audit")
 
 
 def _tool[F: Callable[..., Any]](fn: F) -> F:
