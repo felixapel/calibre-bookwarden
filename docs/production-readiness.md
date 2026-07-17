@@ -55,20 +55,20 @@ Local evidence for exact SHA `3eb4830511ca736afe7b9038b9aeb31a947c4471`:
   (`run_id=bookaudit-lab-c061dc89ec39`, Calibre 9.11.0, ACL write rejected,
   library identical, cleanup completed).
 
-### Gitea exact-commit evidence (Certificate A HEAD)
+### Gitea exact-commit evidence
 
 | SHA | Run | Result |
 |---|---|---|
-| **`e2528df7dbac76df0b83ce8526b9a42f82e3327a`** (Certificate A) | run **31** / ID **`1799`** | **success** (all required jobs) |
-| `c497ad64b1c57ace9e767d7d11f95256be75b12c` | run 27 / ID `1785` | success (prior baseline) |
-| `ee9e5016b3e2573947e4e622d142f6578970a4d3` | run 28 / ID `1786` | success (prior baseline) |
+| **`9f05b8494bb4c32c248b06376b157d438df52489`** (durable verify + MCP V2) | run **33** / ID **`1802`** | **success** (all required jobs) |
+| `e2528df7dbac76df0b83ce8526b9a42f82e3327a` (Certificate A MCP image) | run 31 / ID `1799` | success (prior) |
+| `c497ad64b1c57ace9e767d7d11f95256be75b12c` | run 27 / ID `1785` | success (prior) |
 
-Run 31 was triggered by automatic push of the MCP packaging fix. No Gitea
-Action was manually rerun. Jobs green: Backend, Manifestation V2 required
-integration (**1 passed**, 0 skipped — log asserts `1 passed` and rejects
-`SKIPPED`), Benchmarks, WebUI E2E, Production image contract.
+Run 33 was triggered by automatic push. No Gitea Action was manually rerun.
+Jobs green: Backend, Manifestation V2 required integration (**1 passed**, 0
+skipped), Benchmarks, WebUI E2E, Production image contract.
 
-Treat **`e2528df` / run 1799** as the Certificate A CI baseline for this goal.
+Treat **`9f05b84` / run 1802** as the autonomous-follow-up CI baseline (includes
+Certificate A stack plus durable verify leases and MCP V2 tools).
 
 ### Local shadow stack evidence (workstation, pilot off)
 
