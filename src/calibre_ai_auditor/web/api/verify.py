@@ -126,16 +126,19 @@ async def start_verify(
     metrics.set_run_progress(run_id, total=len(books), completed=0)
 
     if req.pipeline == "v2":
+        from calibre_ai_auditor.verification.durable_v2 import (
+            execute_claimed_v2_library_audit,
+            new_worker_id,
+        )
         from calibre_ai_auditor.verification.persistence_v2 import SQLAuditStore
         from calibre_ai_auditor.verification.pipeline_v2 import AuditMode
-        from calibre_ai_auditor.verification.service_v2 import (
-            build_v2_enricher,
-            run_persisted_library_audit,
-        )
+        from calibre_ai_auditor.verification.service_v2 import build_v2_enricher
 
         v2_database_engine = cast(Engine, session.get_bind())
+        # Validate enricher construction early so the client gets 422, not a
+        # silent background failure after the run id is issued.
         try:
-            enricher = build_v2_enricher(
+            build_v2_enricher(
                 settings,
                 use_llm=req.use_llm,
                 use_ocr=req.use_ocr,
@@ -155,22 +158,28 @@ async def start_verify(
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None
 
+        worker_id = new_worker_id("api")
+
         async def _run_v2() -> None:
             try:
-                await run_persisted_library_audit(
+                await execute_claimed_v2_library_audit(
                     cli=cli,
                     database_engine=v2_database_engine,
                     run_id=run_id,
-                    limit=0,
-                    mode=AuditMode.shadow,
-                    evidence_enricher=enricher,
+                    owner=worker_id,
                     use_llm=req.use_llm,
+                    use_ocr=req.use_ocr,
+                    use_vision=req.use_vision,
+                    allow_remote_text=req.allow_remote_text,
+                    allow_remote_images=req.allow_remote_images,
                     books=books,
                     settings=settings,
                 )
             except Exception:
                 logger.exception("Manifestation V2 verify run %s failed", run_id)
 
+        # Task is still in-process, but progress + membership + lease are durable;
+        # app lifespan recovery reclaims orphaned leases after restart.
         asyncio.create_task(_run_v2())
         return VerifyStartEnvelope(
             data=VerifyStartResponse(

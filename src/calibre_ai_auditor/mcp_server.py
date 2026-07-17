@@ -31,11 +31,17 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from sqlmodel import Session, desc, select
+from sqlmodel import Session, col, desc, select
 
 from calibre_ai_auditor.config.settings import load_settings
 from calibre_ai_auditor.storage.db import get_engine
-from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, Run
+from calibre_ai_auditor.storage.models import (
+    BookRecord,
+    EvidencePackage,
+    Run,
+    VerificationResult,
+    VerificationRun,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +221,98 @@ def list_recent_runs(limit: int = 10) -> list[dict[str, Any]]:
             }
             for r in runs
         ]
+
+
+@_tool
+def list_v2_verification_runs(limit: int = 20) -> list[dict[str, Any]]:
+    """List recent Manifestation V2 verification runs (read-only).
+
+    Reads ``VerificationRun`` rows with ``pipeline_version=manifestation-v2``.
+    """
+    safe_limit = max(1, min(int(limit or 20), 100))
+    with _open_session() as session:
+        runs = session.exec(
+            select(VerificationRun)
+            .where(VerificationRun.pipeline_version == "manifestation-v2")
+            .order_by(desc(VerificationRun.started_at))
+            .limit(safe_limit)
+        ).all()
+        return [
+            {
+                "run_id": r.run_id,
+                "status": r.status,
+                "mode": r.mode,
+                "pipeline_version": r.pipeline_version,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "total": r.total,
+                "completed": r.completed,
+                "counts": r.counts or {},
+                "use_llm": r.use_llm,
+                "lease_owner": r.lease_owner,
+            }
+            for r in runs
+        ]
+
+
+@_tool
+def get_v2_verification_run(run_id: str, book_limit: int = 50) -> dict[str, Any]:
+    """Fetch one V2 verification run with per-book status and tier summaries.
+
+    Read-only. ``book_limit`` caps result rows (1–500).
+    """
+    if not run_id or not isinstance(run_id, str):
+        return {"error": "invalid_run_id", "detail": "run_id must be a non-empty string"}
+    safe_limit = max(1, min(int(book_limit or 50), 500))
+    with _open_session() as session:
+        run = session.exec(select(VerificationRun).where(VerificationRun.run_id == run_id)).first()
+        if run is None:
+            return {"error": "not_found", "run_id": run_id}
+        if run.pipeline_version != "manifestation-v2":
+            return {
+                "error": "not_v2",
+                "run_id": run_id,
+                "pipeline_version": run.pipeline_version,
+                "detail": "Use list_recent_runs / get_run_metrics for legacy V1 runs",
+            }
+        results = session.exec(
+            select(VerificationResult)
+            .where(VerificationResult.run_id == run_id)
+            .order_by(col(VerificationResult.created_at))
+            .limit(safe_limit)
+        ).all()
+        books: list[dict[str, Any]] = []
+        for row in results:
+            tier = None
+            state = row.state
+            if isinstance(row.verdict, dict):
+                identity = row.verdict.get("identity") or {}
+                if isinstance(identity, dict):
+                    tier = identity.get("tier")
+                state = row.verdict.get("state") or state
+            books.append(
+                {
+                    "book_key": row.book_key,
+                    "state": state,
+                    "tier": tier,
+                    "evidence_id": row.evidence_id,
+                }
+            )
+        return {
+            "run_id": run.run_id,
+            "status": run.status,
+            "mode": run.mode,
+            "pipeline_version": run.pipeline_version,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "total": run.total,
+            "completed": run.completed,
+            "counts": run.counts or {},
+            "use_llm": run.use_llm,
+            "lease_owner": run.lease_owner,
+            "books": books,
+            "books_truncated": len(books),
+        }
 
 
 def run_stdio_server() -> None:

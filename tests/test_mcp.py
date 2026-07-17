@@ -21,12 +21,20 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from calibre_ai_auditor.mcp_server import (  # noqa: E402
     get_run_metrics,
+    get_v2_verification_run,
     list_problematic_books,
     list_recent_runs,
+    list_v2_verification_runs,
     mcp,
     query_book_audit,
 )
-from calibre_ai_auditor.storage.models import BookRecord, EvidencePackage, Run  # noqa: E402
+from calibre_ai_auditor.storage.models import (  # noqa: E402
+    BookRecord,
+    EvidencePackage,
+    Run,
+    VerificationResult,
+    VerificationRun,
+)
 
 
 @pytest.fixture(name="mcp_test_db")
@@ -236,3 +244,49 @@ def test_list_recent_runs(mcp_test_db: tuple[Any, Session]) -> None:
     assert "run_id" in runs[0]
     assert runs[0]["run_id"] == "mcp_test_run"
     assert runs[0]["status"] == "completed"
+
+
+def test_list_and_get_v2_verification_runs(mcp_test_db: tuple[Any, Session]) -> None:
+    engine, session = mcp_test_db
+    session.add(
+        VerificationRun(
+            run_id="v2_run_mcp",
+            status="completed",
+            pipeline_version="manifestation-v2",
+            mode="shadow",
+            total=1,
+            completed=1,
+            counts={"review": 1},
+        )
+    )
+    session.add(
+        VerificationResult(
+            result_id="vr_1",
+            run_id="v2_run_mcp",
+            book_key="calibre:9",
+            state="review",
+            evidence_id="ev_v2_9",
+            verdict={
+                "schema_version": 2,
+                "state": "review",
+                "identity": {"tier": "B"},
+            },
+        )
+    )
+    session.commit()
+
+    listed = list_v2_verification_runs(limit=10)
+    assert any(r["run_id"] == "v2_run_mcp" for r in listed)
+    row = next(r for r in listed if r["run_id"] == "v2_run_mcp")
+    assert row["pipeline_version"] == "manifestation-v2"
+    assert row["counts"].get("review") == 1
+
+    detail = get_v2_verification_run("v2_run_mcp")
+    assert detail["run_id"] == "v2_run_mcp"
+    assert detail["status"] == "completed"
+    assert detail["books"]
+    assert detail["books"][0]["book_key"] == "calibre:9"
+    assert detail["books"][0]["tier"] == "B"
+
+    missing = get_v2_verification_run("nope")
+    assert missing.get("error") == "not_found"

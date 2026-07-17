@@ -1156,7 +1156,8 @@ def mcp(
     """
     v1.2: Start the MCP server (STDIO) exposing read-only audit tools.
 
-    Tools: query_book_audit, list_problematic_books, get_run_metrics, list_recent_runs.
+    Tools: query_book_audit, list_problematic_books, get_run_metrics,
+    list_recent_runs, list_v2_verification_runs, get_v2_verification_run.
     Requires the optional 'mcp' extra (fastmcp).
 
     Intended for Hermes and other MCP clients. Run via: bookaudit mcp

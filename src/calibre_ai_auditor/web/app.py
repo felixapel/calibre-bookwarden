@@ -78,6 +78,20 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         watcher_task = asyncio.create_task(run_watcher())
         logger.info(f"IngestWatcher background task started on {settings.library.path}")
 
+    # Reclaim orphaned Manifestation V2 verify runs left by a previous process.
+    try:
+        from calibre_ai_auditor.storage.db import get_engine
+        from calibre_ai_auditor.verification.durable_v2 import recover_orphaned_v2_runs
+
+        recovered = await recover_orphaned_v2_runs(
+            database_engine=get_engine(settings),
+            settings=settings,
+        )
+        if recovered:
+            logger.info("Recovered %d orphaned V2 verify run(s): %s", len(recovered), recovered)
+    except Exception:
+        logger.exception("Failed to recover orphaned V2 verify runs on startup")
+
     yield
 
     logger.info("Shutting down Calibre AI Auditor API...")

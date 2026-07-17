@@ -117,6 +117,27 @@ MCP packaging change: the production Docker image now installs the `mcp` extra
 so `bookaudit mcp` works without a second install. Tool callables remain
 importable without FastMCP for tests and programmatic smoke.
 
+### Autonomous follow-ups after Certificate A (2026-07-17)
+
+| Work | Status |
+|---|---|
+| Restart-safe V2 verify lease | **Done.** Alembic head `c8e1f0a2b4d6` adds `lease_owner` / `lease_expires_at` on `verificationrun`. API starts claim workers via `verification/durable_v2.py`; app lifespan recovers orphaned leases. Live smoke: start `verify_20260717_090021_ad60d8b2` → restart `app` → run `completed` with counts `{"review": 2}`. |
+| MCP V2 read tools | **Done.** `list_v2_verification_runs` and `get_v2_verification_run` read `VerificationRun`/`VerificationResult` (tier/counts/status). Container smoke returned the durable run with Tier B books. |
+| Local unit tests | `tests/test_durable_v2.py`, extended `tests/test_mcp.py` drive shipped claim/resume and V2 tool functions. |
+
+### Operator-blocked remainder (not autonomous)
+
+| Item | Why blocked |
+|---|---|
+| Hermes MCP registration | Host `192.168.0.179` no route from this workstation |
+| Live Content Server inventory | Needs operator SSH tunnel + verified read-only Calibre account (ADR-004) |
+| ~100-book human corpus | Human labeling |
+| Certificate B live writes | Explicit non-goal; pilot remains disabled |
+| Digest-pinned release tag / Gitea release | Operator release decision |
+| Always-on Unraid migration | Host placement choice |
+
+**Still shadow-only:** supervised pilot and auto-apply remain **disabled**. No live-write approval.
+
 ## Local Content Server mechanism evidence
 
 On 2026-07-16, the local disposable gate passed with checksum-pinned Calibre
@@ -206,7 +227,8 @@ checkbox.
 3. Keep `BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=false` through
    shadow audit, backup, restore drill and clone rehearsal.
 4. Run `scripts/prepare-production.sh` and resolve every validation error.
-5. Apply Alembic head `a72c9d4e8f31` explicitly; runtime services never migrate.
+5. Apply Alembic head `c8e1f0a2b4d6` explicitly (includes pilot schema
+   `a72c9d4e8f31` plus verify-run leases); runtime services never migrate.
 6. Load alerts and require authenticated readiness plus the exact writer
    binding metric.
 7. Follow the serial start/stop procedure in the supervised rollout runbook.

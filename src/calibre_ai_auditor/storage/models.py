@@ -238,6 +238,9 @@ class VerificationRun(SQLModel, table=True):
     use_llm: bool = False
     pipeline_version: str = "v1"
     mode: str = "legacy"
+    # Worker lease so an app restart can reclaim orphaned V2 shadow runs.
+    lease_owner: str | None = Field(default=None, index=True)
+    lease_expires_at: datetime | None = Field(default=None, index=True)
 
 
 class VerificationResult(SQLModel, table=True):

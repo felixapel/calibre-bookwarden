@@ -43,7 +43,10 @@ Regardless of the backend, the database serves as the system-of-record for:
 
 ## Manifestation V2 records
 
-Alembic head `a72c9d4e8f31` adds the supervised-pilot binding to the V2 contract
+Alembic head `c8e1f0a2b4d6` (after `a72c9d4e8f31` supervised-pilot binding) adds
+worker lease columns on `verificationrun` for restart-safe V2 shadow audits.
+The supervised-pilot binding itself remains on head predecessor `a72c9d4e8f31`
+in the V2 contract
 without reinterpreting legacy
 rows:
 
