@@ -78,10 +78,11 @@ BOOKAUDIT_REQUIRE_WRITER_READY=true docker compose up -d --force-recreate app
 Confirm authenticated `/api/health/ready` after re-enabling the writer gate. A
 clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12 restored the then
 current Alembic head `b18f4c2d7a90` and the runtime ACLs successfully. The
-Manifestation V2 supervised-pilot Alembic head is now `a72c9d4e8f31`;
-repeat the clean upgrade and backup/restore drill before promoting that schema.
-Its downgrade refuses to discard any persisted pilot, pilot-bound operation, or
-incident acknowledgement.
+current Manifestation V2 Alembic head is `c8e1f0a2b4d6`; it includes the
+supervised-pilot schema from `a72c9d4e8f31` and durable verification-run leases.
+Repeat the clean upgrade and backup/restore drill before promoting that schema.
+Its staged downgrades refuse to discard persisted pilot evidence or to remove
+lease state while any run is leased or any Manifestation V2 run is non-terminal.
 
 ## Upgrade
 
@@ -175,7 +176,30 @@ If the schema change is additive and the previous image is N-1 compatible, stop
 runtime roles and restart the previous image digest. If compatibility is not
 explicitly documented, restore the paired database/artifacts backup into an
 empty environment. Never run an ad-hoc Alembic downgrade against live writer
-operations.
+operations. Before downgrading from `c8e1f0a2b4d6`, stop app and writer and
+confirm this precondition returns zero rows:
+
+```sql
+SELECT run_id, status, finished_at, lease_owner, lease_expires_at
+FROM verificationrun
+WHERE lease_owner IS NOT NULL
+   OR lease_expires_at IS NOT NULL
+   OR (
+        pipeline_version = 'manifestation-v2'
+        AND (
+             finished_at IS NULL
+             OR status NOT IN (
+                  'completed',
+                  'completed_with_errors',
+                  'failed',
+                  'blocked_recovery'
+             )
+        )
+   );
+```
+
+PostgreSQL downgrade additionally acquires an exclusive `NOWAIT` table lock;
+lock contention is a hard stop, not a reason to bypass the migration guard.
 
 ## Incident handling
 
