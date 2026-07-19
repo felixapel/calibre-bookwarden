@@ -25,12 +25,11 @@ pytestmark = pytest.mark.benchmark
 
 
 # Locate the test EPUB shipped with the repo
+REPO_ROOT = Path(__file__).resolve().parents[2]
 TEST_EPUB = Path(__file__).parent.parent / "fake_library"
 # Fall back to any EPUB in the repo
 if not any(TEST_EPUB.glob("*.epub")):
-    for candidate in [
-        Path("/home/felix/cali/calibre-ai-auditor"),
-    ]:
+    for candidate in [REPO_ROOT]:
         epubs = list(candidate.glob("*.epub"))
         if epubs:
             TEST_EPUB = Path(epubs[0])
