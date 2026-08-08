@@ -117,6 +117,12 @@ class RateLimitSettings(BaseModel):
     window_seconds: int = Field(default=60, ge=1, le=3600)
 
 
+class VerifierSettings(BaseModel):
+    scratch_dir: Path = Path("/scratch")
+    lease_ttl_seconds: int = Field(default=120, ge=30, le=3600)
+    poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
+
+
 class VectorSettings(BaseModel):
     enabled: bool = False
     qdrant_url: str = "http://qdrant:6333"
@@ -180,6 +186,7 @@ class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)  # type: ignore[arg-type]
     queue: QueueSettings = Field(default_factory=QueueSettings)  # type: ignore[arg-type]
     rate_limits: RateLimitSettings = Field(default_factory=RateLimitSettings)  # type: ignore[arg-type]
+    verifier: VerifierSettings = Field(default_factory=VerifierSettings)
     vectors: VectorSettings = Field(default_factory=VectorSettings)  # type: ignore[arg-type]
     providers: ProviderSettings = Field(default_factory=ProviderSettings)  # type: ignore[arg-type]
     privacy: PrivacySettings = Field(default_factory=PrivacySettings)  # type: ignore[arg-type]
