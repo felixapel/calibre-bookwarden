@@ -1,140 +1,80 @@
-# Deployment Guide
+# Certificate A deployment
 
-`calibre-ai-auditor` is designed to be deployed as a multi-service containerized stack.
+The supported deployment is the four-service Certificate A Compose graph:
 
-## 1. Multi-Stage Docker Build
+| Service | Authority |
+|---|---|
+| `app` | Loopback WebUI/API; request insert and cancellation only; no library mount |
+| `verifier` | `/library:ro`; fenced evidence/progress writer; private tmpfs scratch |
+| `postgres` | Authoritative queue, contracts, progress, and sealed evidence |
+| `valkey` | Rate limits and verifier heartbeat only |
 
-The application uses a multi-stage build process:
-1.  **Frontend Builder**: Compiles the React + Vite SPA.
-2.  **Runtime**: A Python-based container that serves the static assets and the FastAPI backend.
+`migrate` is an explicit one-shot maintenance profile. `writer` and
+`writer-maintenance` are quarantined Certificate B profiles and must not be
+started for Certificate A.
 
-**Image**: `${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}`
+## Images
 
-Release tags matching `v<pyproject version>` publish a signed GHCR image with
-provenance and SPDX SBOM. For production, set `BOOKAUDIT_IMAGE` to the immutable
-`ghcr.io/<owner>/<repo>@sha256:<digest>` printed by the release workflow. The
-local version tag is intended for build-and-test deployments only.
+The default/final Docker target is `certificate-a`. It includes the compiled
+WebUI, production-only CLI, Tesseract/OCR dependencies, PostgreSQL/Valkey
+clients, and migrations. It excludes Calibre, LLM SDKs, Qdrant, MCP, watcher,
+upload, and legacy UI dependencies.
 
-Gitea Actions is the canonical development and pull-request gate. Mirror/release
-automation is outside the normal development workflow and must not be invoked
-without an explicit release request.
+The `writer` target is a different image with checksum-pinned Calibre and
+legacy extras. Its presence in the build file is not production approval.
 
-The runtime layer installs the official Calibre 9.11.0 x86_64 artifact and
-verifies its pinned SHA-512 during the build. The immutable release digest is
-still the deployment identity that is scanned, boot-tested, attested, signed,
-and only then tagged. Vendor-unfixed HIGH/CRITICAL findings have a fail-closed
-review expiry in the release workflow; fixed findings always block publication.
+Production must set `BOOKAUDIT_IMAGE` to an immutable registry digest and set
+`BOOKAUDIT_RELEASE_DIGEST` to the identical `sha256:...` value. Mutable tags and
+`BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` are disposable validation only.
 
----
+## Deploy
 
-## 2. Service Stack (Docker Compose)
-
-We use **Docker Compose Profiles** to manage complexity.
-
-`compose.disposable-calibre.yml` is a local safety-test fixture, not a
-production stack. It publishes no host port, accepts no library mount override,
-and must never be pointed at a live Calibre directory. Run it only through
-`scripts/disposable_calibre_lab.py`, which verifies cleanup.
-
-### Optional integrations
-The default production stack starts only the required services. The `optional`
-profile adds specialized sidecars:
-- **`app`**: FastAPI Backend + React WebUI.
-- **`postgres`**: Authoritative single-host database.
-- **`valkey`**: Task queue and rate-limit caching.
-- **`tika`**: Advanced document extraction sidecar.
-- **`gotenberg`**: PDF preview/report renderer.
-- **`qdrant`**: Semantic duplicate detection.
-
-### Deployment commands
 ```bash
 cp .env.example .env
-# Replace every placeholder and synchronize each DSN password with the matching
-# POSTGRES_*_PASSWORD value.
+chmod 600 .env
+# Replace every placeholder and use distinct database role passwords.
 ./scripts/prepare-production.sh
-docker compose build app
+
+docker compose pull app verifier postgres valkey
 docker compose up -d --wait postgres valkey
 docker compose --profile maintenance run --rm migrate
-docker compose up -d app writer
+docker compose up -d --wait verifier app
 ```
 
-On the first empty PostgreSQL volume, `scripts/postgres-init-roles.sh` creates
-the app, writer, and migrator roles. The migrator owns the schema; each runtime
-role receives only the table-specific DML needed by its API or writer duties and
-cannot create schema objects. Password
-rotation is an explicit operation because PostgreSQL init hooks run only for an
-empty data directory.
+Preflight verifies the exact default graph and rejects writer flags. Runtime
+services validate but never migrate the schema.
 
----
+Only the app port is published, and only on
+`127.0.0.1:${BOOKAUDIT_PORT:-8080}`. PostgreSQL and Valkey have no host ports.
+Install the same-host Caddy edge from `deploy/caddy/Caddyfile.example` after
+loopback readiness passes. Whole-site authentication has no path matcher.
 
-## 3. Persistent Volumes
+## Persistent state
 
-| Volume | Mount Point | Purpose |
-|---|---|---|
-| `${BOOKAUDIT_LIBRARY_HOST_PATH}` | `/library` | Real Calibre library; app mounts read-only and the sole writer mounts read-write. |
-| `./.state` | `/state` | Database files and app state. |
-| `./.artifacts` | `/artifacts` | API audit artifacts (never writer restore evidence). |
-| `./.writer-artifacts` | `/writer-artifacts` | Writer-exclusive OPF targets and restore evidence. |
-| `./config` | `/app/config` | YAML configuration overrides. |
+- `postgres-data`: authoritative durable state; back up with `pg_dump -Fc`.
+- `valkey-data`: operational rate-limit/heartbeat state; not authoritative.
+- `${BOOKAUDIT_LIBRARY_HOST_PATH}`: existing stopped Calibre library, mounted
+  only into the verifier and only read-only.
+- `./config`: application configuration, mounted read-only.
+- `/scratch`: verifier tmpfs; never persisted.
 
----
+Certificate A does not use `.state`, `.artifacts`, `.writer-artifacts`, upload
+folders, or a writable library bind mount.
 
-## 4. Port Mappings
+## Security properties
 
-| Service | Host Port | Container Port |
-|---|---|---|
-| **App (WebUI/API)** | **8080** | 8080 |
-| **PostgreSQL** | not published | 5432 |
-| **Valkey** | not published | 6379 |
-| **Qdrant** | not published | 6333 |
-| **Tika** | not published | 9998 |
-| **Gotenberg** | not published | 3000 |
+- Containers run read-only, without Linux capabilities, with
+  `no-new-privileges`, PID/memory/CPU limits, and non-root identities.
+- PostgreSQL roles are provisioned before Alembic applies the exact table and
+  column ACLs. The app cannot forge evidence; the verifier cannot use writer
+  ledgers or migrate schema.
+- The verifier heartbeat and readiness bind the image release, Alembic head,
+  and library-root identity.
+- API authentication, trusted hosts, Valkey-backed rate limiting, security
+  headers, and Caddy TLS/auth all fail closed.
 
----
-
-## 5. Environment Configuration (`.env`)
-
-Critical variables for deployment:
-
-*   `BOOKAUDIT_READ_ONLY`: Defaults to `true`. Protects your library (also `BOOKAUDIT_LIBRARY__READ_ONLY`).
-*   `OLLAMA_BASE_URL`: Pointer to your homelab Ollama instance.
-*   `BOOKAUDIT_JUDGE_MODEL`: The LLM to use for auditing (e.g., `qwen3.5:9b-q4_K_M`).
-*   `OPENAI_API_KEY`: Required only for remote deep reasoning.
-*   `BOOKAUDIT_TRUSTED_HOSTS`: comma-separated public hostnames accepted from
-    the reverse proxy. Add the production DNS name before exposing the proxy.
-*   `BOOKAUDIT_APP_POSTGRES_DSN`, `BOOKAUDIT_WRITER_POSTGRES_DSN`, and
-    `BOOKAUDIT_MIGRATOR_POSTGRES_DSN`: distinct database roles. Their passwords
-    must match `POSTGRES_APP_PASSWORD`, `POSTGRES_WRITER_PASSWORD`, and
-    `POSTGRES_MIGRATOR_PASSWORD`; do not reuse the migrator credential at runtime.
-*   `BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED`: defaults to
-    `false`. A live write pilot also requires an exact pilot ID, the immutable
-    image digest, and a one-to-five operation budget; follow the rollout runbook.
-
----
-
-## 6. Operational Rules
-
-1.  **Safety First**: The app always mounts the library read-only. Only the
-    dedicated single-writer service receives the read-write mount; stop it when
-    no approved apply/undo operation should be possible.
-2.  **Backups**: Back up `.writer-artifacts`; only the writer may mount this directory read-write.
-3.  **Permissions**: Containers run as the host's UID/GID (defined in `.env`) to prevent "root-owned" file issues on your host filesystem.
-4.  **Pilot binding**: `prepare-production.sh` must prove that the configured
-    supervised-pilot digest is exactly the digest in `BOOKAUDIT_IMAGE`. Keep
-    auto-apply disabled and never overlap V2 operations.
-# Production v2 network boundary
-
-The production Compose profile binds the API only to `127.0.0.1`. Terminate
-TLS in a reverse proxy on the same host and proxy to
-`http://127.0.0.1:${BOOKAUDIT_PORT:-8080}`. Do not publish the application port
-directly on the LAN. PostgreSQL, Valkey, and optional sidecars are reachable
-only on the Compose network.
-
-Set `BOOKAUDIT_LIBRARY_HOST_PATH` to an absolute Calibre library path. The app
-always mounts it as `/library:ro`; only the fenced writer service mounts the
-same root read-write. Copy `.env.example` to `.env`, replace every placeholder
-secret, and keep `.env` outside version control.
-
-Schema upgrades are an explicit maintenance action. Stop `app` and `writer`,
-take a PostgreSQL plus `.writer-artifacts` backup, run the one-shot `migrate`
-service, then start the runtime roles. Runtime services never auto-migrate.
+Use [docs/runbooks/production-operations.md](docs/runbooks/production-operations.md)
+for first deployment, backup, restore drill, upgrade, rollback, monitoring, and
+incident response. Use
+[docs/production-readiness.md](docs/production-readiness.md) for exact-commit
+promotion evidence.

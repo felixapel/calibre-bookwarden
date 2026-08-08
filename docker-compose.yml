@@ -1,44 +1,72 @@
+name: calibre-ai-auditor
+
+x-runtime-security: &runtime-security
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  init: true
+
+x-certificate-a-environment: &certificate-a-environment
+  BOOKAUDIT_PROFILE: production
+  BOOKAUDIT_LIBRARY_PATH: /library
+  BOOKAUDIT_READ_ONLY: "true"
+  BOOKAUDIT_RELEASE_DIGEST: ${BOOKAUDIT_RELEASE_DIGEST:?set the immutable release digest in .env}
+  BOOKAUDIT_QUEUE__BACKEND: valkey
+  BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
+  BOOKAUDIT_LOG_JSON: "true"
+  BOOKAUDIT_ALLOW_REMOTE_FILE_UPLOAD: "false"
+  BOOKAUDIT_PRIVACY__ALLOW_REMOTE_TEXT: "false"
+  BOOKAUDIT_PRIVACY__ALLOW_REMOTE_IMAGES: "false"
+  BOOKAUDIT_PROVIDERS__CALIBRE_FETCH: "false"
+  BOOKAUDIT_PROVIDERS__GOOGLE_BOOKS: "true"
+  BOOKAUDIT_PROVIDERS__OPENLIBRARY: "true"
+  BOOKAUDIT_RECOGNITION_V2__OCR__ENABLED: "true"
+  BOOKAUDIT_RECOGNITION_V2__OCR__BACKENDS: '["tesseract"]'
+  BOOKAUDIT_RECOGNITION_V2__VISION__ENABLED: "false"
+  BOOKAUDIT_MANIFESTATION_V2__AUTO_APPLY__ENABLED: "false"
+  BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED: "false"
+  BOOKAUDIT_EXTRACTORS__TIKA__ENABLED: "false"
+  BOOKAUDIT_VECTORS__ENABLED: "false"
+  BOOKAUDIT_MANGA_MODE__ENABLED: "false"
+  BOOKAUDIT_PAPERLESS__ENABLED: "false"
+  BOOKAUDIT_PREVIEW__GOTENBERG_ENABLED: "false"
+  BOOKAUDIT_OLLAMA_ENABLED: "false"
+  BOOKAUDIT_LMSTUDIO_ENABLED: "false"
+
 services:
   app:
-    build: .
+    <<: *runtime-security
+    build:
+      context: .
+      target: certificate-a
     image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
-    env_file:
-      - .env
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
     environment:
-      BOOKAUDIT_LIBRARY_PATH: /library
-      BOOKAUDIT_DB_PATH: /state/bookaudit.db
-      BOOKAUDIT_ARTIFACTS_DIR: /artifacts
+      <<: *certificate-a-environment
       BOOKAUDIT_DATABASE__BACKEND: postgres
       BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_APP_POSTGRES_DSN:?set app role DSN in .env}
-      BOOKAUDIT_PROFILE: production
-      BOOKAUDIT_LOG_JSON: "true"
       BOOKAUDIT_API_KEY: ${BOOKAUDIT_API_KEY:?set in .env}
       BOOKAUDIT_TRUSTED_HOSTS: ${BOOKAUDIT_TRUSTED_HOSTS:-localhost,127.0.0.1}
       BOOKAUDIT_RATE_LIMITS__ENABLED: "true"
       BOOKAUDIT_RATE_LIMITS__BACKEND: valkey
       BOOKAUDIT_RATE_LIMITS__VALKEY_URL: redis://valkey:6379/1
-      BOOKAUDIT_REQUIRE_WRITER_READY: ${BOOKAUDIT_REQUIRE_WRITER_READY:-true}
-      BOOKAUDIT_READ_ONLY: "true"
     volumes:
-      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:ro
-      - ./user_library:/input_files:ro
-      - ./.state:/state
-      - ./.artifacts:/artifacts
       - ./config:/app/config:ro
-    read_only: true
     tmpfs:
-      - /tmp:size=256m,mode=1777
-    cap_drop: ["ALL"]
-    security_opt: ["no-new-privileges:true"]
+      - /tmp:size=128m,mode=1777
     ports:
       - "127.0.0.1:${BOOKAUDIT_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
       valkey:
-        condition: service_started
+        condition: service_healthy
+      verifier:
+        condition: service_healthy
     healthcheck:
       test:
         ["CMD-SHELL", "curl -sf -H 'X-API-Key: '$$BOOKAUDIT_API_KEY http://localhost:8080/api/health/ready"]
@@ -47,96 +75,37 @@ services:
       retries: 3
       start_period: 10s
 
-  writer:
+  verifier:
+    <<: *runtime-security
     image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
-    command: ["writer"]
-    env_file:
-      - .env
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 256
+    command: ["verifier"]
     environment:
-      BOOKAUDIT_PROFILE: production
-      BOOKAUDIT_LIBRARY_PATH: /library
-      BOOKAUDIT_ARTIFACTS_DIR: /writer-artifacts
+      <<: *certificate-a-environment
       BOOKAUDIT_DATABASE__BACKEND: postgres
-      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_WRITER_POSTGRES_DSN:?set writer role DSN in .env}
-      BOOKAUDIT_QUEUE__BACKEND: valkey
-      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
-      BOOKAUDIT_READ_ONLY: "false"
-      BOOKAUDIT_LOG_JSON: "true"
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_VERIFIER_POSTGRES_DSN:?set verifier role DSN in .env}
+      BOOKAUDIT_VERIFIER__SCRATCH_DIR: /scratch
     volumes:
-      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:rw
-      - ./.writer-artifacts:/writer-artifacts
+      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:ro
       - ./config:/app/config:ro
-    read_only: true
     tmpfs:
-      - /tmp:size=256m,mode=1777
-    cap_drop: ["ALL"]
-    security_opt: ["no-new-privileges:true"]
+      - /tmp:size=128m,mode=1777
+      - /scratch:size=1024m,mode=0700,uid=${UID:-1000},gid=${GID:-1000}
     depends_on:
       postgres:
         condition: service_healthy
       valkey:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "bookaudit", "writer-health"]
+      test: ["CMD", "bookaudit-certificate-a", "verifier-health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
-
-  migrate:
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
-    command: ["migrate"]
-    profiles: ["maintenance"]
-    restart: "no"
-    environment:
-      BOOKAUDIT_PROFILE: production
-      BOOKAUDIT_DATABASE__BACKEND: postgres
-      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_MIGRATOR_POSTGRES_DSN:?set migrator role DSN in .env}
-    volumes:
-      - ./config:/app/config:ro
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    cap_drop: ["ALL"]
-    security_opt: ["no-new-privileges:true"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  retention:
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
-    command: ["retention"]
-    profiles: ["maintenance"]
-    restart: "no"
-    user: "${UID:-1000}:${GID:-1000}"
-    environment:
-      BOOKAUDIT_PROFILE: production
-      BOOKAUDIT_ARTIFACTS_DIR: /writer-artifacts
-      BOOKAUDIT_DATABASE__BACKEND: postgres
-      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_WRITER_POSTGRES_DSN:?set writer role DSN in .env}
-      BOOKAUDIT_QUEUE__BACKEND: valkey
-      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
-    volumes:
-      - ./.writer-artifacts:/writer-artifacts
-      - ${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}:/backups:ro
-      - ./config:/app/config:ro
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    cap_drop: ["ALL"]
-    security_opt: ["no-new-privileges:true"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      valkey:
-        condition: service_started
-
-  tika:
-    image: apache/tika@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973
-    restart: unless-stopped
-    profiles: ["optional"]
+      start_period: 15s
 
   postgres:
     image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
@@ -146,6 +115,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
       POSTGRES_DB: bookaudit
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set app database password in .env}
+      POSTGRES_VERIFIER_PASSWORD: ${POSTGRES_VERIFIER_PASSWORD:?set verifier database password in .env}
       POSTGRES_WRITER_PASSWORD: ${POSTGRES_WRITER_PASSWORD:?set writer database password in .env}
       POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?set migrator database password in .env}
     volumes:
@@ -160,22 +130,97 @@ services:
   valkey:
     image: valkey/valkey:8.1.3-alpine@sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773
     restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes", "--save", "60", "1"]
     volumes:
       - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
-  qdrant:
-    image: qdrant/qdrant:v1.14.1@sha256:419d72603f5346ee22ffc4606bdb7beb52fcb63077766fab678e6622ba247366
-    restart: unless-stopped
-    profiles: ["optional"]
+  migrate:
+    <<: *runtime-security
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
+    profiles: ["maintenance"]
+    restart: "no"
+    command: ["migrate"]
+    environment:
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_MIGRATOR_POSTGRES_DSN:?set migrator role DSN in .env}
     volumes:
-      - qdrant-data:/qdrant/storage
+      - ./config:/app/config:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-  gotenberg:
-    image: gotenberg/gotenberg:8@sha256:67097317623a503ba2a6a7e9ae8db6929a1f7e1bbd88077bacf2d325fbdab923
+  writer:
+    <<: *runtime-security
+    build:
+      context: .
+      target: writer
+    image: ${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.2.1}
+    profiles: ["writer"]
+    user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
-    profiles: ["optional"]
+    command: ["writer"]
+    environment:
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_LIBRARY_PATH: /library
+      BOOKAUDIT_ARTIFACTS_DIR: /writer-artifacts
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_WRITER_POSTGRES_DSN:?set writer role DSN in .env}
+      BOOKAUDIT_QUEUE__BACKEND: valkey
+      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
+      BOOKAUDIT_READ_ONLY: "false"
+      BOOKAUDIT_LOG_JSON: "true"
+    volumes:
+      - ${BOOKAUDIT_LIBRARY_HOST_PATH:?set in .env}:/library:rw
+      - ./.writer-artifacts:/writer-artifacts
+      - ./config:/app/config:ro
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bookaudit", "writer-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  retention:
+    <<: *runtime-security
+    image: ${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.2.1}
+    profiles: ["writer-maintenance"]
+    user: "${UID:-1000}:${GID:-1000}"
+    restart: "no"
+    command: ["retention"]
+    environment:
+      BOOKAUDIT_PROFILE: production
+      BOOKAUDIT_ARTIFACTS_DIR: /writer-artifacts
+      BOOKAUDIT_DATABASE__BACKEND: postgres
+      BOOKAUDIT_DATABASE__POSTGRES_DSN: ${BOOKAUDIT_WRITER_POSTGRES_DSN:?set writer role DSN in .env}
+      BOOKAUDIT_QUEUE__BACKEND: valkey
+      BOOKAUDIT_QUEUE__VALKEY_URL: redis://valkey:6379/0
+    volumes:
+      - ./.writer-artifacts:/writer-artifacts
+      - ${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}:/backups:ro
+      - ./config:/app/config:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
 
 volumes:
   postgres-data:
   valkey-data:
-  qdrant-data:

@@ -1,312 +1,246 @@
-# Production operations runbook
+# Certificate A production operations
+
+This runbook applies only to the read-only Certificate A stack. Commands that
+start `writer` or `writer-maintenance` are intentionally absent.
+
+## Before every audit
+
+1. Stop Calibre, Calibre Content Server, sync tools, backup jobs, and any other
+   process that can change the library.
+2. Confirm no `metadata.db-wal`, `metadata.db-shm`, or `metadata.db-journal`
+   file exists. Do not delete a sidecar; its presence means the source is not a
+   safe stopped-library snapshot.
+3. Confirm the configured library path is the intended library. The verifier
+   binds its heartbeat and every request to the canonical root hash.
+4. Use the WebUI checkbox to make the explicit stopped-Calibre assertion. It is
+   an operator safety statement, not an automated process detector.
+
+If Calibre starts or any source file changes during a run, cancel the run and
+leave it for evidence review. Never force it back to `pending`.
 
 ## First deployment
 
-Copy `.env.example` to `.env`, replace every placeholder with distinct secrets
-and an absolute library path, then run `./scripts/prepare-production.sh`. This
-creates every bind-mount target with the configured runtime UID/GID and validates
-the complete Compose contract before Docker can create root-owned directories.
-
-Build or pull the exact `BOOKAUDIT_IMAGE`, start PostgreSQL and Valkey, run the
-one-shot migration, then start the writer and app:
+Create a mode-0600 environment file. Use five distinct PostgreSQL passwords, a
+strong internal API key, explicit trusted hosts, and a Certificate A image
+pinned by digest. `BOOKAUDIT_RELEASE_DIGEST` must be the same digest.
 
 ```bash
-docker compose build app
-docker compose up -d --wait postgres valkey
-docker compose --profile maintenance run --rm migrate
-docker compose up -d writer app
+cp .env.example .env
+chmod 600 .env
+# Edit .env and replace every placeholder.
+./scripts/prepare-production.sh
 ```
 
-Do not expose the port until both containers report healthy and authenticated
-`/api/health/ready` returns `ready`.
+Preflight validates the secret relationships, image/release binding, existing
+absolute library, and exact default service graph. It rejects auto-apply and an
+enabled writer pilot.
 
-The writer is Linux-only. Its startup/runtime contract requires `/proc/self/fd`
-and sealable `memfd` support for immutable OPF/cover handoff. A failure to
-create or pass a sealed descriptor is a stop condition, not a reason to fall
-back to pathname-based writes.
+Pull or build the reviewed image, then start infrastructure, migrate once, and
+start the verifier before the app:
+
+```bash
+docker compose pull app verifier postgres valkey
+docker compose up -d --wait postgres valkey
+docker compose --profile maintenance run --rm migrate
+docker compose up -d --wait verifier app
+```
+
+For a local candidate build, `BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` is permitted
+only for disposable validation. It is not production promotion evidence.
+
+Check readiness without placing the API key in the host process list:
+
+```bash
+docker compose exec -T app sh -c \
+  'curl --fail --silent --show-error -H "X-API-Key: $BOOKAUDIT_API_KEY" \
+  http://127.0.0.1:8080/api/health/ready'
+```
+
+The response must be exactly a ready Certificate A response. A 503 includes a
+sanitized code: `configuration_invalid`, `database_unavailable`, or
+`verifier_unavailable`.
+
+## Same-host TLS and whole-site authentication
+
+The backend publishes only `127.0.0.1:${BOOKAUDIT_PORT}`. Run Caddy on the same
+host; never change the binding to `0.0.0.0` or a LAN address.
+
+1. Generate a password hash with `caddy hash-password`. Do not put a plaintext
+   password in the Caddyfile or shell history.
+2. Install `deploy/caddy/Caddyfile.example` as the reviewed Caddyfile.
+3. Provide these variables to the Caddy system service through a root-readable
+   environment file: `BOOKAUDIT_DOMAIN`, `BOOKAUDIT_BASIC_AUTH_USER`,
+   `BOOKAUDIT_BASIC_AUTH_HASH`, `BOOKAUDIT_PORT`, and
+   `BOOKAUDIT_ACME_EMAIL`.
+4. Validate before reload:
+
+   ```bash
+   sudo caddy validate --config /etc/caddy/Caddyfile
+   sudo systemctl reload caddy
+   ```
+
+5. From another private/VPN host, verify an unauthenticated request is rejected,
+   authenticate in a browser, and confirm Overview, Verify, Evidence, and API
+   requests use trusted HTTPS. Enter the separate internal API key in the WebUI
+   prompt; it is held only in page memory and must be entered again after reload.
+
+The `basic_auth` directive has no path matcher, so it covers health, metrics,
+assets, API routes, and future paths. The stored password must be a supported
+hash. See the official [Caddy basic authentication](https://caddyserver.com/docs/caddyfile/directives/basic_auth)
+and [reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
+references.
+
+## Normal audit operation
+
+Start a run from Verify with a positive optional book limit, bounded OCR choice,
+and the stopped-Calibre confirmation. Only one active request per source root is
+admitted.
+
+Expected states:
+
+| State | Operator meaning |
+|---|---|
+| `pending` | Persisted, waiting for a verifier claim |
+| `inventorying` | Verifier owns a live fenced lease and freezes membership |
+| `running` | Frozen books are being audited |
+| `cancelling` | Cancellation was persisted; worker will stop at a safe boundary |
+| `cancelled` | Terminal operator cancellation |
+| `completed` | All selected books have sealed terminal evidence |
+| `completed_with_errors` | Terminal; inspect per-book failures |
+| `failed` | Terminal worker failure; investigate before another representative run |
+| `source_changed` | Source drift detected; keep Calibre stopped and investigate |
+| `blocked_recovery` | Persisted contract cannot safely resume on this release |
+
+The total is intentionally unknown until inventory completes. A verifier crash
+does not authorize an immediate second worker write: the lease must expire, the
+recovery verifier increments the fence, and stale writes are rejected.
+
+Use the WebUI Cancel action. Do not edit lease, fence, status, or evidence rows
+directly. Preserve logs using request IDs; logs and metrics deliberately omit
+library paths, API keys, run IDs as metric labels, and book metadata.
 
 ## Backup
 
-The commands use the PostgreSQL bootstrap administrator inside the private
-database container. Protect `POSTGRES_PASSWORD` as a backup credential;
-application and writer roles intentionally lack schema-wide backup privileges.
+PostgreSQL is authoritative. Valkey contains rate-limit and heartbeat state and
+does not need to be restored for correctness.
 
-Stop mutation intake and the writer, then capture PostgreSQL and the
-writer-exclusive artifacts in the same maintenance window:
+Wait for every run to become terminal, then stop intake and the verifier:
 
 ```bash
-docker compose stop app writer
-backup_dir="${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}/$(date -u +%Y%m%dT%H%M%SZ)"
+docker compose stop app verifier
+backup_dir="${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}/$(date -u +%Y%m%dT%H%M%SZ)-certificate-a"
 install -d -m 0700 "$backup_dir"
-docker compose exec -T postgres pg_dump -U bookaudit -d bookaudit -Fc > "$backup_dir/bookaudit.dump"
-tar -C . -czf "$backup_dir/writer-artifacts.tar.gz" .writer-artifacts
-python scripts/create-backup-manifest.py \
-  "$backup_dir/bookaudit.dump" \
-  "$backup_dir/writer-artifacts.tar.gz" \
-  "$backup_dir/manifest.json"
+docker compose exec -T postgres \
+  pg_dump -U bookaudit -d bookaudit -Fc > "$backup_dir/bookaudit.dump"
+chmod 600 "$backup_dir/bookaudit.dump"
+(cd "$backup_dir" && sha256sum bookaudit.dump > SHA256SUMS)
+chmod 600 "$backup_dir/SHA256SUMS"
+docker compose up -d --wait verifier app
 ```
 
-Store the two files together. Valkey is transport/cache state; the durable DB
-outbox is authoritative, so a Valkey snapshot is not required for correctness.
+Copy the dump and checksum together to protected backup storage. Record the
+exact image digest and Alembic revision in the operator release record, not in a
+file containing secrets.
 
-## Restore into an empty environment
+## Empty-environment restore drill
 
-Provision an empty PostgreSQL database and an empty writer artifacts directory,
-then restore both halves before starting runtime roles:
+Never prove restore by overwriting the production database. Use a clearly named
+disposable Compose project on the same reviewed commit:
 
 ```bash
-docker compose up -d --wait postgres valkey
-docker compose exec -T postgres pg_restore -U bookaudit -d bookaudit < bookaudit.dump
-tar -C . -xzf writer-artifacts.tar.gz
-BOOKAUDIT_REQUIRE_WRITER_READY=false docker compose up -d app
+restore_project=bookaudit-certificate-a-restore-drill
+docker compose -p "$restore_project" up -d --wait postgres
+(cd /protected/path/to/backup && sha256sum --check SHA256SUMS)
+docker compose -p "$restore_project" exec -T postgres \
+  pg_restore -U bookaudit -d bookaudit --clean --if-exists < \
+  /protected/path/to/backup/bookaudit.dump
+docker compose -p "$restore_project" exec -T postgres \
+  psql -U bookaudit -d bookaudit -Atc 'SELECT version_num FROM alembic_version'
 ```
 
-Do **not** start the writer yet. Confirm the restored Alembic revision and ACLs,
-inspect every non-terminal ledger/outbox row, and verify the referenced restore
-artifact hashes against the Calibre library. Resolve `unknown`, `restore_failed`,
-`claimed`, `writing`, `verifying`, and `restoring` cases under the incident
-procedure before allowing any consumer to run. The app is read-only and starts
-with writer-readiness temporarily disabled solely to support inspection.
-
-Only after the ledger and artifacts are accepted:
+Require the expected revision and inspect aggregate run counts. Do not start the
+verifier in the restore drill with a live library path. After evidence is
+recorded, remove only the explicitly named disposable project:
 
 ```bash
-docker compose up -d writer
-BOOKAUDIT_REQUIRE_WRITER_READY=true docker compose up -d --force-recreate app
+docker compose -p "$restore_project" down --volumes
 ```
-
-Confirm authenticated `/api/health/ready` after re-enabling the writer gate. A
-clean-environment `pg_dump`/`pg_restore` drill on 2026-07-12 restored the then
-current Alembic head `b18f4c2d7a90` and the runtime ACLs successfully. The
-current Manifestation V2 Alembic head is `c8e1f0a2b4d6`; it includes the
-supervised-pilot schema from `a72c9d4e8f31` and durable verification-run leases.
-Repeat the clean upgrade and backup/restore drill before promoting that schema.
-Its staged downgrades refuse to discard persisted pilot evidence or to remove
-lease state while any run is leased or any Manifestation V2 run is non-terminal.
 
 ## Upgrade
 
-The signed GHCR procedure below is a legacy mirror-release path, not the normal
-development workflow. Development, review, and CI use Gitea; use the mirror
-release path only for an explicitly authorized release operation.
+1. Require a green automatic Gitea run and clean image scans for the exact
+   commit. Verify the immutable Certificate A digest in the registry.
+2. Wait for terminal runs. Stop `app` and `verifier` and take the backup above.
+3. Retain the previous image digest. Update `.env`, keeping the image and
+   release digest identical, then rerun preflight.
+4. Pull the image and execute the migration profile once.
+5. Start `verifier`, then `app`; require authenticated readiness and the Caddy
+   HTTPS check.
+6. Run one small stopped-library audit before returning to normal limits.
 
-1. Verify the release signature and attestations, pull the digest-pinned image,
-   and retain the prior image digest:
-
-   ```bash
-   cosign verify ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
-     --certificate-identity-regexp='https://github.com/OWNER/REPOSITORY/.github/workflows/release.yml@refs/tags/v.*' \
-     --certificate-oidc-issuer=https://token.actions.githubusercontent.com
-   gh attestation verify oci://ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
-     --repo OWNER/REPOSITORY
-   ```
-
-2. Set `BOOKAUDIT_IMAGE` to that exact digest.
-3. Stop `app` and `writer` and take the paired backup above.
-4. Run `docker compose --profile maintenance run --rm migrate` exactly once.
-5. Start `app` in read-only mode and require readiness to pass.
-6. Start the single writer only after the read-only gate is healthy.
-
-The full production profile sets `BOOKAUDIT_REQUIRE_WRITER_READY=true`. Once the
-writer is enabled, `/api/health/ready` and the writer container healthcheck both
-require a fresh Valkey heartbeat. When the supervised pilot is enabled,
-readiness additionally requires its exact pilot ID, max operations, release
-digest, Alembic head, and canonical library-root hash. During the temporary
-read-only upgrade gate, set it to `false` for the app only; restore it to `true`
-before declaring the write-enabled deployment healthy.
-
-Runtime services never run migrations automatically.
-
-## Supervised Manifestation V2 pilot
-
-Keep `BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=false` during
-ordinary shadow operation. Before a pilot, require the exact-commit Gitea
-real-service gate plus the disposable and restored-clone rehearsals in the
-[Manifestation V2 runbook](../calibration/manifestation-v2-runbook.md).
-
-The operator-owned `.env` must bind a unique pilot ID, one-to-five operation
-budget, and the exact `sha256:...` digest suffix of `BOOKAUDIT_IMAGE`.
-`./scripts/prepare-production.sh` rejects a mutable/mismatched image, missing
-pilot ID, larger budget, disabled writer readiness, or enabled auto-apply.
-
-Queue one manually reviewed Tier A evidence package, wait for its operation and
-outbox to become terminal/published, then validate Calibre readback and rollback
-artifacts before the next package. A consumed reservation is never refunded.
-Metrics must show the pilot and exact writer binding healthy throughout.
-
-Emergency stop order:
-
-```bash
-docker compose stop app writer
-# Set BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__ENABLED=false in .env.
-docker compose run --rm app pilot-stop "$PILOT_ID" --yes
-```
-
-Do not restart the writer until every nonterminal or failed operation is
-classified against live Calibre metadata and its hashed recovery artifacts.
-Closing the row blocks writer revalidation but cannot cancel an external
-Calibre process that had already started. Never reopen or reuse a stopped pilot
-ID; start a separately reviewed pilot only after the incident is resolved.
-
-If the terminal state is exactly `failed`, the outbox is `failed`, no writer
-lease remains, and live Calibre plus recovery evidence prove the write either
-never began or was fully restored, append the incident acknowledgement. The
-command independently requires and locks the stopped pilot row:
-
-```bash
-docker compose run --rm app incident-ack "$OPERATION_ID" \
-  --actor "$OPERATOR" \
-  --reason "Verified Calibre matches before_metadata and recovery hashes" \
-  --yes
-```
-
-This insert-only record preserves the failed operation/outbox while allowing a
-separately reviewed next pilot to pass the historical-outbox gate. It clears
-that acknowledged `failed` row from the active V2-failure alert and increments
-`bookaudit_v2_incidents_acknowledged`. Never use or attempt to emulate this for
-`unknown` or `restore_failed`; the command rejects them. It does not repair
-metadata, reopen a stopped pilot, or refund its reservation.
-Queue admission and the active-failure metric independently recheck the linked
-terminal state, failed outbox, stopped historical pilot, distinct current pilot
-and absence of a book lease; acknowledgement-row presence alone is not enough.
+Runtime app and verifier processes never run Alembic.
 
 ## Rollback
 
-If the schema change is additive and the previous image is N-1 compatible, stop
-runtime roles and restart the previous image digest. If compatibility is not
-explicitly documented, restore the paired database/artifacts backup into an
-empty environment. Never run an ad-hoc Alembic downgrade against live writer
-operations. Before downgrading from `c8e1f0a2b4d6`, stop app and writer and
-confirm this precondition returns zero rows:
+If the release notes explicitly state that the previous image supports the new
+schema, stop runtime services and restore the previous digest. Otherwise,
+restore the pre-upgrade dump into a new empty environment and promote that
+restored database through the host's documented database procedure. Do not run
+an ad hoc Alembic downgrade on production.
 
-```sql
-SELECT run_id, status, finished_at, lease_owner, lease_expires_at
-FROM verificationrun
-WHERE lease_owner IS NOT NULL
-   OR lease_expires_at IS NOT NULL
-   OR (
-        pipeline_version = 'manifestation-v2'
-        AND (
-             finished_at IS NULL
-             OR status NOT IN (
-                  'completed',
-                  'completed_with_errors',
-                  'failed',
-                  'blocked_recovery'
-             )
-        )
-   );
-```
-
-PostgreSQL downgrade additionally acquires an exclusive `NOWAIT` table lock;
-lock contention is a hard stop, not a reason to bypass the migration guard.
-
-## Incident handling
-
-- `unknown` or `restore_failed`: stop writer, preserve DB and artifacts, inspect
-  actual Calibre metadata against `before_metadata` and `target_metadata`.
-- Terminal `failed`: stop intake/writer and prove from Calibre, ledger, outbox,
-  change row, and hashed artifacts whether no mutation occurred or restoration
-  completed. Only then use `incident-ack`; otherwise keep the hard stop.
-- Missing/tampered OPF: do not retry the write; recover the matching artifact
-  from backup and re-run reconciliation.
-- Writer-lock conflict: verify there is exactly one live writer. Do not delete a
-  `BookWriteLock` while its owner may still be running.
-- Low disk: stop writer before deleting anything. Restore points have a 30-day
-  retention and must be cleaned only through the verified retention workflow.
-
-## Restore-point retention
-
-Retention is dry-run by default and operates only on `.writer-artifacts`:
-
-```bash
-docker compose --profile maintenance run --rm retention
-```
-
-After taking and verifying a paired PostgreSQL plus `.writer-artifacts` backup,
-execute the exact previewed cleanup with its audit reference:
-
-```bash
-docker compose --profile maintenance run --rm retention retention \
-  --execute \
-  --backup-reference "/backups/<backup-directory>/manifest.json"
-```
-
-The command verifies both backup checksums, acquires the writer advisory lock,
-rejects a fresh heartbeat or any non-terminal operation, and atomically
-quarantines only the exact inode+manifest-digest set from its preview. It is safe
-to invoke while the writer service exists: if the writer owns the lock, the
-command exits non-zero before mutation. Stopping the writer remains a convenient
-maintenance-window practice, but it is not a human-supplied safety assertion.
-
-The backup manifest and every referenced path component must be regular files
-or directories, never symlinks. Retention holds the advisory lock through all
-ledger, heartbeat, revalidation, quarantine, and deletion work. Record the exit
-status and deleted count, then check artifact disk usage.
-
-If the process is interrupted after the transaction is published, normal
-retention fails closed and prints the pending transaction ID. Preserve the
-original paired backup and inspect the incident before resuming exactly that
-transaction:
-
-```bash
-docker compose --profile maintenance run --rm retention retention \
-  --recover-quarantine "<transaction-id>" \
-  --execute \
-  --backup-reference "/backups/<original-backup-directory>/manifest.json"
-```
-
-Recovery accepts only the same still-verifiable backup manifest whose SHA-256
-digest was bound to the original deletion. It re-acquires the advisory lock and
-re-runs the heartbeat and ledger guards. It then validates the journal,
-transaction and payload inodes, path-location state, and candidate manifest
-digests before mutation. Recovery resumes deletion; it does not roll candidates
-back into the live restore tree.
-
-Never rename, restore, or delete files inside `.retention-quarantine` manually.
-Completed transactions intentionally retain a small `state=deleted` journal as
-a durable tombstone and do not block later retention. Pre-publication staging
-contains no moved candidates and is removed automatically only after its shape
-has been validated as an abandoned empty staging transaction.
-
-## Schema downgrade guard
-
-Do not downgrade a database that contains Manifestation V2 runs, evidence, or
-writer recovery records. The V2 migrations deliberately raise an error instead
-of dropping those columns. Export and verify both the database and writer
-artifacts, finish or reconcile every operation, and use a separately reviewed
-data-migration procedure if a downgrade is ever required.
+Keep the source stopped throughout rollback. An image/schema mismatch causes
+readiness or verifier startup to fail and must not be bypassed.
 
 ## Monitoring alerts
 
-Load `ops/monitoring/alerts.yml` into Prometheus and replace the API-key
-placeholder in `ops/monitoring/prometheus.yml` through the deployment secret
-mechanism. The metrics endpoint is intentionally authenticated in production.
+`ops/monitoring/prometheus.yml` assumes Prometheus runs on the same host and
+scrapes `127.0.0.1:8080`. Store only the internal API key, with no variable name,
+in `/etc/prometheus/secrets/bookaudit_api_key`, owned by the Prometheus account
+and unreadable by other users. The `http_headers.files` setting reads it from
+that protected file; see the official [Prometheus configuration reference](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
 
-- `BookAuditUnavailable`: check container health, then `/api/health/ready` with
-  the API key. Keep the writer stopped if PostgreSQL, Valkey, or its heartbeat is
-  unhealthy.
-- `BookAuditHighServerErrorRate`: correlate the route/status labels with
-  structured logs using `X-Request-ID`; pause new apply requests if writes fail.
-- `BookAuditSlowApi`: inspect database and Valkey latency before scaling API
-  replicas. Never scale the writer beyond one instance.
-- `BookAuditWriterHeartbeatStale`: stop new apply intake and inspect the sole
-  writer before restarting it; never start a second writer as a workaround.
-- `BookAuditOperationalMetricsCollectionFailed`: check app-role database access
-  and Valkey connectivity; treat writer/outbox graphs as unknown until restored.
-- `BookAuditOutboxBacklog`: inspect pending/processing ledger operations and
-  Valkey connectivity. Preserve the database before manual reconciliation.
-- `BookAuditRollbackFailure`: stop the writer immediately and follow the
-  `restore_failed` incident procedure above.
-- `BookAuditV2WriterBindingMismatch`: stop intake and writer; compare the
-  configured image digest, pilot digest, Alembic head and canonical library
-  root. Do not change the persisted binding to make the alert disappear.
-- `BookAuditV2PilotOperationStalled`: stop intake and writer after preserving
-  state; inspect the exact ledger/outbox row and Calibre readback before
-  recovery.
-- `BookAuditV2PilotOperationFailed`: stop and close the exact pilot. Preserve
-  all rollback artifacts. `unknown`/`restore_failed` remain unresolved until
-  repaired; an exactly `failed`, safely reconciled row may use the append-only
-  acknowledgement procedure above before a new pilot.
-- `BookAuditV2PilotBudgetExhausted`: the pilot is complete for operational
-  purposes. Disable and close it; never raise or reset the persisted budget.
+Load `ops/monitoring/alerts.yml` and route at least these alerts:
+
+- `BookAuditUnavailable`: backend cannot be scraped.
+- `BookAuditCertificateANotReady`: database, config, or verifier binding failed.
+- `BookAuditVerifierHeartbeatStale`: verifier stopped or differs by release,
+  schema, or library root.
+- `BookAuditCertificateAMetricsCollectionFailed`: heartbeat or PostgreSQL run
+  metrics failed.
+- `BookAuditCertificateARunStalled`: an active run has no durable heartbeat for
+  more than ten minutes.
+- `BookAuditCertificateARunFailed`: review terminal failed/source-change/
+  blocked-recovery evidence.
+- HTTP server-error and latency alerts.
+
+Prometheus itself should not pass through Caddy; it scrapes the loopback backend
+with the internal API key. Browser users still go through Caddy authentication.
+
+## Incident response
+
+- **Verifier stale:** stop new requests, inspect the verifier container and its
+  release/schema/root binding, then restart only the same reviewed image.
+- **Source changed:** keep Calibre stopped, preserve the run and logs, determine
+  what changed, and start a new run only after the source is stable. Do not
+  overwrite the terminal state.
+- **Blocked recovery:** preserve PostgreSQL and logs. Compare the persisted
+  release/schema/root contract with the deployed image. Restore the matching
+  image or escalate; never loosen contract validation.
+- **Database unavailable or ACL denial:** stop runtime services, verify the
+  exact role DSNs and Alembic head, and rerun the ACL test against a disposable
+  database—not production.
+- **Low disk:** cancel work and stop the verifier. Do not delete evidence rows or
+  PostgreSQL files manually.
+- **Suspected credential exposure:** stop the edge, rotate Caddy credentials,
+  API key, and affected database role password, update mode-0600 files, recreate
+  services, and verify readiness.
+
+Certificate A never requires touching a book file to recover an incident.
+
+## Certificate B prohibition
+
+Do not start the `writer` or `writer-maintenance` profile, set `read_only=false`,
+enable auto-apply, or enable the supervised pilot under this runbook. Those
+actions belong to a future Certificate B release with separate approval and
+restored-clone write drills. Certificate A preflight rejects the writer flags;
+do not bypass it.

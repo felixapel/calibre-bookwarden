@@ -1,238 +1,191 @@
+"""Static release-contract checks for the Certificate A deployment."""
+
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".gitea" / "workflows" / "v1-tests.yml"
 
 
 def test_compose_bootstraps_least_privilege_database_roles() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
     initializer = ROOT / "scripts" / "postgres-init-roles.sh"
 
-    assert initializer.is_file()
     assert "postgres-init-roles.sh:/docker-entrypoint-initdb.d/10-bookaudit-roles.sh:ro" in compose
     script = initializer.read_text()
-    for role in ("bookaudit_app", "bookaudit_writer", "bookaudit_migrator"):
+    for role in ("bookaudit_app", "bookaudit_verifier", "bookaudit_writer", "bookaudit_migrator"):
         assert role in script
     assert "ON_ERROR_STOP=1" in script
     assert "ALTER DEFAULT PRIVILEGES" in script
+    assert "current_database()" in script
 
 
-def test_compose_uses_current_configurable_image_reference() -> None:
+def test_default_compose_is_the_exact_certificate_a_graph() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    assert all("env_file" not in service for service in services.values())
+    assert {name for name, service in services.items() if not service.get("profiles")} == {
+        "app",
+        "verifier",
+        "postgres",
+        "valkey",
+    }
+    assert not any("/library" in volume for volume in services["app"].get("volumes", []))
+    assert any(volume.endswith(":/library:ro") for volume in services["verifier"]["volumes"])
+    assert services["verifier"]["healthcheck"]["test"] == [
+        "CMD",
+        "bookaudit-certificate-a",
+        "verifier-health",
+    ]
+    assert services["writer"]["profiles"] == ["writer"]
+    assert services["retention"]["profiles"] == ["writer-maintenance"]
+    assert any(volume.endswith(":/library:rw") for volume in services["writer"]["volumes"])
+
+
+def test_compose_uses_separate_configurable_certificate_and_writer_images() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 
-    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}") == 4
-    assert "calibre-ai-auditor:v0.1" not in compose
+    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}") == 3
+    assert compose.count("${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.2.1}") == 2
+    assert '"127.0.0.1:${BOOKAUDIT_PORT:-8080}:8080"' in compose
 
 
-def test_runtime_image_has_writable_non_root_home() -> None:
+def test_certificate_a_preflight_does_not_prepare_writer_or_legacy_state() -> None:
+    script = (ROOT / "scripts" / "prepare-production.sh").read_text()
+
+    assert "Certificate A bind mounts" in script
+    assert 'actual_services="$(COMPOSE_PROFILES=' in script
+    assert '"app postgres valkey verifier "' in script
+    assert "backups" in script
+    for excluded in (".state", ".artifacts", ".writer-artifacts", "user_library"):
+        assert excluded not in script
+
+
+def test_runtime_images_are_non_root_with_a_writable_ephemeral_home() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
 
+    assert "USER 10001:10001" in dockerfile
     assert "HOME=/tmp/bookaudit-home" in dockerfile
     assert "XDG_CACHE_HOME=/tmp/bookaudit-home/.cache" in dockerfile
     assert "XDG_CONFIG_HOME=/tmp/bookaudit-home/.config" in dockerfile
 
 
-def test_compose_requires_and_health_checks_the_single_writer() -> None:
-    compose = (ROOT / "docker-compose.yml").read_text()
+def test_default_image_excludes_quarantined_packages_and_calibre() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    pyproject = (ROOT / "pyproject.toml").read_text()
+    certificate = dockerfile.split("FROM runtime-common AS certificate-a", 1)[1]
+    common = dockerfile.split("FROM python:3.12.13-slim-bookworm", 2)[2].split("FROM runtime-common AS writer", 1)[0]
 
-    assert "BOOKAUDIT_REQUIRE_WRITER_READY: ${BOOKAUDIT_REQUIRE_WRITER_READY:-true}" in compose
-    assert '["CMD", "bookaudit", "writer-health"]' in compose
-
-
-def test_production_preflight_creates_all_bind_mount_targets() -> None:
-    preflight = ROOT / "scripts" / "prepare-production.sh"
-
-    assert preflight.is_file()
-    script = preflight.read_text()
-    for directory in (".state", ".artifacts", ".writer-artifacts", "user_library", "backups"):
-        assert directory in script
-    assert "docker compose" in script
-    assert "config -q" in script
-
-
-def test_retention_maintenance_service_is_explicit_and_fail_closed() -> None:
-    compose = (ROOT / "docker-compose.yml").read_text()
-
-    assert "retention:" in compose
-    assert 'command: ["retention"]' in compose
-    assert "./.writer-artifacts:/writer-artifacts" in compose
-    assert "${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}:/backups:ro" in compose
-    assert "BOOKAUDIT_DATABASE__POSTGRES_DSN" in compose
-    assert "--backup-reference is required with --execute" in (ROOT / "src/calibre_ai_auditor/cli/main.py").read_text()
-    assert "acquire_writer_guard" in (ROOT / "src/calibre_ai_auditor/cli/main.py").read_text()
-    runbook = (ROOT / "docs/runbooks/production-operations.md").read_text()
-    assert "run --rm retention retention" in runbook
+    assert "uv sync --frozen --no-dev --no-editable" in dockerfile
+    assert "--extra legacy --extra mcp --extra ingest" in dockerfile
+    assert "FROM python-builder AS python-builder-legacy\n" in dockerfile
+    assert "ENV UV_COMPILE_BYTECODE=0" in dockerfile
+    assert 'ENTRYPOINT ["bookaudit-certificate-a"]' in certificate
+    assert "calibre.txz" not in common
+    assert "--extra legacy" not in certificate
+    base_dependencies = pyproject.split("[project.optional-dependencies]", 1)[0]
+    for dependency in ("openai", "google-genai", "qdrant-client", "fastmcp", "pymupdf4llm"):
+        assert dependency not in base_dependencies
 
 
-def test_release_workflow_publishes_only_after_full_gates() -> None:
-    release = (ROOT / ".github" / "workflows" / "release.yml").read_text()
-    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    legacy_gate = (ROOT / "scripts" / "verify-calibre-gate.sh").read_text()
+def test_canonical_gitea_pipeline_proves_the_exact_release_boundary() -> None:
+    content = WORKFLOW.read_text()
+    parsed = yaml.safe_load(content)
 
-    assert "needs: verify" in release
-    assert "cosign sign --yes" in release
-    assert "attest-build-provenance@" in release
-    assert "attest-sbom@" in release
-    assert "push-by-digest=true" in release
-    assert "docker buildx imagetools create" in release
-    assert "UPDATE operationledger SET state = state WHERE false" in release
-    assert "grep -F '42501'" in release
-    assert "permission denied for table operationledger" in release
-    assert release.index("cosign sign --yes") < release.index("docker buildx imagetools create")
-    assert "Vendor-unfixed vulnerability exception expired" in release
-    assert "benchmark_50k_metadata.py" in release
-    assert "TEST_POSTGRES_DSN" in ci
-    assert "benchmark_50k_metadata.py" in ci
-    assert "|| true" not in legacy_gate
+    assert set(parsed["jobs"]) == {"backend", "real-services", "webui", "container", "benchmarks"}
+    assert "curl |" not in content
+    assert "curl -s" not in content
+    assert "uv lock --check" in content
+    assert "uv run mypy src" in content
+    assert "tests/test_runtime_role_acl_postgres.py" in content
+    assert "tests/test_certificate_a_worker_postgres.py" in content
+    assert "tests/test_certificate_a_real_boundaries.py" in content
+    assert "uv run pytest tests/test_v2_supervised_pilot_integration.py" not in content
+    assert "uvx pip-audit==2.10.1" in content
+    assert "npm audit --audit-level=high" in content
+    assert "--project=chromium --project=mobile-chromium" in content
+    for action in ("actions/checkout@", "astral-sh/setup-uv@", "actions/setup-node@"):
+        for line in (line.strip() for line in content.splitlines() if action in line):
+            revision = line.rsplit("@", 1)[1]
+            assert len(revision) == 40
 
 
-def test_local_gate_uses_executable_checks_without_textual_completion_markers() -> None:
+def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
+    content = WORKFLOW.read_text()
+    container = content.split("\n  container:\n", 1)[1]
+
+    assert "docker build --target certificate-a" in container
+    assert "docker build --target writer" in container
+    assert "test ! -e /opt/calibre/calibredb" in container
+    assert r"u.find_spec(\"openai\") is None" in container
+    assert r"u.find_spec(\"qdrant_client\") is None" in container
+    assert r"u.find_spec(\"fastmcp\") is None" in container
+    assert "docker-compose config --services" in container
+    assert '"app postgres valkey verifier "' in container
+    assert "--profile maintenance --profile writer --profile writer-maintenance config -q" in container
+    assert "--scanners vuln,secret" in container
+    assert "--severity HIGH,CRITICAL --ignore-unfixed" in container
+
+
+def test_webui_uses_only_the_npm_lockfile_and_a_static_mock_server() -> None:
+    playwright = (ROOT / "webui" / "playwright.config.ts").read_text()
+    html = (ROOT / "webui" / "index.html").read_text()
+
+    assert (ROOT / "webui" / "package-lock.json").is_file()
+    assert not (ROOT / "webui" / "pnpm-lock.yaml").exists()
+    assert "npm run build && npm run preview" in playwright
+    assert "BOOKAUDIT_DATABASE__BACKEND" not in playwright
+    assert "fonts.googleapis.com" not in html
+    assert "fonts.gstatic.com" not in html
+
+
+def test_same_host_tls_proxy_authenticates_every_path() -> None:
+    caddyfile = (ROOT / "deploy" / "caddy" / "Caddyfile.example").read_text()
+
+    assert "{$BOOKAUDIT_DOMAIN} {" in caddyfile
+    assert "basic_auth {" in caddyfile
+    assert "basic_auth /api" not in caddyfile
+    assert "reverse_proxy 127.0.0.1:{$BOOKAUDIT_PORT:8080}" in caddyfile
+    assert "-Server" in caddyfile
+    assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains"' in caddyfile
+
+
+def test_monitoring_is_certificate_a_only_and_uses_a_secret_file() -> None:
+    alerts = (ROOT / "ops" / "monitoring" / "alerts.yml").read_text()
+    prometheus = (ROOT / "ops" / "monitoring" / "prometheus.yml").read_text()
+
+    assert "BookAuditVerifierHeartbeatStale" in alerts
+    assert "BookAuditCertificateARunStalled" in alerts
+    assert 'changes(bookaudit_certificate_a_runs{status=~"failed|source_changed|blocked_recovery"}[10m])' in alerts
+    assert "bookaudit_certificate_a_metrics_collection_success" in alerts
+    for excluded in ("WriterHeartbeat", "OutboxBacklog", "V2Pilot"):
+        assert excluded not in alerts
+    assert 'targets: ["127.0.0.1:8080"]' in prometheus
+    assert 'files: ["/etc/prometheus/secrets/bookaudit_api_key"]' in prometheus
+    assert "REPLACE_WITH" not in prometheus
+
+
+def test_canonical_gpl_license_is_installed() -> None:
+    license_text = (ROOT / "LICENSE").read_text()
+
+    assert "GNU GENERAL PUBLIC LICENSE" in license_text
+    assert "Version 3, 29 June 2007" in license_text
+    assert "COPY LICENSE /app/LICENSE" in (ROOT / "Dockerfile").read_text()
+
+
+def test_local_gate_uses_executable_checks_not_completion_markers() -> None:
     gate = (ROOT / "scripts" / "verify-calibre-gate.sh").read_text()
 
     for command in (
         "uv lock --check",
-        "uv sync --frozen --extra dev",
+        "uv sync --frozen",
         "uv run ruff check .",
         "uv run ruff format --check .",
         "uv run mypy src",
         "uv run pytest",
-        "uv run bookaudit --help",
+        "uv run bookaudit-certificate-a --help",
     ):
         assert command in gate
-    for textual_gate in ("pending markers", "rg komf", "all mandatory checks passed"):
-        assert textual_gate not in gate.lower()
-
-
-def test_webui_uses_only_the_npm_lockfile() -> None:
-    assert (ROOT / "webui" / "package-lock.json").is_file()
-    assert not (ROOT / "webui" / "pnpm-lock.yaml").exists()
-
-
-def test_all_production_gates_force_real_retention_services() -> None:
-    workflows = (
-        ROOT / ".gitea" / "workflows" / "v1-tests.yml",
-        ROOT / ".github" / "workflows" / "ci.yml",
-        ROOT / ".github" / "workflows" / "release.yml",
-    )
-
-    for workflow in workflows:
-        content = workflow.read_text()
-        assert "TEST_POSTGRES_DSN" in content
-        assert "TEST_VALKEY_URL" in content
-        assert "valkey/valkey:8.1.3-alpine@sha256:" in content
-        assert "uv run bookaudit migrate" in content
-        assert "uv run pytest tests/test_retention_postgres_valkey.py -q" in content
-
-
-def test_browser_gate_bootstraps_and_launches_backend_portably() -> None:
-    playwright = (ROOT / "webui" / "playwright.config.ts").read_text()
-    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    frontend = ci.split("  frontend:\n", 1)[1].split("\n  container:\n", 1)[0]
-
-    assert "source .venv/bin/activate" not in playwright
-    assert "cwd: ROOT_DIR" in playwright
-    assert "BOOKAUDIT_STATIC_DIR: STATIC_DIR" in playwright
-    assert "astral-sh/setup-uv@" in frontend
-    assert 'python-version: "3.12.13"' in frontend
-    assert "uv sync --frozen --extra dev" in frontend
-
-
-def test_github_image_gates_keep_secret_scanning_with_one_exact_dependency_exclusion() -> None:
-    workflows = (
-        ROOT / ".github" / "workflows" / "ci.yml",
-        ROOT / ".github" / "workflows" / "release.yml",
-    )
-    action = "uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25"
-    trivy_image = "aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293"
-    excluded_file = "opt/venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc"
-
-    for workflow in workflows:
-        content = workflow.read_text()
-        assert content.count(trivy_image) == 1
-        install = content.split("      - name: Install exact Trivy scanner\n", 1)[1].split("\n      - ", 1)[0]
-        assert f"TRIVY_IMAGE: {trivy_image}" in install
-        assert 'docker pull "$TRIVY_IMAGE"' in install
-        assert 'container_id=$(docker create "$TRIVY_IMAGE")' in install
-        assert 'docker cp "$container_id:/usr/local/bin/trivy" "$RUNNER_TEMP/trivy-bin/trivy"' in install
-        assert 'test "$("$RUNNER_TEMP/trivy-bin/trivy" --version)" = "Version: 0.56.1"' in install
-        assert 'printf \'%s\\n\' "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"' in install
-        assert content.count(action) == 1
-        scan = content.split(action, 1)[1].split("\n      - ", 1)[0]
-        settings = [line.strip() for line in scan.splitlines()]
-        assert [line for line in settings if line.startswith("scanners:")] == ["scanners: vuln,secret"]
-        assert [line for line in settings if line.startswith("skip-files:")] == [f"skip-files: {excluded_file}"]
-        assert [line for line in settings if line.startswith("exit-code:")] == ['exit-code: "1"']
-        assert [line for line in settings if line.startswith("severity:")] == ["severity: HIGH,CRITICAL"]
-        assert [line for line in settings if line.startswith("ignore-unfixed:")] == ["ignore-unfixed: true"]
-        assert [line for line in settings if line.startswith("skip-setup-trivy:")] == ["skip-setup-trivy: true"]
-        assert not [line for line in settings if line.startswith("version:")]
-        assert [line for line in settings if line.startswith("cache:")] == ['cache: "false"']
-
-
-def test_gitea_image_gate_bootstraps_docker_and_runs_pinned_trivy() -> None:
-    content = (ROOT / ".gitea" / "workflows" / "v1-tests.yml").read_text()
-    container = content.split("\n  container:\n", 1)[1]
-    excluded_file = "opt/venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc"
-    trivy_image = "aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293"
-
-    assert 'DOCKER_BUILDKIT: "1"' in container
-    assert "apt-get install -y --no-install-recommends docker.io docker-compose" in container
-    assert "docker/setup-buildx-action@" not in container
-    assert "aquasecurity/trivy-action@" not in container
-    assert "docker-compose --profile maintenance --profile optional config -q" in container
-    assert '-v "$PWD/ops/monitoring:/etc/prometheus:ro"' not in container
-    assert "docker cp ops/monitoring/." in container
-
-    scan = container.split("      - name: Scan image for high vulnerabilities\n", 1)[1]
-    settings = [line.strip().removesuffix("\\").strip() for line in scan.splitlines()]
-    assert [line for line in settings if line.startswith("aquasec/trivy@sha256:")] == [f"{trivy_image} image"]
-    assert [line for line in settings if line.startswith("--scanners ")] == ["--scanners vuln,secret"]
-    assert [line for line in settings if line.startswith("--skip-files ")] == [f"--skip-files {excluded_file}"]
-    assert [line for line in settings if line.startswith("--exit-code ")] == ["--exit-code 1"]
-    assert [line for line in settings if line.startswith("--severity ")] == ["--severity HIGH,CRITICAL"]
-    assert [line for line in settings if line.startswith("--ignore-unfixed")] == ["--ignore-unfixed"]
-
-
-def test_ci_image_contracts_supply_an_ephemeral_compose_env_file() -> None:
-    workflows = (
-        (ROOT / ".gitea" / "workflows" / "v1-tests.yml", "docker-compose"),
-        (ROOT / ".github" / "workflows" / "ci.yml", "docker compose"),
-    )
-
-    for workflow, compose in workflows:
-        container = workflow.read_text().split("\n  container:\n", 1)[1]
-        cleanup = "trap 'rm -f .env' EXIT"
-        create = "install -m 0600 /dev/null .env"
-        validate = f"{compose} --profile maintenance --profile optional config -q"
-        assert cleanup in container
-        assert create in container
-        assert container.index(cleanup) < container.index(create) < container.index(validate)
-
-
-def test_github_diagnostic_artifacts_cannot_mask_quality_gate_results() -> None:
-    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    upload = "uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
-
-    assert ci.count(upload) == 2
-    for block in ci.split(upload)[1:]:
-        step = block.split("\n      - ", 1)[0]
-        assert "continue-on-error: true" in step
-        assert "if: always()" in step
-        assert "retention-days: 1" in step
-
-
-def test_github_image_cache_export_cannot_mask_the_build_result() -> None:
-    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    container = ci.split("\n  container:\n", 1)[1]
-
-    assert "cache-from: type=gha" in container
-    assert "cache-to: type=gha,mode=max,ignore-error=true" in container
-
-
-def test_github_local_image_gate_does_not_request_unloadable_attestations() -> None:
-    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    container = ci.split("\n  container:\n", 1)[1]
-    build = container.split("      - name: Build production image from locks\n", 1)[1].split("\n      - ", 1)[0]
-
-    assert "load: true" in build
-    assert "provenance: false" in build
-    assert "sbom: false" in build
+    assert "|| true" not in gate

@@ -12,7 +12,9 @@ import logging
 import os
 import re
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -25,9 +27,16 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.gzip import GZipMiddleware
 
 from calibre_ai_auditor.config.settings import Settings, load_settings
-from calibre_ai_auditor.storage.db import get_engine
+from calibre_ai_auditor.storage.db import expected_schema_revision, get_engine
 from calibre_ai_auditor.verification.metrics import get_metrics
-from calibre_ai_auditor.web.api.production_verify import router as production_verify_router
+from calibre_ai_auditor.web.api.production_review import router as production_review_router
+from calibre_ai_auditor.web.api.production_verify import (
+    _canonical_root,
+    _configuration_errors,
+)
+from calibre_ai_auditor.web.api.production_verify import (
+    router as production_verify_router,
+)
 from calibre_ai_auditor.web.observability import request_id_context
 
 logger = logging.getLogger(__name__)
@@ -36,7 +45,6 @@ SettingsProvider = Callable[[], Settings]
 EngineProvider = Callable[[Settings], Engine]
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-COVER_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 REJECTED_API_KEYS = {
     "replace-with-at-least-32-random-characters",
     "change-me",
@@ -44,8 +52,21 @@ REJECTED_API_KEYS = {
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
     "form-action 'self'; object-src 'none'; img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
+    "style-src 'self'; script-src 'self'; connect-src 'self'"
 )
+CERTIFICATE_A_RUN_STATUSES = (
+    "pending",
+    "inventorying",
+    "running",
+    "cancelling",
+    "cancelled",
+    "completed",
+    "completed_with_errors",
+    "failed",
+    "source_changed",
+    "blocked_recovery",
+)
+CERTIFICATE_A_ACTIVE_STATUSES = ("pending", "inventorying", "running", "cancelling")
 
 
 def _api_key_is_strong(value: str) -> bool:
@@ -64,12 +85,16 @@ def _settings(request: Request) -> Settings:
     return provider()
 
 
-def _unavailable() -> JSONResponse:
-    """Fail closed until the durable Certificate A repository is attached."""
-    return JSONResponse(
-        status_code=503,
-        content={"detail": "Certificate A verification storage is not ready"},
-    )
+def _as_utc_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def create_production_app(
@@ -79,15 +104,60 @@ def create_production_app(
     static_dir: Path | None = None,
 ) -> FastAPI:
     """Build the isolated Certificate A ASGI application."""
+
+    @asynccontextmanager
+    async def production_lifespan(runtime_app: FastAPI) -> AsyncIterator[None]:
+        settings = settings_provider()
+        expected_key = settings.api_key.get_secret_value() if settings.api_key else ""
+        if _configuration_errors(settings) or not _api_key_is_strong(expected_key):
+            raise RuntimeError("Certificate A production configuration is invalid")
+        checker = runtime_app.state.database_readiness_checker
+        checker(settings)
+        yield
+
     application = FastAPI(
         title="Calibre AI Auditor Certificate A",
         version="1.2.1",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=production_lifespan,
     )
     application.state.settings_provider = settings_provider
     application.state.engine_provider = engine_provider
+    initial_settings = settings_provider()
+    expected_revision = expected_schema_revision()
+    from calibre_ai_auditor.apply.heartbeat import library_root_sha256
+    from calibre_ai_auditor.verification.heartbeat import read_verifier_heartbeat
+
+    application.state.expected_schema_revision = expected_revision
+    application.state.library_root_sha256 = (
+        library_root_sha256(_canonical_root(initial_settings)) if initial_settings.library.path is not None else None
+    )
+
+    def check_database(settings: Settings) -> None:
+        engine = engine_provider(settings)
+        if engine.dialect.name != "postgresql":
+            raise RuntimeError("Certificate A requires PostgreSQL")
+        with engine.connect() as connection:
+            role, revision = connection.exec_driver_sql(
+                "SELECT current_user, (SELECT version_num FROM alembic_version)"
+            ).one()
+        if role != "bookaudit_app" or revision != expected_revision:
+            raise RuntimeError("Certificate A app database binding is invalid")
+
+    application.state.database_readiness_checker = check_database
+    application.state.verifier_heartbeat_reader = lambda settings: read_verifier_heartbeat(
+        settings.queue.valkey_url,
+        timeout=settings.queue.connect_timeout_seconds,
+    )
+    metrics_registry = get_metrics()
+    metrics_registry.set_certificate_a_ready(ready=False)
+    metrics_registry.set_verifier_health(fresh=False)
+    metrics_registry.set_certificate_a_metrics_collection(success=False)
+    metrics_registry.set_certificate_a_oldest_active_heartbeat_age(0.0)
+    for run_status in CERTIFICATE_A_RUN_STATUSES:
+        metrics_registry.set_certificate_a_run_depth(run_status, 0)
     application.add_middleware(GZipMiddleware, minimum_size=1_000)
 
     @application.middleware("http")
@@ -214,27 +284,135 @@ def create_production_app(
     @application.get("/api/health/ready")
     async def readiness(request: Request) -> dict[str, Any]:
         settings = _settings(request)
-        contract_ok = bool(
-            settings.profile == "production"
-            and settings.database.backend == "postgres"
-            and settings.queue.backend == "valkey"
-            and settings.library.read_only
-            and settings.library.path
-            and settings.library.path.is_dir()
-            and not settings.allow_remote_file_upload
-            and not settings.privacy.allow_remote_text
-            and not settings.privacy.allow_remote_images
-            and not settings.manifestation_v2.auto_apply.enabled
-            and not settings.manifestation_v2.supervised_pilot.enabled
-        )
-        if not contract_ok:
-            raise HTTPException(status_code=503, detail={"status": "not_ready"})
+        runtime_metrics = get_metrics()
+        contract_errors = _configuration_errors(settings)
+        if (
+            contract_errors
+            or not settings.rate_limits.enabled
+            or settings.rate_limits.backend != "valkey"
+            or not _api_key_is_strong(settings.api_key.get_secret_value() if settings.api_key else "")
+        ):
+            runtime_metrics.set_certificate_a_ready(ready=False)
+            raise HTTPException(
+                status_code=503,
+                detail={"status": "not_ready", "code": "configuration_invalid"},
+            )
+        try:
+            checker = request.app.state.database_readiness_checker
+            checker(settings)
+        except Exception:
+            logger.exception("certificate_a_database_not_ready")
+            runtime_metrics.set_certificate_a_ready(ready=False)
+            raise HTTPException(
+                status_code=503,
+                detail={"status": "not_ready", "code": "database_unavailable"},
+            ) from None
+
+        from calibre_ai_auditor.verification.heartbeat import verifier_heartbeat_is_fresh
+
+        try:
+            reader = request.app.state.verifier_heartbeat_reader
+            heartbeat = reader(settings)
+            root_sha256 = library_root_sha256(_canonical_root(settings))
+            verifier_ready = verifier_heartbeat_is_fresh(
+                heartbeat,
+                release_digest=settings.release_digest or "",
+                alembic_revision=expected_revision,
+                library_root_sha256=root_sha256,
+                max_age_seconds=settings.verifier.heartbeat_max_age_seconds,
+            )
+        except Exception:
+            logger.exception("certificate_a_verifier_readiness_failed")
+            verifier_ready = False
+        runtime_metrics.set_verifier_health(fresh=verifier_ready)
+        if not verifier_ready:
+            runtime_metrics.set_certificate_a_ready(ready=False)
+            raise HTTPException(
+                status_code=503,
+                detail={"status": "not_ready", "code": "verifier_unavailable"},
+            )
+        runtime_metrics.set_certificate_a_ready(ready=True)
         return {"status": "ready", "certificate": "A"}
 
     @application.get("/api/metrics")
-    async def metrics() -> Response:
+    async def metrics(request: Request) -> Response:
+        settings = _settings(request)
+        runtime_metrics = get_metrics()
+        collection_ok = True
+        configuration_ready = not (
+            _configuration_errors(settings)
+            or not settings.rate_limits.enabled
+            or settings.rate_limits.backend != "valkey"
+            or not _api_key_is_strong(settings.api_key.get_secret_value() if settings.api_key else "")
+        )
+
+        try:
+            checker = request.app.state.database_readiness_checker
+            checker(settings)
+            database_ready = True
+        except Exception:
+            logger.exception("certificate_a_database_readiness_metrics_failed")
+            database_ready = False
+            collection_ok = False
+
+        try:
+            reader = request.app.state.verifier_heartbeat_reader
+            heartbeat = reader(settings)
+            root_sha256 = library_root_sha256(_canonical_root(settings))
+            from calibre_ai_auditor.verification.heartbeat import verifier_heartbeat_is_fresh
+
+            verifier_fresh = verifier_heartbeat_is_fresh(
+                heartbeat,
+                release_digest=settings.release_digest or "",
+                alembic_revision=expected_revision,
+                library_root_sha256=root_sha256,
+                max_age_seconds=settings.verifier.heartbeat_max_age_seconds,
+            )
+        except Exception:
+            logger.exception("certificate_a_verifier_metrics_failed")
+            verifier_fresh = False
+            collection_ok = False
+        runtime_metrics.set_verifier_health(fresh=verifier_fresh)
+        runtime_metrics.set_certificate_a_ready(ready=configuration_ready and database_ready and verifier_fresh)
+
+        for run_status in CERTIFICATE_A_RUN_STATUSES:
+            runtime_metrics.set_certificate_a_run_depth(run_status, 0)
+        runtime_metrics.set_certificate_a_oldest_active_heartbeat_age(0.0)
+        try:
+            engine = request.app.state.engine_provider(settings)
+            with engine.connect() as connection:
+                rows = connection.exec_driver_sql(
+                    """
+                    SELECT status, COUNT(*)
+                    FROM verificationrun
+                    WHERE contract_version = 'certificate-a-v1'
+                      AND pipeline_version = 'manifestation-v2'
+                    GROUP BY status
+                    """
+                ).all()
+                oldest_active = connection.exec_driver_sql(
+                    """
+                    SELECT MIN(COALESCE(heartbeat_at, started_at))
+                    FROM verificationrun
+                    WHERE contract_version = 'certificate-a-v1'
+                      AND pipeline_version = 'manifestation-v2'
+                      AND status IN ('pending', 'inventorying', 'running', 'cancelling')
+                    """
+                ).scalar_one_or_none()
+            for run_status, count in rows:
+                if run_status in CERTIFICATE_A_RUN_STATUSES:
+                    runtime_metrics.set_certificate_a_run_depth(str(run_status), int(count))
+            oldest_active_at = _as_utc_datetime(oldest_active)
+            if oldest_active_at is not None:
+                age_seconds = (datetime.now(UTC) - oldest_active_at).total_seconds()
+                runtime_metrics.set_certificate_a_oldest_active_heartbeat_age(age_seconds)
+        except Exception:
+            logger.exception("certificate_a_database_metrics_failed")
+            collection_ok = False
+
+        runtime_metrics.set_certificate_a_metrics_collection(success=collection_ok)
         return Response(
-            content=get_metrics().render(),
+            content=runtime_metrics.render(),
             media_type="text/plain; version=0.0.4",
         )
 
@@ -263,18 +441,7 @@ def create_production_app(
         }
 
     application.include_router(production_verify_router, prefix="/api")
-    application.add_api_route("/api/review/v2", _unavailable, methods=["GET"])
-    application.add_api_route("/api/review/v2/{evidence_id}", _unavailable, methods=["GET"])
-
-    @application.get("/api/covers/{book_key}.jpg")
-    async def cover(book_key: str, request: Request) -> FileResponse:
-        if not COVER_KEY_PATTERN.fullmatch(book_key):
-            raise HTTPException(status_code=404, detail="Cover not found")
-        covers_root = _settings(request).storage.artifacts_dir / "covers"
-        candidate = covers_root / f"{book_key}.jpg"
-        if not candidate.is_file():
-            raise HTTPException(status_code=404, detail="Cover not found")
-        return FileResponse(candidate)
+    application.include_router(production_review_router, prefix="/api")
 
     @application.post("/api/apply")
     async def retired_apply() -> JSONResponse:
@@ -286,12 +453,12 @@ def create_production_app(
     resolved_static = (static_dir or _default_static_dir()).resolve()
     index_file = resolved_static / "index.html"
     assets_dir = resolved_static / "assets"
-    favicon = resolved_static / "favicon.ico"
+    favicon = resolved_static / "favicon.svg"
 
     if assets_dir.is_dir():
         application.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @application.get("/favicon.ico", response_model=None)
+    @application.get("/favicon.svg", response_model=None)
     async def favicon_file() -> FileResponse:
         if not favicon.is_file():
             raise HTTPException(status_code=404, detail="Not found")

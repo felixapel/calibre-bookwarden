@@ -11,18 +11,23 @@ SPEC.loader.exec_module(MODULE)
 
 def _valid_env(library: Path, backups: Path) -> str:
     return f"""\
+UID=1000
+GID=1000
 BOOKAUDIT_LIBRARY_HOST_PATH={library}
 BOOKAUDIT_BACKUP_HOST_PATH={backups}
 POSTGRES_PASSWORD=admin-password-abcdefghijklmnopqrstuvwxyz
 POSTGRES_APP_PASSWORD=app-password-abcdefghijklmnopqrstuvwxyz
+POSTGRES_VERIFIER_PASSWORD=verifier-password-abcdefghijklmnopqrstuvwxyz
 POSTGRES_WRITER_PASSWORD=writer-password-abcdefghijklmnopqrstuvwxyz
 POSTGRES_MIGRATOR_PASSWORD=migrator-password-abcdefghijklmnopqrstuvwxyz
 BOOKAUDIT_APP_POSTGRES_DSN=postgresql+psycopg://bookaudit_app:app-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
+BOOKAUDIT_VERIFIER_POSTGRES_DSN=postgresql+psycopg://bookaudit_verifier:verifier-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
 BOOKAUDIT_WRITER_POSTGRES_DSN=postgresql+psycopg://bookaudit_writer:writer-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
 BOOKAUDIT_MIGRATOR_POSTGRES_DSN=postgresql+psycopg://bookaudit_migrator:migrator-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
 BOOKAUDIT_API_KEY=api-key-with-32-characters-and-entropy-9Z
-BOOKAUDIT_TRUSTED_HOSTS=books.example.test
+BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,books.example.test
 BOOKAUDIT_IMAGE=registry.example.test/bookaudit@sha256:{"a" * 64}
+BOOKAUDIT_RELEASE_DIGEST=sha256:{"a" * 64}
 """
 
 
@@ -58,7 +63,55 @@ def test_placeholders_shared_secrets_and_mutable_image_fail(tmp_path: Path) -> N
     assert any("chmod 600" in error for error in errors)
 
 
-def test_supervised_pilot_requires_exact_runtime_binding(tmp_path: Path) -> None:
+def test_private_health_hosts_are_required(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    env.write_text(
+        _valid_env(library, backups).replace(
+            "localhost,127.0.0.1,books.example.test",
+            "books.example.test",
+        )
+    )
+    env.chmod(0o600)
+
+    errors = MODULE.validate(env)
+
+    assert errors == ["BOOKAUDIT_TRUSTED_HOSTS must include localhost and 127.0.0.1 for private health checks"]
+
+
+def test_root_runtime_identity_is_rejected(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    env.write_text(_valid_env(library, backups).replace("UID=1000\nGID=1000", "UID=0\nGID=0"))
+    env.chmod(0o600)
+
+    assert MODULE.validate(env) == ["UID and GID must be explicit positive non-root integers"]
+
+
+def test_api_key_cannot_reuse_a_database_password(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    env.write_text(
+        _valid_env(library, backups).replace(
+            "api-key-with-32-characters-and-entropy-9Z",
+            "admin-password-abcdefghijklmnopqrstuvwxyz",
+        )
+    )
+    env.chmod(0o600)
+
+    assert MODULE.validate(env) == ["BOOKAUDIT_API_KEY must be distinct from every PostgreSQL password"]
+
+
+def test_certificate_a_rejects_supervised_writer_pilot(tmp_path: Path) -> None:
     library = tmp_path / "library"
     library.mkdir()
     backups = tmp_path / "backups"
@@ -76,7 +129,9 @@ BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__MAX_OPERATIONS=5
     env.write_text(content)
     env.chmod(0o600)
 
-    assert MODULE.validate(env) == []
+    errors = MODULE.validate(env)
+
+    assert errors == ["Certificate A does not permit the supervised writer pilot"]
 
 
 def test_supervised_pilot_rejects_unsafe_or_mismatched_binding(tmp_path: Path) -> None:
@@ -99,8 +154,5 @@ BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__MAX_OPERATIONS=6
 
     errors = MODULE.validate(env)
 
-    assert any("pilot ID" in error for error in errors)
-    assert any("must match BOOKAUDIT_IMAGE" in error for error in errors)
-    assert any("between 1 and 5" in error for error in errors)
-    assert any("writer readiness" in error for error in errors)
     assert any("auto-apply" in error for error in errors)
+    assert any("does not permit" in error for error in errors)

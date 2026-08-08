@@ -1,33 +1,19 @@
-import { expect, test } from '@playwright/test'
-import { setApiKey } from './helpers/auth'
+import { expect, test, type Page } from '@playwright/test'
 
-const tierASummary = {
+const summary = {
   evidence_id: 'evidence-tier-a',
-  run_id: 'run-v2',
+  run_id: 'verify_certificate_a_001',
   book_key: 'calibre:1',
-  created_at: '2026-07-14T12:00:00Z',
+  created_at: '2026-08-08T10:01:00Z',
   state: 'shadowed',
   tier: 'A',
   current_metadata: { title: 'Old title', authors: ['Current Author'] },
   manifestation_ids: { isbn: '9780306406157' },
-  patch_fields: ['title', 'publisher'],
+  patch_fields: ['title'],
   risk_flags: [],
 }
 
-const tierBSummary = {
-  evidence_id: 'evidence-tier-b',
-  run_id: 'run-v2',
-  book_key: 'calibre:2',
-  created_at: '2026-07-14T12:01:00Z',
-  state: 'review',
-  tier: 'B',
-  current_metadata: { title: 'Unresolved edition', authors: ['Unknown Author'] },
-  manifestation_ids: {},
-  patch_fields: [],
-  risk_flags: ['manifestation_unresolved'],
-}
-
-const detailFor = (summary: typeof tierASummary | typeof tierBSummary) => ({
+const detail = {
   status: 'success',
   data: {
     package: {
@@ -40,213 +26,90 @@ const detailFor = (summary: typeof tierASummary | typeof tierBSummary) => ({
       state: summary.state,
       snapshot: {
         book_key: summary.book_key,
-        calibre_book_id: summary.book_key === 'calibre:1' ? 1 : 2,
+        calibre_book_id: 1,
         current_metadata: summary.current_metadata,
-        files: [`/library/${summary.book_key}.epub`],
-        library_root: '/library',
+        files: [`calibre-offline:${'a'.repeat(64)}:1:EPUB`],
         snapshot_sha256: '1'.repeat(64),
       },
-      formats: [
-        {
-          path: `/library/${summary.book_key}.epub`,
-          format: 'EPUB',
-          sha256: '2'.repeat(64),
-          status: 'readable',
-          identifiers: summary.manifestation_ids,
-          title: summary.current_metadata.title,
-          authors: summary.current_metadata.authors,
-          languages: ['en'],
-          evidence_ids: ['source-title'],
-          error: null,
-        },
-      ],
-      source_evidence: [
-        {
-          evidence_id: 'source-title',
-          root_id: 'ebook-content',
-          independence_root: null,
-          source_kind: 'content_native',
-          field: 'title',
-          value: 'Exact title',
-          manifestation_ids: summary.manifestation_ids,
-          locator: 'EPUB title page',
-          artifact_sha256: '3'.repeat(64),
-          source_url: null,
-          authoritative: true,
-        },
-      ],
+      formats: [{
+        path: `calibre-offline:${'a'.repeat(64)}:1:EPUB`,
+        format: 'EPUB',
+        sha256: '2'.repeat(64),
+        status: 'readable',
+        identifiers: summary.manifestation_ids,
+        title: 'Exact title',
+        authors: ['Exact Author'],
+        languages: ['en'],
+        evidence_ids: ['source-title'],
+        error: null,
+      }],
+      source_evidence: [{
+        evidence_id: 'source-title',
+        root_id: 'google-books-isbn',
+        independence_root: 'google-books',
+        source_kind: 'provider',
+        field: 'title',
+        value: 'Exact title',
+        locator: 'Google Books exact ISBN response',
+        authoritative: true,
+      }],
       identity: {
-        tier: summary.tier,
+        tier: 'A',
         manifestation_ids: summary.manifestation_ids,
-        field_decisions:
-          summary.tier === 'A'
-            ? {
-                title: {
-                  field: 'title',
-                  current_value: 'Old title',
-                  resolved_value: 'Exact title',
-                  status: 'auto',
-                  evidence_ids: ['source-title'],
-                  root_ids: ['ebook-content'],
-                  reasons: ['Exact manifestation corroborated'],
-                },
-              }
-            : {},
-        auto_patch: summary.tier === 'A' ? { title: 'Exact title', publisher: 'Exact Publisher' } : {},
-        risk_flags: summary.risk_flags,
-        reasons: summary.tier === 'A' ? ['Tier A exact identity'] : ['Manifestation remains unresolved'],
+        auto_patch: { title: 'Exact title' },
+        risk_flags: [],
+        reasons: ['Exact ISBN evidence agreed'],
       },
-      privacy_receipts: [],
       warnings: [],
       error: null,
-      package_sha256: '4'.repeat(64),
+      package_sha256: '3'.repeat(64),
     },
     authorization: null,
     operation: null,
+    writes_enabled: false,
   },
+}
+
+async function mockEvidence(page: Page) {
+  await page.route(/\/api\/health\/ready$/, (route) => route.fulfill({ json: { status: 'ready', certificate: 'A' } }))
+  await page.route(/\/api\/review\/v2(?:\?.*)?$/, (route) => route.fulfill({ json: { status: 'success', data: [summary], meta: { total: 1, limit: 50, offset: 0 } } }))
+  await page.route(/\/api\/review\/v2\/evidence-tier-a$/, (route) => route.fulfill({ json: detail }))
+}
+
+test.beforeEach(async ({ page }) => mockEvidence(page))
+
+test('lists only sealed Certificate A evidence', async ({ page }) => {
+  await page.goto('/review')
+  await expect(page.getByRole('heading', { name: 'Sealed evidence', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Old title/ })).toBeVisible()
+  await expect(page.getByText(/Nothing on this screen can authorize/)).toBeVisible()
 })
 
-test.describe('Review page — sealed Manifestation V2 workflow', () => {
-  test.beforeEach(async ({ page }) => {
-    await setApiKey(page)
-    await page.route(/\/api\/review\/v2(?:\?.*)?$/, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          status: 'success',
-          data: [tierASummary, tierBSummary],
-          meta: { total: 2, limit: 50, offset: 0 },
-        }),
-      })
-    })
-    await page.route(/\/api\/review\/v2\/evidence-tier-a$/, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(detailFor(tierASummary)),
-      })
-    })
-    await page.route(/\/api\/review\/v2\/evidence-tier-b$/, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(detailFor(tierBSummary)),
-      })
-    })
+test('shows identities, format hashes, evidence, and shadow differences', async ({ page }) => {
+  await page.goto('/review/evidence-tier-a')
+  await expect(page.getByRole('heading', { name: 'Old title' })).toBeVisible()
+  await expect(page.getByText('9780306406157')).toBeVisible()
+  await expect(page.getByText('2'.repeat(64))).toBeVisible()
+  await expect(page.getByText('Google Books exact ISBN response')).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Exact title' })).toBeVisible()
+  await expect(page.getByText(/writes are disabled by the API contract/)).toBeVisible()
+})
+
+test('has no production authorization, queue, or apply action', async ({ page }) => {
+  await page.goto('/review/evidence-tier-a')
+  for (const label of [/authorize/i, /queue.*write/i, /apply/i]) {
+    await expect(page.getByRole('button', { name: label })).toHaveCount(0)
+  }
+})
+
+test('passes run and tier filters to the read-only endpoint', async ({ page }) => {
+  let requestedUrl = ''
+  await page.route(/\/api\/review\/v2(?:\?.*)?$/, async (route) => {
+    requestedUrl = route.request().url()
+    await route.fulfill({ json: { status: 'success', data: [summary], meta: { total: 1, limit: 50, offset: 0 } } })
   })
-
-  test('lists only V2 evidence and has no bulk queue action', async ({ page }) => {
-    await page.goto('/review')
-
-    await expect(page.getByRole('heading', { name: 'Manifestation review' })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Old title/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Unresolved edition/ })).toBeVisible()
-    await expect(page.getByText('Legacy V1 records are historical and read-only')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Queue Approved Fixes/i })).toHaveCount(0)
-  })
-
-  test('shows exact manifestation evidence, hashes, and proposed field diff', async ({ page }) => {
-    await page.goto('/review')
-    await page.getByRole('button', { name: /Old title/ }).click()
-
-    await expect(page.getByText('Tier A', { exact: true }).last()).toBeVisible()
-    await expect(page.getByText('9780306406157')).toBeVisible()
-    await expect(page.getByText('EPUB title page')).toBeVisible()
-    await expect(page.getByText('2'.repeat(64))).toBeVisible()
-    await expect(page.getByText('Old title', { exact: true }).last()).toBeVisible()
-    await expect(page.getByText('Exact title', { exact: true })).toBeVisible()
-  })
-
-  test('keeps Tier B evidence read-only', async ({ page }) => {
-    await page.goto('/review')
-    await page.getByRole('button', { name: /Unresolved edition/ }).click()
-
-    await expect(page.getByText('Tier B', { exact: true }).last()).toBeVisible()
-    await expect(page.getByText('Tier B cannot be authorized or queued')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Authorize exact patch' })).toBeDisabled()
-    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeDisabled()
-  })
-
-  test('ignores a stale detail response after selecting another package', async ({ page }) => {
-    let releaseTierA: () => void = () => undefined
-    const tierARelease = new Promise<void>((resolve) => {
-      releaseTierA = resolve
-    })
-    let tierARequested: () => void = () => undefined
-    const tierARequest = new Promise<void>((resolve) => {
-      tierARequested = resolve
-    })
-    await page.route(/\/api\/review\/v2\/evidence-tier-a$/, async (route) => {
-      tierARequested()
-      await tierARelease
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(detailFor(tierASummary)),
-      })
-    })
-
-    await page.goto('/review')
-    await page.getByRole('button', { name: /Old title/ }).click()
-    await tierARequest
-    await page.getByRole('button', { name: /Unresolved edition/ }).click()
-    await expect(page.getByRole('heading', { name: 'Unresolved edition' })).toBeVisible()
-
-    const staleResponse = page.waitForResponse(/\/api\/review\/v2\/evidence-tier-a$/)
-    releaseTierA()
-    await staleResponse
-    await page.evaluate(() => new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-    }))
-
-    await expect(page.getByRole('heading', { name: 'Unresolved edition' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Authorize exact patch' })).toBeDisabled()
-    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeDisabled()
-  })
-
-  test('requires authorization before queueing exactly one write', async ({ page }) => {
-    let authorizationBody: unknown
-    let applyBody: unknown
-    await page.route(/\/api\/review\/v2\/evidence-tier-a\/authorize$/, async (route) => {
-      authorizationBody = route.request().postDataJSON()
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'success', data: { authorization_id: 'authorization-a' } }),
-      })
-    })
-    await page.route(/\/api\/apply\/v2$/, async (route) => {
-      applyBody = route.request().postDataJSON()
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          status: 'success',
-          data: {
-            operation_id: 'operation-a',
-            evidence_id: 'evidence-tier-a',
-            pilot_id: 'pilot-a',
-          },
-        }),
-      })
-    })
-
-    await page.goto('/review')
-    await page.getByRole('button', { name: /Old title/ }).click()
-    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeDisabled()
-
-    await page.getByLabel('Authorization reason').fill('Matched ISBN and title page')
-    await page.getByRole('button', { name: 'Authorize exact patch' }).click()
-    await expect.poll(() => authorizationBody).toEqual({ reason: 'Matched ISBN and title page' })
-    await expect(page.getByRole('button', { name: 'Queue this write' })).toBeEnabled()
-
-    await page.getByRole('button', { name: 'Queue this write' }).click()
-    await expect.poll(() => applyBody).toEqual({
-      force: true,
-      evidence_id: 'evidence-tier-a',
-      authorization_id: 'authorization-a',
-    })
-    await expect(page.getByText('operation-a')).toBeVisible()
-  })
+  await page.goto('/review?run_id=verify_certificate_a_001')
+  await page.getByLabel('Identity tier').selectOption('A')
+  await expect.poll(() => requestedUrl).toContain('run_id=verify_certificate_a_001')
+  await expect.poll(() => requestedUrl).toContain('tier=A')
 })

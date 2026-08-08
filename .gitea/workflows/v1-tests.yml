@@ -1,23 +1,27 @@
-name: v1-tests-gitea
+name: certificate-a-production-gates
 
-# Gitea Actions variant for self-hosted act_runner on Unraid (per CLAUDE.md).
-# Mirrors .github/workflows/v1-tests.yml with Gitea-specific syntax.
-
+# Canonical pipeline for the private Gitea repository. Every action is pinned
+# to a commit and uv is installed by its pinned action; no network response is
+# piped into a privileged shell.
 on:
   push:
-    branches: [ main, feat/v1-content-verification ]
+    branches: [main, feature/certificate-a-production]
   pull_request:
+
+env:
+  PYTHON_VERSION: "3.12.13"
+  UV_VERSION: "0.11.15"
 
 jobs:
   backend:
-    name: Backend (pytest + mypy + ruff)
+    name: Backend, PostgreSQL ACL, and dependency gates
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
         env:
           POSTGRES_USER: bookaudit
-          POSTGRES_PASSWORD: gitea-test-password
+          POSTGRES_PASSWORD: gitea-admin-test-password
           POSTGRES_DB: bookaudit_gitea_test
         options: >-
           --health-cmd "pg_isready -U bookaudit -d bookaudit_gitea_test"
@@ -31,52 +35,68 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:gitea-test-password@postgres:5432/bookaudit_gitea_test
-      TEST_VALKEY_URL: redis://valkey:6379/0
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.15"
+          enable-cache: true
 
-      - name: Install system deps (calibre + tesseract + ocrmypdf)
+      - name: Install pinned Python and system integration tools
         run: |
           apt-get update
-          apt-get install -y calibre tesseract-ocr ghostscript qpdf ocrmypdf curl ca-certificates
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            calibre ghostscript postgresql-client qpdf redis-tools tesseract-ocr tesseract-ocr-eng
+          uv python install "$PYTHON_VERSION"
+          uv sync --python "$PYTHON_VERSION" --frozen
 
-      - name: Install uv and locked Python deps
+      - name: Prove locks, style, types, and the hermetic backend suite
         run: |
-          curl -LsSf https://astral.sh/uv/0.11.15/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
-          uv python install 3.12.13
-          uv sync --python 3.12.13 --frozen --extra dev
-
-      - name: Lint (ruff)
-        run: |
+          uv lock --check
           uv run ruff check .
           uv run ruff format --check .
+          uv run mypy src
+          uv run pytest \
+            -m 'not benchmark and not ocr_live and not network and not v2_live' \
+            --ignore=tests/test_retention_postgres_valkey.py \
+            --ignore=tests/test_v2_supervised_pilot_integration.py
 
-      - name: Type check (mypy)
-        run: uv run mypy src
-
-      - name: Run unit + integration tests
+      - name: Provision roles and migrate exactly once
+        env:
+          PGHOST: postgres
+          PGUSER: bookaudit
+          PGPASSWORD: gitea-admin-test-password
+          POSTGRES_USER: bookaudit
+          POSTGRES_DB: bookaudit_gitea_test
+          POSTGRES_APP_PASSWORD: gitea-app-test-password
+          POSTGRES_VERIFIER_PASSWORD: gitea-verifier-test-password
+          POSTGRES_WRITER_PASSWORD: gitea-writer-test-password
+          POSTGRES_MIGRATOR_PASSWORD: gitea-migrator-test-password
+          BOOKAUDIT_PROFILE: production
+          BOOKAUDIT_DATABASE__BACKEND: postgres
+          BOOKAUDIT_DATABASE__POSTGRES_DSN: postgresql+psycopg://bookaudit_migrator:gitea-migrator-test-password@postgres:5432/bookaudit_gitea_test
         run: |
-          BOOKAUDIT_DATABASE__BACKEND=postgres \
-            BOOKAUDIT_DATABASE__POSTGRES_DSN="$TEST_POSTGRES_DSN" \
-            uv run bookaudit migrate
-          test -n "$TEST_POSTGRES_DSN"
-          test -n "$TEST_VALKEY_URL"
+          ./scripts/postgres-init-roles.sh
+          uv run bookaudit-certificate-a migrate
+
+      - name: Run real PostgreSQL and Valkey abuse gates
+        env:
+          TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:gitea-admin-test-password@postgres:5432/bookaudit_gitea_test
+          TEST_VALKEY_URL: redis://valkey:6379/0
+        run: |
           uv run pytest tests/test_retention_postgres_valkey.py -q
-          uv run pytest -m "not benchmark and not ocr_live and not network" \
-                 --cov=src --cov-report=xml -v
+          uv run pytest tests/test_runtime_role_acl_postgres.py -q
+
+      - name: Audit the exact Certificate A Python closure
+        run: |
+          uv export --frozen --no-dev --no-hashes --no-emit-project --output-file requirements-certificate-a.txt
+          uvx pip-audit==2.10.1 --requirement requirements-certificate-a.txt
 
       - name: Metadata 50k release gate
         run: uv run python scripts/benchmark_50k_metadata.py
 
-      - name: Audit locked Python dependencies
-        run: |
-          uv export --frozen --no-hashes --no-emit-project --output-file requirements-audit.txt
-          uvx pip-audit==2.10.1 --requirement requirements-audit.txt
-
-  v2-pilot-integration:
-    name: Manifestation V2 required integration
+  real-services:
+    name: Real Certificate A Calibre, OCR, and PostgreSQL boundaries
     runs-on: ubuntu-latest
     needs: backend
     services:
@@ -84,10 +104,10 @@ jobs:
         image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
         env:
           POSTGRES_USER: bookaudit
-          POSTGRES_PASSWORD: gitea-v2-required-password
-          POSTGRES_DB: bookaudit_v2_required_test
+          POSTGRES_PASSWORD: gitea-certificate-a-required-password
+          POSTGRES_DB: bookaudit_certificate_a_test
         options: >-
-          --health-cmd "pg_isready -U bookaudit -d bookaudit_v2_required_test"
+          --health-cmd "pg_isready -U bookaudit -d bookaudit_certificate_a_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -98,115 +118,87 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:gitea-v2-required-password@postgres:5432/bookaudit_v2_required_test
-      TEST_VALKEY_URL: redis://valkey:6379/0
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - name: Install real Calibre, OCR, PostgreSQL, and Valkey clients
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.15"
+      - name: Install exact integration boundary
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            calibre tesseract-ocr tesseract-ocr-eng fonts-dejavu-core \
-            postgresql-client redis-tools curl ca-certificates
-
-      - name: Install uv and locked Python deps
-        run: |
-          curl -LsSf https://astral.sh/uv/0.11.15/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
-          uv python install 3.12.13
-          uv sync --python 3.12.13 --frozen --extra dev
-
-      - name: Prove every required integration dependency
-        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            calibre fonts-dejavu-core postgresql-client redis-tools tesseract-ocr tesseract-ocr-eng
+          uv python install "$PYTHON_VERSION"
+          uv sync --python "$PYTHON_VERSION" --frozen
           command -v calibredb
           command -v ebook-meta
           command -v tesseract
-          tesseract --version
-          pg_isready -h postgres -U bookaudit -d bookaudit_v2_required_test
-          test "$(redis-cli -u "$TEST_VALKEY_URL" ping)" = "PONG"
-
-      - name: Migrate disposable V2 integration database
+          command -v ocrmypdf
+          pg_isready -h postgres -U bookaudit -d bookaudit_certificate_a_test
+          test "$(redis-cli -u redis://valkey:6379/0 ping)" = "PONG"
+      - name: Provision and migrate the disposable integration database
+        env:
+          PGHOST: postgres
+          PGUSER: bookaudit
+          PGPASSWORD: gitea-certificate-a-required-password
+          POSTGRES_USER: bookaudit
+          POSTGRES_DB: bookaudit_certificate_a_test
+          POSTGRES_APP_PASSWORD: gitea-certificate-a-app-password
+          POSTGRES_VERIFIER_PASSWORD: gitea-certificate-a-verifier-password
+          POSTGRES_WRITER_PASSWORD: gitea-certificate-a-writer-password
+          POSTGRES_MIGRATOR_PASSWORD: gitea-certificate-a-migrator-password
+          BOOKAUDIT_PROFILE: production
+          BOOKAUDIT_DATABASE__BACKEND: postgres
+          BOOKAUDIT_DATABASE__POSTGRES_DSN: postgresql+psycopg://bookaudit_migrator:gitea-certificate-a-migrator-password@postgres:5432/bookaudit_certificate_a_test
         run: |
-          BOOKAUDIT_DATABASE__BACKEND=postgres \
-            BOOKAUDIT_DATABASE__POSTGRES_DSN="$TEST_POSTGRES_DSN" \
-            uv run bookaudit migrate
-
-      - name: Run required API to writer to undo round trip without skips
-        shell: bash
+          ./scripts/postgres-init-roles.sh
+          uv run bookaudit-certificate-a migrate
+      - name: Prove concurrent claim, fence recovery, real Calibre, and real OCR
+        env:
+          TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:gitea-certificate-a-required-password@postgres:5432/bookaudit_certificate_a_test
+          TEST_VALKEY_URL: redis://valkey:6379/0
         run: |
           set -o pipefail
-          uv run pytest tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs \
-            | tee /tmp/v2-required-pytest.log
+          uv run pytest tests/test_certificate_a_worker_postgres.py -q -rs \
+            | tee /tmp/certificate-a-required-pytest.log
           test "${PIPESTATUS[0]}" -eq 0
-          ! grep -Eq "[0-9]+ skipped|SKIPPED" /tmp/v2-required-pytest.log
-          grep -Eq "1 passed" /tmp/v2-required-pytest.log
+          uv run pytest tests/test_certificate_a_real_boundaries.py -m ocr_live -q -rs \
+            | tee -a /tmp/certificate-a-required-pytest.log
+          test "${PIPESTATUS[0]}" -eq 0
+          ! grep -Eq "[0-9]+ skipped|SKIPPED" /tmp/certificate-a-required-pytest.log
+          grep -Eq "1 passed" /tmp/certificate-a-required-pytest.log
+          grep -Eq "2 passed" /tmp/certificate-a-required-pytest.log
 
-  benchmarks:
-    name: Benchmarks
-    runs-on: ubuntu-latest
-    if: gitea.event_name == 'push'
-    needs: backend
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - name: Install Python deps
-        run: |
-          apt-get update
-          apt-get install -y curl ca-certificates
-          curl -LsSf https://astral.sh/uv/0.11.15/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
-          uv python install 3.12.13
-          uv sync --python 3.12.13 --frozen --extra dev
-      - name: Run benchmarks
-        run: |
-          mkdir -p .benchmarks
-          uv run pytest --benchmark-only --benchmark-json=.benchmarks/baseline.json \
-                 -m "not ocr_live and not network"
   webui:
-    name: WebUI E2E (Playwright)
+    name: Certificate A WebUI contract
     runs-on: ubuntu-latest
+    needs: backend
     container:
       image: mcr.microsoft.com/playwright:v1.61.1-jammy@sha256:7b86926fff94374389e8e1f4fdc5c76d050d4a06a7886bb537bf412b20e2b71e
-    needs: [backend]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - name: Setup Node 20
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: "20"
-
-      - name: Install Python deps
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y calibre curl ca-certificates
-          curl -LsSf https://astral.sh/uv/0.11.15/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
-          uv python install 3.12.13
-          uv sync --python 3.12.13 --frozen --extra dev
-
-      - name: Install webui deps
-        working-directory: webui
-        run: npm ci
-
-      - name: Lint and audit webui
+          node-version: "20.19.4"
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: Install, audit, lint, and build
         working-directory: webui
         run: |
-          npm run lint -- --max-warnings=0
+          npm ci
           npm audit --audit-level=high
-
-      - name: Build webui
-        working-directory: webui
-        run: npm run build
-
-      - name: Run Playwright E2E
+          npm run lint -- --max-warnings=0
+          npm run build
+      - name: Run desktop and mobile browser contracts
         working-directory: webui
         env:
           PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
         run: npx playwright test --project=chromium --project=mobile-chromium --reporter=line
 
   container:
-    name: Production image contract
+    name: Certificate A image, Compose, and vulnerability contract
     runs-on: ubuntu-latest
-    needs: [backend, webui]
+    needs: [backend, webui, real-services]
     env:
       DOCKER_BUILDKIT: "1"
     steps:
@@ -217,44 +209,61 @@ jobs:
           apt-get install -y --no-install-recommends docker.io docker-compose
           docker version
           docker-compose version
-      - name: Build production image
-        run: docker build -t calibre-ai-auditor:gitea-ci .
-      - name: Verify runtime, Compose, and Prometheus contracts
-        env:
-          BOOKAUDIT_LIBRARY_HOST_PATH: /tmp
-          BOOKAUDIT_APP_POSTGRES_DSN: postgresql+psycopg://app:test@postgres/bookaudit
-          BOOKAUDIT_WRITER_POSTGRES_DSN: postgresql+psycopg://writer:test@postgres/bookaudit
-          BOOKAUDIT_MIGRATOR_POSTGRES_DSN: postgresql+psycopg://migrator:test@postgres/bookaudit
-          BOOKAUDIT_API_KEY: ci-api-key-at-least-thirty-two-characters
-          POSTGRES_PASSWORD: ci-only-password
-          POSTGRES_APP_PASSWORD: app
-          POSTGRES_WRITER_PASSWORD: writer
-          POSTGRES_MIGRATOR_PASSWORD: migrator
+      - name: Build both explicitly separated images
+        run: |
+          docker build --target certificate-a -t calibre-ai-auditor:gitea-ci .
+          docker build --target writer -t calibre-ai-auditor-writer:gitea-ci .
+      - name: Verify image dependency and privilege boundaries
         run: |
           test "$(docker image inspect calibre-ai-auditor:gitea-ci --format '{{.Config.User}}')" = "10001:10001"
-          docker run --rm --entrypoint sh calibre-ai-auditor:gitea-ci -c '! python -c "import pytest" && bookaudit --help >/dev/null'
-          docker run --rm calibre-ai-auditor:gitea-ci retention | grep -F 'Dry run only'
+          test "$(docker image inspect calibre-ai-auditor-writer:gitea-ci --format '{{.Config.User}}')" = "10001:10001"
+          docker run --rm --entrypoint sh calibre-ai-auditor:gitea-ci -c '
+            bookaudit-certificate-a --help >/dev/null &&
+            test ! -e /opt/calibre/calibredb &&
+            python -c "import importlib.util as u; assert u.find_spec(\"openai\") is None; assert u.find_spec(\"qdrant_client\") is None; assert u.find_spec(\"fastmcp\") is None"
+          '
+          docker run --rm --entrypoint sh calibre-ai-auditor-writer:gitea-ci -c 'bookaudit --help >/dev/null && test -x /opt/calibre/calibredb'
+      - name: Verify the exact default Compose graph
+        env:
+          BOOKAUDIT_LIBRARY_HOST_PATH: /tmp
+          BOOKAUDIT_APP_POSTGRES_DSN: postgresql+psycopg://bookaudit_app:test@postgres/bookaudit
+          BOOKAUDIT_VERIFIER_POSTGRES_DSN: postgresql+psycopg://bookaudit_verifier:test@postgres/bookaudit
+          BOOKAUDIT_WRITER_POSTGRES_DSN: postgresql+psycopg://bookaudit_writer:test@postgres/bookaudit
+          BOOKAUDIT_MIGRATOR_POSTGRES_DSN: postgresql+psycopg://bookaudit_migrator:test@postgres/bookaudit
+          BOOKAUDIT_API_KEY: ci-api-key-at-least-thirty-two-characters
+          BOOKAUDIT_RELEASE_DIGEST: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          POSTGRES_PASSWORD: ci-only-admin-password
+          POSTGRES_APP_PASSWORD: ci-app-password
+          POSTGRES_VERIFIER_PASSWORD: ci-verifier-password
+          POSTGRES_WRITER_PASSWORD: ci-writer-password
+          POSTGRES_MIGRATOR_PASSWORD: ci-migrator-password
+        run: |
           trap 'rm -f .env' EXIT
           install -m 0600 /dev/null .env
-          docker-compose --profile maintenance --profile optional config -q
-          prometheus_container="$(
-            docker create --rm --entrypoint promtool \
-              prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 \
-              check config /etc/prometheus/prometheus.yml
-          )"
-          docker cp ops/monitoring/. "$prometheus_container:/etc/prometheus"
-          docker start --attach "$prometheus_container"
-      - name: Scan image for high vulnerabilities
+          docker-compose config -q
+          test "$(docker-compose config --services | sort | tr '\n' ' ')" = "app postgres valkey verifier "
+          docker-compose --profile maintenance --profile writer --profile writer-maintenance config -q
+      - name: Scan both images for high vulnerabilities and secrets
         run: |
-          # google-auth 2.53.0 embeds parser test keys in this compiled module.
-          # Trivy 0.56.1: re-review on google-auth, Python ABI, Trivy, or bytecode-policy changes.
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
-            --format table \
-            --exit-code 1 \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --scanners vuln,secret \
-            --skip-files opt/venv/lib/python3.12/site-packages/google/auth/crypt/__pycache__/_python_rsa.cpython-312.pyc \
-            calibre-ai-auditor:gitea-ci
+          for image in calibre-ai-auditor:gitea-ci calibre-ai-auditor-writer:gitea-ci; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
+              --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+              --scanners vuln,secret "$image"
+          done
+
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    if: gitea.event_name == 'push'
+    needs: backend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.15"
+      - name: Run benchmark suite
+        run: |
+          uv python install "$PYTHON_VERSION"
+          uv sync --python "$PYTHON_VERSION" --frozen
+          uv run pytest --benchmark-only -m "not ocr_live and not network"

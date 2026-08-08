@@ -89,6 +89,7 @@ def _seed_run(engine: Engine, library: Path, *, run_id: str = "verify_certificat
                         "ocr_backend": "tesseract",
                         "ocr_language": "eng",
                         "ocr_max_pages": 6,
+                        "ocr_timeout_seconds": 180,
                         "vision_enabled": False,
                         "llm_enabled": False,
                     },
@@ -188,6 +189,7 @@ def test_contract_is_rebuilt_only_from_persisted_certificate_a_options(engine: E
     assert contract.ocr_backend == "tesseract"
     assert contract.ocr_language == "eng"
     assert contract.ocr_max_pages == 6
+    assert contract.ocr_timeout_seconds == 180
     assert contract.providers == ("google_books_isbn", "openlibrary_isbn")
 
 

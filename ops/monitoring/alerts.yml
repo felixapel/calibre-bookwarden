@@ -1,12 +1,56 @@
 groups:
-  - name: bookaudit-production
+  - name: bookaudit-certificate-a
     rules:
       - alert: BookAuditUnavailable
-        expr: up{job="bookaudit"} == 0
+        expr: up{job="bookaudit-certificate-a"} == 0
         for: 2m
         labels: {severity: critical}
         annotations:
-          summary: Calibre Metadata Auditor cannot be scraped
+          summary: Certificate A cannot be scraped
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditCertificateANotReady
+        expr: bookaudit_certificate_a_ready == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Certificate A is not ready
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditVerifierHeartbeatStale
+        expr: bookaudit_verifier_heartbeat_fresh == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: The read-only verifier heartbeat is stale or bound to the wrong release
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditCertificateAMetricsCollectionFailed
+        expr: bookaudit_certificate_a_metrics_collection_success == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: Certificate A run metrics cannot be collected
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditCertificateARunStalled
+        expr: |
+          sum(bookaudit_certificate_a_runs{status=~"pending|inventorying|running|cancelling"}) > 0
+          and
+          bookaudit_certificate_a_oldest_active_heartbeat_age_seconds > 600
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: A Certificate A run has made no durable progress for more than ten minutes
+          runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+      - alert: BookAuditCertificateARunFailed
+        expr: |
+          sum(changes(bookaudit_certificate_a_runs{status=~"failed|source_changed|blocked_recovery"}[10m])) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: A Certificate A run recently ended unsuccessfully and needs operator review
           runbook: docs/runbooks/production-operations.md#monitoring-alerts
 
       - alert: BookAuditHighServerErrorRate
@@ -17,7 +61,7 @@ groups:
         for: 10m
         labels: {severity: warning}
         annotations:
-          summary: More than 5 percent of BookAudit requests return 5xx
+          summary: More than 5 percent of Certificate A requests return 5xx
           runbook: docs/runbooks/production-operations.md#monitoring-alerts
 
       - alert: BookAuditSlowApi
@@ -28,78 +72,5 @@ groups:
         for: 10m
         labels: {severity: warning}
         annotations:
-          summary: Mean BookAudit API response time is above two seconds
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditWriterHeartbeatStale
-        expr: bookaudit_writer_heartbeat_fresh == 0
-        for: 2m
-        labels: {severity: critical}
-        annotations:
-          summary: The single metadata writer heartbeat is stale
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditOperationalMetricsCollectionFailed
-        expr: bookaudit_operational_metrics_collection_success == 0
-        for: 2m
-        labels: {severity: warning}
-        annotations:
-          summary: Writer or durable queue metrics cannot be collected
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditOutboxBacklog
-        expr: bookaudit_outbox_events{status=~"pending|processing"} > 100
-        for: 10m
-        labels: {severity: warning}
-        annotations:
-          summary: Durable writer outbox backlog exceeds 100 operations
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditRollbackFailure
-        expr: bookaudit_changes{status="failed_rollback_failed"} > 0
-        for: 1m
-        labels: {severity: critical}
-        annotations:
-          summary: At least one metadata rollback failed
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditV2WriterBindingMismatch
-        expr: |
-          bookaudit_v2_pilot_enabled == 1
-          and
-          bookaudit_v2_writer_binding_ok == 0
-        for: 1m
-        labels: {severity: critical}
-        annotations:
-          summary: The V2 writer does not match the supervised pilot runtime binding
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditV2PilotOperationStalled
-        expr: |
-          sum(bookaudit_v2_operations{state=~"requested|claimed|writing|verifying|restoring"}) > 0
-        for: 10m
-        labels: {severity: critical}
-        annotations:
-          summary: A supervised V2 metadata operation has remained nonterminal for ten minutes
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditV2PilotOperationFailed
-        expr: |
-          sum(bookaudit_v2_operations{state=~"failed|unknown|restore_failed"}) > 0
-        for: 1m
-        labels: {severity: critical}
-        annotations:
-          summary: A supervised V2 operation failed or requires recovery
-          runbook: docs/runbooks/production-operations.md#monitoring-alerts
-
-      - alert: BookAuditV2PilotBudgetExhausted
-        expr: |
-          bookaudit_v2_pilot_max_operations{state="open"} > 0
-          and
-          bookaudit_v2_pilot_reserved_operations{state="open"}
-            >= bookaudit_v2_pilot_max_operations{state="open"}
-        for: 1m
-        labels: {severity: warning}
-        annotations:
-          summary: The supervised V2 pilot has consumed its complete canary budget
+          summary: Mean Certificate A API response time is above two seconds
           runbook: docs/runbooks/production-operations.md#monitoring-alerts

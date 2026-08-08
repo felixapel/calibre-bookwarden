@@ -8,9 +8,7 @@ from typing import Any, cast
 from sqlalchemy.engine import Engine
 
 from calibre_ai_auditor.config.settings import Settings
-from calibre_ai_auditor.llm.router import LLMRouter
 from calibre_ai_auditor.ocr.recognition_v2 import OCRRecognitionEnricher, VisionRecognitionEnricher
-from calibre_ai_auditor.ocr.vision import VisionVerifier
 from calibre_ai_auditor.providers.evidence_v2 import (
     CompositeEvidenceEnricher,
     MinimalEvidenceLLMEnricher,
@@ -79,7 +77,7 @@ def build_v2_enricher(
         ocr_backends: list[Any] = []
         for backend in ocr_settings.backends:
             if backend == "tesseract":
-                ocr_backends.append(TesseractProvider())
+                ocr_backends.append(TesseractProvider(timeout_seconds=ocr_settings.timeout_seconds))
             elif backend == "paddleocr":
                 ocr_backends.append(
                     PaddleOCRProvider(
@@ -97,6 +95,8 @@ def build_v2_enricher(
             )
         )
     if use_vision:
+        from calibre_ai_auditor.ocr.vision import VisionVerifier
+
         if not settings.recognition_v2.vision.enabled:
             raise ValueError("V2 vision requires recognition_v2.vision.enabled=true")
         verifier = VisionVerifier(settings)
@@ -122,6 +122,8 @@ def build_v2_enricher(
     if use_public_providers:
         enrichers.append(StructuredEvidenceEnricher.from_settings(settings))
     if use_llm:
+        from calibre_ai_auditor.llm.router import LLMRouter
+
         enrichers.append(
             MinimalEvidenceLLMEnricher(
                 router=LLMRouter(settings),
@@ -135,13 +137,13 @@ def build_v2_enricher(
 
 
 class _VisionVerifierBackend:
-    def __init__(self, *, verifier: VisionVerifier, name: str, is_local: bool) -> None:
+    def __init__(self, *, verifier: Any, name: str, is_local: bool) -> None:
         self.verifier = verifier
         self.name = name
         self.is_local = is_local
 
     async def recognize_cover(self, cover_path: Path) -> dict[str, Any] | None:
-        return await self.verifier.verify_cover(cover_path)
+        return cast(dict[str, Any] | None, await self.verifier.verify_cover(cover_path))
 
 
 async def run_persisted_library_audit(

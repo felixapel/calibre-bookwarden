@@ -42,6 +42,7 @@ class OCRRecognitionV2Settings(BaseModel):
     enabled: bool = True
     backends: list[Literal["tesseract", "paddleocr", "surya"]] = Field(default_factory=lambda: ["tesseract"])
     max_pages: int = Field(default=6, ge=1, le=12)
+    timeout_seconds: int = Field(default=180, ge=10, le=600)
     language: str = Field(default="en", pattern=r"^[a-z]{2,3}$")
     paddleocr_use_gpu: bool = False
     surya_device: str = "cuda"
@@ -121,6 +122,8 @@ class VerifierSettings(BaseModel):
     scratch_dir: Path = Path("/scratch")
     lease_ttl_seconds: int = Field(default=120, ge=30, le=3600)
     poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
+    heartbeat_ttl_seconds: int = Field(default=180, ge=60, le=7200)
+    heartbeat_max_age_seconds: int = Field(default=90, ge=10, le=3600)
 
 
 class VectorSettings(BaseModel):

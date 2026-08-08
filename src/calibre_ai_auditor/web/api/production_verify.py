@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, desc, select
 
@@ -136,6 +137,8 @@ def _configuration_errors(settings: Settings) -> list[str]:
         errors.append("tesseract_only_required")
     if settings.recognition_v2.vision.enabled:
         errors.append("vision_must_be_disabled")
+    if settings.ollama_enabled or settings.lmstudio_enabled or settings.open_ai_api_key:
+        errors.append("llm_must_be_disabled")
     if settings.manifestation_v2.auto_apply.enabled or settings.manifestation_v2.supervised_pilot.enabled:
         errors.append("certificate_a_must_be_shadow_only")
     if settings.paperless.enabled:
@@ -196,6 +199,7 @@ def _effective_config(
             "ocr_backend": "tesseract",
             "ocr_language": ocr.language,
             "ocr_max_pages": ocr.max_pages,
+            "ocr_timeout_seconds": ocr.timeout_seconds,
             "vision_enabled": False,
             "llm_enabled": False,
         },
@@ -366,16 +370,29 @@ def cancel_run(
     run_id: str,
     session: Session = Depends(get_production_session),
 ) -> CertificateARunSummary:
+    moment = datetime.now(UTC).replace(tzinfo=None)
+    statement = (
+        update(VerificationRun)
+        .where(col(VerificationRun.run_id) == run_id)
+        .where(col(VerificationRun.contract_version) == CERTIFICATE_A_CONTRACT_VERSION)
+        .where(col(VerificationRun.pipeline_version) == "manifestation-v2")
+        .where(col(VerificationRun.finished_at).is_(None))
+        .where(col(VerificationRun.status).in_(ACTIVE_STATUSES))
+        .values(
+            status="cancelling",
+            cancel_requested_at=func.coalesce(VerificationRun.cancel_requested_at, moment),
+        )
+    )
+    updated = session.exec(statement).rowcount
+    if updated == 1:
+        session.commit()
+        return _summary(_certificate_a_run(session, run_id))
+
+    session.rollback()
     run = _certificate_a_run(session, run_id)
     if run.status in TERMINAL_STATUSES or run.finished_at is not None:
         raise HTTPException(
             status_code=409,
             detail={"code": "run_already_terminal", "status": run.status},
         )
-    if run.status != "cancelling":
-        run.status = "cancelling"
-        run.cancel_requested_at = datetime.now(UTC).replace(tzinfo=None)
-        session.add(run)
-        session.commit()
-        session.refresh(run)
-    return _summary(run)
+    raise HTTPException(status_code=409, detail={"code": "run_state_conflict", "status": run.status})

@@ -1,250 +1,83 @@
-# Safety First
+# Certificate A safety model
 
-This project adheres to a strict "read-only by default" philosophy to protect
-Calibre libraries and metadata files. Manifestation V2 verifies in shadow mode
-by default and adds sealed evidence, exact authorization, a sole privileged
-writer, and reversible per-book artifacts. Nothing changes the library unless
-the operator explicitly opts in.
+Certificate A audits evidence and never changes Calibre metadata. Safety comes
+from removing authority, not from asking a broad application to behave.
 
-## Production Trust Boundary
+## Enforced boundaries
 
-The authenticated API is the trusted control plane. Its database role may
-create evidence, authorization, ledger, and outbox records so approved work can
-reach the writer. Database ACL separation prevents accidental cross-role DML
-and keeps the writer from minting approvals, but it is not containment against
-arbitrary code execution in the API: an API compromise can forge a consistent
-approval set. Deploy the API behind the documented loopback/TLS boundary,
-protect its key, and treat API-host compromise as authority compromise.
+- Calibre and Content Server must be stopped. The offline source rejects a
+  missing/unsafe `metadata.db`, unsupported schema, symlinked roots or metadata,
+  and WAL/SHM/journal sidecars.
+- Only the verifier receives `/library:ro`. The web app has no library mount;
+  the Certificate A image has no Calibre executable.
+- Formats are copied to a private bounded tmpfs and inspected there. Logical
+  source references, not scratch paths, are sealed into evidence.
+- The source snapshot freezes selected membership, metadata hash, and format
+  hashes. Drift becomes `source_changed`.
+- PostgreSQL atomically claims work with `FOR UPDATE SKIP LOCKED` semantics,
+  increments a monotonic fence, and stores an expiring lease. Every worker
+  mutation rechecks owner, fence, live lease, run state, and frozen membership.
+- The app and verifier use different PostgreSQL login roles. App privileges are
+  limited to request insertion, reads, and cancellation columns. Verifier
+  privileges are limited to audit evidence/progress tables. Neither runtime
+  role can migrate schema. Compose uses `.env` only for interpolation and
+  passes each process its own declared DSN; it never injects the whole file.
+- Readiness requires production configuration, exact app role/Alembic head,
+  and a verifier heartbeat matching release digest, schema, and library root.
+- OCR is Tesseract-only with bounded pages, timeout, process-group termination,
+  and bounded sidecar output.
+- Remote providers receive only one checksum-valid ISBN. Book text/images,
+  uploads, LLM, vision, Tika, Paperless, vectors, watcher, MCP, and Content
+  Server paths are disabled in the production contract.
+- Evidence is schema-validated and SHA-256 sealed before review. Integrity
+  mismatch is a conflict, never a best-effort display.
+- The production API has no authorization or writer route. The retired apply
+  route returns 410 and `writes_enabled` is always false.
 
-The first rollout is supervised and requires the PostgreSQL plus writer-artifact
-backup procedure. Automated tests cover state reconciliation and a real Calibre
-apply/undo round trip; they do not yet claim exhaustive SIGKILL, ENOSPC, or
-filesystem-tamper fault injection across every external-write window.
+## Operator responsibilities
 
-## What is Read-Only?
+Code cannot determine with certainty that every external Calibre writer is
+stopped. The operator must provide that assertion before each run and keep the
+library quiescent until terminal state.
 
-By default, the application operates in a completely read-only mode:
+Protect the following separately:
 
-- **Scan**: Reads library database to discover books.
-- **Inspect**: Reads file content (PDF, EPUB) and cover images.
-- **Verify** (V2 default): Hashes and inspects every attached format, optionally
-  runs bounded OCR/vision/LLM recognition, and persists sealed evidence.
-- **Verify** (legacy v1.0): Reads book content and runs deterministic rules plus
-  the optional LLM witness.
-- **Audit** (legacy v0.9): Fetches candidate metadata from external providers.
+- `.env` (mode 0600), database role passwords, and internal API key;
+- Caddy password hash and private TLS/DNS/VPN boundary;
+- PostgreSQL dumps and their checksum files;
+- the immutable image digest and exact Gitea release evidence;
+- logs/evidence, which can contain private book metadata even though secrets and
+  paths are excluded from public capability and metric surfaces.
 
-**The app mounts the library read-only (`:ro`) and defaults to
-`BOOKAUDIT_READ_ONLY=true`. Only the separately fenced writer has a read-write
-mount, while the supervised V2 pilot kill switch defaults to disabled.**
+Do not delete sidecars, edit run/fence/lease rows, disable integrity checks,
+mount the library into the app, broaden database grants, expose port 8080 to the
+LAN, or manually mark an incident complete.
 
-### Live remote library boundary
+## Expected failure behavior
 
-For an active remote library, prefer `bookaudit inventory` and
-`bookaudit verify-content-server` through an operator-created SSH tunnel bound
-to loopback. This source is deliberately separate from the general
-`CalibreCLI`: it accepts only `list`, exact lookup, and one-format export,
-passes the password on standard input, and persists logical references instead
-of remote or scratch paths.
+- Provider timeout/conflict: incomplete or review evidence, no fabricated
+  fallback metadata.
+- OCR failure/timeout: bounded failure for that evidence path; no alternate
+  cloud OCR.
+- Verifier crash: lease expires and a recovery verifier increments the fence;
+  the stale process loses write authority.
+- Calibre/source change: terminal `source_changed` and operator investigation.
+- Contract/release/schema mismatch during recovery: `blocked_recovery`.
+- PostgreSQL, Valkey rate limiter, or verifier unavailable: readiness fails and
+  request handling fails closed.
+- Evidence seal mismatch: HTTP 409 integrity failure.
 
-Inventory is aggregate-only and initializes no database, providers, OCR,
-vision, or LLMs. Remote verification uses a private ephemeral scratch directory,
-rechecks source revision and format membership after inspection, and returns
-`source_changed` if either moved. Public providers require explicit consent;
-LLM, vision, remote text, and remote images are rejected. All remote evidence
-is shadow-only and is rejected by the writer boundary.
+## Certificate B
 
-Do not replace this boundary with a direct mount of an active WAL/FUSE-backed
-library, even if the mount is labeled `:ro`. Direct mounts are reserved for a
-disposable or restored clone. Run the
-[disposable Content Server gate](runbooks/disposable-calibre-lab.md) before any
-operator-authorized live connection.
+The repository retains historical writer code, an explicit writer image, and
+non-default profiles. They are outside Certificate A's deployment, monitoring,
+backup, and support contract. Do not enable auto-apply or the supervised pilot;
+the Certificate A validator rejects them.
 
-## What Can Write?
+A future Certificate B must receive its own threat model and promotion evidence
+covering real Calibre mutations, immutable handoff, readback, rollback, crash
+windows, disk exhaustion, restored-clone rehearsal, and serial human canaries.
+No Certificate A result implies that approval.
 
-Write operations only occur when explicitly instructed and confirmed by
-the user. The primary write actions are:
-
-- `apply` — Modifies Calibre metadata via `calibredb set_metadata`.
-- `undo` — Restores metadata from a per-book restore point.
-
-**WebUI and API endpoints that modify data require `{"force": true}` in the
-request body after explicit user confirmation.**
-
-Affected write endpoints: `POST /api/apply/v2`,
-`POST /api/undo/{change_id}`, `POST /api/runs/{run_id}/revert`.
-`POST /api/apply` is retired and always returns HTTP 410.
-
-## Manifestation V2 write boundary
-
-V2 verification is shadow-only through the current CLI and verify API. A V2
-package cannot enter the legacy apply path because it is stored as sealed
-`observations` with no V1 `decision`.
-
-A supervised V2 correction requires all of the following:
-
-1. Tier A exact-manifestation identity with a non-empty canonical patch.
-2. A valid package checksum whose run ID, book key, snapshot, evidence ID, and patch
-   still match durable storage.
-3. `POST /api/review/v2/{evidence_id}/authorize` with a non-empty reason. The
-   authorization records the server principal and hashes the exact package and
-   field-lock-filtered patch.
-4. `POST /api/apply/v2` with `force=true`, the explicit evidence ID, and its
-   exact authorization ID.
-5. An open persisted pilot whose ID is immutably bound to the canonical library
-   root hash, exact release digest, current Alembic head, and a reservation
-   budget between one and five. A fresh writer heartbeat must match that binding.
-6. Exactly one reserved operation: any nonterminal ledger operation or
-   unpublished outbox event rejects the request. The only exception is a
-   terminal V2 `failed` outbox with a separate append-only operator
-   acknowledgement; `unknown` and `restore_failed` can never be acknowledged
-   through this path. Batch payloads are invalid and consumed reservations are
-   not refunded. The stored reservation count must equal the number of
-   pilot-bound ledger rows at both the API and writer boundaries.
-7. Revalidation by the sole privileged writer, including the still-open pilot,
-   exact configured pilot ID, release, schema, root and max-operation binding,
-   unchanged live Calibre
-   values, the exact library root sealed into the package, attached-format
-   membership/order, and the SHA-256 of every ebook before and after write.
-   Every path component is opened relative to a descriptor-anchored root with
-   no symlink following; checking only the final component is insufficient.
-8. A hashed OPF backup and restore point before the metadata command. `#edition`
-   changes additionally preserve the previous custom-column value; cover
-   changes preserve and hash the previous cover. Artifact directories are also
-   created with descriptor-relative no-follow operations. Before Calibre reads
-   an OPF or cover, the verified bytes are copied into an immutable sealed
-   descriptor and passed to the child process; a pathname replacement after
-   validation cannot alter the consumed bytes.
-9. Read-back verification. A partial write is restored; missing or inconsistent
-   recovery evidence becomes an error/unknown state instead of being guessed.
-
-Allowed V2 fields are `title`, `authors`, namespaced `identifiers`, `languages`,
-`publisher`, `pubdate`, `series`, `series_index`, `edition_statement` (Calibre
-`#edition`), and a local sealed `cover` artifact. Legacy aliases and unknown
-fields are rejected before backup or mutation.
-
-Tier A automatic mode is disabled unconditionally. Calibration reports remain
-useful advisory measurements, but their checksum is not an authenticated
-attestation and cannot unlock a writer. `bookaudit apply` and the legacy
-`POST /api/apply` route are disabled in every profile.
-
-The operational kill switch is both configured and durable. Disable
-`manifestation_v2.supervised_pilot.enabled`, stop app/writer intake, and run
-`bookaudit pilot-stop PILOT_ID --yes`. The persisted stopped state makes queued
-work fail writer revalidation. It cannot interrupt a Calibre subprocess already
-in progress, so the documented stop order and reconciliation procedure remain
-mandatory.
-
-A terminal `failed` operation can stop future pilots because its failed outbox
-is intentionally retained. After stopping intake/writer and proving from live
-Calibre plus recovery evidence that the operation is safely quiescent, use
-`bookaudit incident-ack OPERATION_ID --actor ... --reason ... --yes`. This adds
-one insert-only acknowledgement; it does not edit the ledger/outbox, clear an
-uncertain state, reopen a pilot, or refund budget. The command requires the
-operation's exact persisted pilot to be stopped under lock and rejects
-`unknown`, `restore_failed`, or an open/missing pilot. Only a distinct reviewed
-pilot ID can continue. Legacy V1 apply operations are rejected again at the
-writer boundary before Calibre metadata is read, even if an old requested row
-remains.
-
-The queue and active-failure metric do not trust an acknowledgement row alone.
-They rejoin it to a completed V2 `failed` operation, failed outbox, absent book
-lease, stopped historical pilot, and a distinct current pilot ID. A forged row
-for an open, missing, current, uncertain, or still-leased pilot remains a hard
-stop and remains visible to alerting.
-
----
-
-## Legacy v1.0: Conservative Auto-Apply Gate
-
-v1.0 introduced an **auto-apply gate** that decides which books are safe
-to apply without human approval. A book is `auto_apply_eligible` iff:
-
-1. **Every declared field has a deterministic verdict** (no `ambiguous` left)
-2. **Overall confidence ≥ 80**
-3. **No high-risk flag** present (e.g. `author_swap`, `isbn_conflict`,
-   `wrong_book`, `series_mismatch`, `publisher_mismatch`)
-4. **Per-field confidence ≥ 75**
-
-The threshold constants live in `src/calibre_ai_auditor/verification/verdict.py`:
-
-```python
-AUTO_APPLY_MIN_CONFIDENCE: int = 80
-AUTO_APPLY_MIN_FIELD_CONFIDENCE: int = 75
-```
-
-Tune these based on real-world calibration. See
-[docs/calibration/v1.0_calibration_runbook.md](calibration/v1.0_calibration_runbook.md).
-
----
-
-## v1.0: Per-Book Restore Points
-
-Every apply creates a **restore point** at
-`<artifacts_dir>/restore/<run_id>/<book_key>/` containing:
-
-- `original.opf` — original OPF (calibredb export)
-- `original.<ext>` — descriptor-anchored streamed copy of the original book
-  file when that optional backup is requested
-- `original.cover.<ext>` — original cover image (if cover was modified)
-- `before.json` — full metadata snapshot before the apply
-- `after.json` — full metadata snapshot after the apply
-- `restore.json` — metadata for bulk-undo by `run_id`
-
-**Retention target: 30 days** (configurable). The store exposes bounded cleanup,
-but production does not schedule it automatically. Production cleanup requires
-a checksum-verified paired PostgreSQL/artifact backup and the same advisory lock
-used by the sole writer. It refuses fresh writer heartbeats, non-terminal ledger
-operations, unsafe backup paths, and changed restore manifests before mutation.
-Monitor artifact-disk usage and use only the approved procedure in the
+See [ADR-005](decisions/ADR-005-certificate-a-production-boundary.md) and the
 [production operations runbook](runbooks/production-operations.md).
-
----
-
-## v1.0: Bulk Undo by Run
-
-The API supports queueing undo for all changes in a run at once:
-
-```bash
-# API
-curl -X POST http://localhost:8080/api/runs/<run_id>/revert \
-     -H "X-API-Key: $BOOKAUDIT_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"force": true}'
-```
-
-The request queues each eligible change for the sole writer. CLI undo remains
-single-change only: `bookaudit undo <change_id>`.
-
----
-
-## How Backups Work (v0.9 legacy, still works)
-
-Before any write operation, the system automatically exports the current
-metadata state as an OPF file via `calibredb export_metadata` and saves it
-to `.artifacts/backups/<book_id>/`. The v1.0 restore point system supersedes
-this with a richer per-book snapshot.
-
-## How Undo Works (legacy)
-
-The legacy `undo` command reverses an applied change by using the backup OPF
-file saved prior to the `apply` operation. It restores the exact state of
-the book's metadata before the change.
-
----
-
-## Safe Testing Practices
-
-1. **Never test `apply` on your primary, real Calibre library first.**
-2. Use a disposable or isolated test library when testing write capabilities.
-3. Keep the Docker volume mount for the library as `ro` unless you explicitly
-   intend to test writing.
-4. Ensure `.state` and `.artifacts` directories are writable to store logs,
-   evidence packages, restore points, and backups safely.
-5. **Calibrate and rehearse first** — require the no-skip Gitea real-service
-   gate, a disposable apply/undo, and a restored-clone rehearsal before any live
-   supervised canary.
-6. **Back up your restore points** — `tar czf restore_backup.tar.gz .artifacts/restore/`
-   gives you a single-file archive of all restore points.
-7. **Trust the tier and pilot gates** — Tier B/C, a mismatched writer binding,
-   a nonempty outbox, another nonterminal operation, or an exhausted budget are
-   stop conditions, not prompts to override the code.

@@ -14,24 +14,27 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 WORKDIR /build
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
-# Include the mcp extra so Hermes/stdio MCP works in production without a
-# secondary install step. OCR/paddle remain optional and are not pulled in.
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable --extra mcp
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
 
-FROM python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS runtime
+FROM python-builder AS python-builder-legacy
+# Some optional SDKs embed public test keys in their source. Do not compile the
+# legacy-only closure into opaque bytecode that secret scanners cannot
+# contextualize; the runtime also has PYTHONDONTWRITEBYTECODE enabled.
+ENV UV_COMPILE_BYTECODE=0
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable --extra legacy --extra mcp --extra ingest
+
+FROM python:3.12.13-slim-bookworm@sha256:8a7e7cc04fd3e2bd787f7f24e22d5d119aa590d429b50c95dfe12b3abe52f48b AS runtime-common
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ARG CALIBRE_VERSION=9.11.0
-ARG CALIBRE_X86_64_SHA512=4b2250124e73b907dc84f30d413e095193735ffe3f933793a7d021885efbb37b2a92254e36c17e0a52c555729a7cd67c5229a1b62b9968baf61764463aeea47e
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
-    PATH=/opt/venv/bin:/usr/local/bin:/opt/calibre:$PATH \
+    PATH=/opt/venv/bin:/usr/local/bin:$PATH \
     BOOKAUDIT_REPOSITORY_ROOT=/app \
     BOOKAUDIT_STATIC_DIR=/app/static \
     BOOKAUDIT_LIBRARY_PATH=/library \
-    BOOKAUDIT_DB_PATH=/state/bookaudit.db \
     BOOKAUDIT_ARTIFACTS_DIR=/artifacts \
     HOME=/tmp/bookaudit-home \
     XDG_CACHE_HOME=/tmp/bookaudit-home/.cache \
@@ -42,36 +45,54 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       ghostscript \
+      qpdf \
+      tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 bookaudit \
+    && useradd --uid 10001 --gid bookaudit --no-create-home --shell /usr/sbin/nologin bookaudit \
+    && mkdir -p /library /artifacts /config /app/scripts \
+    && chown -R bookaudit:bookaudit /artifacts
+
+COPY --from=frontend-builder /webui/dist /app/static
+COPY alembic.ini /app/alembic.ini
+COPY migrations /app/migrations
+COPY config /app/config
+COPY LICENSE /app/LICENSE
+
+# Certificate B remains an explicit, separately built image. It retains the
+# compatibility CLI and Calibre binary but is never selected by default.
+FROM runtime-common AS writer
+ARG CALIBRE_VERSION=9.11.0
+ARG CALIBRE_X86_64_SHA512=4b2250124e73b907dc84f30d413e095193735ffe3f933793a7d021885efbb37b2a92254e36c17e0a52c555729a7cd67c5229a1b62b9968baf61764463aeea47e
+ENV PATH=/opt/calibre:$PATH
+RUN apt-get update && apt-get install -y --no-install-recommends \
       libegl1 \
       libglx0 \
       libopengl0 \
       libxkbcommon0 \
-      qpdf \
-      tesseract-ocr \
       xz-utils \
     && rm -rf /var/lib/apt/lists/* \
     && curl --fail --location --proto '=https' --tlsv1.2 \
-      "https://download.calibre-ebook.com/9.11.0/calibre-9.11.0-x86_64.txz" \
+      "https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" \
       --output /tmp/calibre.txz \
     && echo "${CALIBRE_X86_64_SHA512}  /tmp/calibre.txz" | sha512sum --check --strict \
     && mkdir -p /opt/calibre \
     && tar --extract --xz --file /tmp/calibre.txz --directory /opt/calibre \
     && rm /tmp/calibre.txz \
-    && /opt/calibre/calibredb --version 2>&1 \
-        | grep -Eq "calibre ${CALIBRE_VERSION%.*}(\\.0)?([ )]|$)" \
-    && groupadd --gid 10001 bookaudit \
-    && useradd --uid 10001 --gid bookaudit --no-create-home --shell /usr/sbin/nologin bookaudit \
-    && mkdir -p /library /state /artifacts /config /lab-library /lab-auth /credentials /app/scripts \
-    && chown -R bookaudit:bookaudit /state /artifacts /lab-library /lab-auth /credentials
-
-COPY --from=python-builder /opt/venv /opt/venv
-COPY --from=frontend-builder /webui/dist /app/static
-COPY alembic.ini /app/alembic.ini
-COPY migrations /app/migrations
-COPY config /app/config
+    && /opt/calibre/calibredb --version 2>&1 | grep -F "calibre ${CALIBRE_VERSION%.*}" \
+    && mkdir -p /writer-artifacts /lab-library /lab-auth /credentials \
+    && chown -R bookaudit:bookaudit /writer-artifacts /lab-library /lab-auth /credentials
+COPY --from=python-builder-legacy /opt/venv /opt/venv
 COPY --chmod=0755 scripts/calibredb_readonly_wrapper.py /usr/local/bin/calibredb
 COPY --chmod=0755 scripts/disposable_calibre_fixture.py /app/scripts/disposable_calibre_fixture.py
-
 USER 10001:10001
 ENTRYPOINT ["bookaudit"]
+CMD ["writer"]
+
+# This is deliberately the final/default target: app and verifier contain no
+# Calibre binary, LLM SDK, vector client, MCP server, watcher, or legacy WebUI.
+FROM runtime-common AS certificate-a
+COPY --from=python-builder /opt/venv /opt/venv
+USER 10001:10001
+ENTRYPOINT ["bookaudit-certificate-a"]
 CMD ["web", "--host", "0.0.0.0", "--port", "8080"]

@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -95,6 +96,7 @@ class _RecognitionContract(BaseModel):
     ocr_backend: Literal["tesseract"]
     ocr_language: str = Field(pattern=r"^[a-z]{2,3}$")
     ocr_max_pages: int = Field(ge=1, le=12)
+    ocr_timeout_seconds: int = Field(ge=10, le=600)
     vision_enabled: Literal[False]
     llm_enabled: Literal[False]
 
@@ -140,6 +142,7 @@ class CertificateAContract:
     ocr_backend: str
     ocr_language: str
     ocr_max_pages: int
+    ocr_timeout_seconds: int
     providers: tuple[str, ...]
 
 
@@ -308,6 +311,7 @@ def load_certificate_a_contract(
         ocr_backend=effective.recognition.ocr_backend,
         ocr_language=effective.recognition.ocr_language,
         ocr_max_pages=effective.recognition.ocr_max_pages,
+        ocr_timeout_seconds=effective.recognition.ocr_timeout_seconds,
         providers=tuple(effective.providers),
     )
 
@@ -518,12 +522,20 @@ class FencedCertificateAStore:
 class _HeartbeatGuard:
     """Keep a lease fresh from a real thread while synchronous extractors run."""
 
-    def __init__(self, engine: Engine, claim: CertificateAClaim, *, ttl_seconds: int) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        claim: CertificateAClaim,
+        *,
+        ttl_seconds: int,
+        liveness_callback: Callable[[], None] | None = None,
+    ) -> None:
         self.engine = engine
         self.claim = claim
         self.ttl_seconds = max(30, ttl_seconds)
         self._stop = threading.Event()
         self._lost = threading.Event()
+        self._liveness_callback = liveness_callback
         self._thread = threading.Thread(
             target=self._run,
             name=f"certificate-a-heartbeat-{claim.run_id[-12:]}",
@@ -531,6 +543,8 @@ class _HeartbeatGuard:
         )
 
     def __enter__(self) -> _HeartbeatGuard:
+        if self._liveness_callback is not None:
+            self._liveness_callback()
         self._thread.start()
         return self
 
@@ -549,6 +563,8 @@ class _HeartbeatGuard:
                     self.claim,
                     ttl_seconds=self.ttl_seconds,
                 )
+                if fresh and self._liveness_callback is not None:
+                    self._liveness_callback()
             except Exception:
                 logger.exception("Certificate A heartbeat failed for run %s", self.claim.run_id)
                 fresh = False
@@ -568,11 +584,17 @@ async def execute_certificate_a_claim(
     settings: Settings,
     evidence_enricher: Any | None = None,
     source_factory: Any = OfflineCalibreSource,
+    liveness_callback: Callable[[], None] | None = None,
 ) -> str:
     """Execute exactly one claimed request from its immutable persisted options."""
     store = FencedCertificateAStore(database_engine, claim)
     ttl_seconds = settings.verifier.lease_ttl_seconds
-    with _HeartbeatGuard(database_engine, claim, ttl_seconds=ttl_seconds) as heartbeat:
+    with _HeartbeatGuard(
+        database_engine,
+        claim,
+        ttl_seconds=ttl_seconds,
+        liveness_callback=liveness_callback,
+    ) as heartbeat:
         try:
             contract = load_certificate_a_contract(database_engine, claim, settings)
             if store.cancellation_requested():
@@ -612,6 +634,7 @@ async def execute_certificate_a_claim(
                                     "backends": ["tesseract"],
                                     "max_pages": contract.ocr_max_pages,
                                     "language": contract.ocr_language,
+                                    "timeout_seconds": contract.ocr_timeout_seconds,
                                 }
                             ),
                             "vision": runtime_settings.recognition_v2.vision.model_copy(update={"enabled": False}),
@@ -675,10 +698,37 @@ async def run_certificate_a_worker(settings: Settings, *, once: bool = False) ->
 
     if settings.profile != "production" or settings.database.backend != "postgres":
         raise CertificateAContractError("Certificate A verifier requires production PostgreSQL")
+    if (
+        settings.queue.backend != "valkey"
+        or settings.release_digest is None
+        or settings.library.path is None
+        or not settings.library.read_only
+    ):
+        raise CertificateAContractError("Certificate A verifier runtime binding is incomplete")
     engine = get_engine(settings)
     owner = f"verifier-{uuid4().hex[:16]}"
+    from calibre_ai_auditor.apply.heartbeat import library_root_sha256
+    from calibre_ai_auditor.verification.heartbeat import publish_verifier_heartbeat
+
+    root_sha256 = library_root_sha256(settings.library.path)
+
+    def publish_liveness() -> None:
+        publish_verifier_heartbeat(
+            settings.queue.valkey_url,
+            owner,
+            release_digest=settings.release_digest or "",
+            alembic_revision=expected_schema_revision(),
+            library_root_sha256=root_sha256,
+            ttl_seconds=settings.verifier.heartbeat_ttl_seconds,
+            timeout=settings.queue.connect_timeout_seconds,
+        )
+
     processed = False
     while True:
+        try:
+            publish_liveness()
+        except Exception as exc:
+            raise CertificateAContractError("Certificate A verifier heartbeat is unavailable") from exc
         claim = claim_next_certificate_a_run(
             engine,
             owner=owner,
@@ -695,6 +745,7 @@ async def run_certificate_a_worker(settings: Settings, *, once: bool = False) ->
                 database_engine=engine,
                 claim=claim,
                 settings=settings,
+                liveness_callback=publish_liveness,
             )
         except LostVerifierLeaseError:
             logger.error("Certificate A verifier lost fence for run %s", claim.run_id)

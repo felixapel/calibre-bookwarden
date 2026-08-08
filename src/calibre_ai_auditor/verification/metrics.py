@@ -83,6 +83,31 @@ class Metrics:
     def set_writer_health(self, *, fresh: bool) -> None:
         self.gauge("bookaudit_writer_heartbeat_fresh", float(fresh))
 
+    def set_certificate_a_ready(self, *, ready: bool) -> None:
+        self.gauge("bookaudit_certificate_a_ready", float(ready))
+
+    def set_verifier_health(self, *, fresh: bool) -> None:
+        self.gauge("bookaudit_verifier_heartbeat_fresh", float(fresh))
+
+    def set_certificate_a_run_depth(self, status: str, count: int) -> None:
+        self.gauge(
+            "bookaudit_certificate_a_runs",
+            float(count),
+            labels={"status": status},
+        )
+
+    def set_certificate_a_oldest_active_heartbeat_age(self, age_seconds: float) -> None:
+        self.gauge(
+            "bookaudit_certificate_a_oldest_active_heartbeat_age_seconds",
+            max(age_seconds, 0.0),
+        )
+
+    def set_certificate_a_metrics_collection(self, *, success: bool) -> None:
+        self.gauge(
+            "bookaudit_certificate_a_metrics_collection_success",
+            float(success),
+        )
+
     def set_outbox_depth(self, status: str, count: int) -> None:
         self.gauge("bookaudit_outbox_events", float(count), labels={"status": status})
 

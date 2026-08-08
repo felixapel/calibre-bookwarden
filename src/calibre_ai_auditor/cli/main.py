@@ -48,6 +48,19 @@ def _require_current_schema(engine: Any) -> None:
         raise ValueError("database schema is not current; run `bookaudit migrate` explicitly")
 
 
+def _require_database_role(engine: Any, expected_role: str) -> None:
+    """Require the exact least-privilege PostgreSQL runtime identity."""
+    if engine.dialect.name != "postgresql":
+        raise ValueError(f"{expected_role} requires PostgreSQL")
+    try:
+        with engine.connect() as connection:
+            current_user = connection.execute(text("SELECT current_user")).scalar_one()
+    except Exception as exc:
+        raise ValueError("database role could not be verified") from exc
+    if current_user != expected_role:
+        raise ValueError(f"database role must be {expected_role}")
+
+
 async def _audit_run(
     settings: Settings,
     run: str = "latest",
@@ -810,10 +823,85 @@ def web(
     import uvicorn
 
     settings: Settings = _ctx.obj
-    init_db(settings)
+    engine = get_engine(settings)
+    try:
+        _require_current_schema(engine)
+        if settings.profile == "production":
+            if reload:
+                raise ValueError("production WebUI does not permit auto-reload")
+            _require_database_role(engine, "bookaudit_app")
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
 
     typer.echo(f"Starting Web API on {host}:{port}...")
-    uvicorn.run("calibre_ai_auditor.web.app:app", host=host, port=port, reload=reload)
+    application = (
+        "calibre_ai_auditor.web.production:app"
+        if settings.profile == "production"
+        else "calibre_ai_auditor.web.app:app"
+    )
+    uvicorn.run(application, host=host, port=port, reload=reload)
+
+
+@app.command()
+def verifier(
+    ctx: typer.Context,
+    once: Annotated[bool, typer.Option("--once", help="Process at most one request and exit.")] = False,
+) -> None:
+    """Run the dedicated fenced Certificate A verifier."""
+    from calibre_ai_auditor.verification.certificate_a_worker import (
+        CertificateAContractError,
+        run_certificate_a_worker,
+    )
+
+    settings: Settings = ctx.obj
+    try:
+        if settings.profile != "production" or settings.database.backend != "postgres":
+            raise ValueError("Certificate A verifier requires the production PostgreSQL profile")
+        if settings.release_digest is None:
+            raise ValueError("Certificate A verifier requires BOOKAUDIT_RELEASE_DIGEST")
+        if not settings.library.read_only or settings.library.path is None or not settings.library.path.is_dir():
+            raise ValueError("Certificate A verifier requires a readable, read-only library directory")
+        ensure_secure_directory(settings.verifier.scratch_dir)
+        engine = get_engine(settings)
+        _require_current_schema(engine)
+        _require_database_role(engine, "bookaudit_verifier")
+        processed = asyncio.run(run_certificate_a_worker(settings, once=once))
+    except (CertificateAContractError, OSError, SecurePathError, ValueError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if once:
+        typer.echo("processed one Certificate A request" if processed else "no Certificate A request pending")
+
+
+@app.command("verifier-health")
+def verifier_health(ctx: typer.Context) -> None:
+    """Exit successfully only for a fresh, exactly bound Certificate A verifier."""
+    from calibre_ai_auditor.apply.heartbeat import library_root_sha256
+    from calibre_ai_auditor.verification.heartbeat import (
+        read_verifier_heartbeat,
+        verifier_heartbeat_is_fresh,
+    )
+
+    settings: Settings = ctx.obj
+    if settings.release_digest is None or settings.library.path is None or settings.queue.backend != "valkey":
+        raise typer.Exit(1)
+    try:
+        heartbeat = read_verifier_heartbeat(
+            settings.queue.valkey_url,
+            timeout=settings.queue.connect_timeout_seconds,
+        )
+    except Exception:
+        raise typer.Exit(1) from None
+    if not verifier_heartbeat_is_fresh(
+        heartbeat,
+        release_digest=settings.release_digest,
+        alembic_revision=expected_schema_revision(),
+        library_root_sha256=library_root_sha256(settings.library.path),
+        max_age_seconds=settings.verifier.heartbeat_max_age_seconds,
+    ):
+        raise typer.Exit(1)
+    typer.echo("Certificate A verifier heartbeat is fresh")
 
 
 @app.command()

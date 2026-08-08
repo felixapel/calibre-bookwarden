@@ -271,10 +271,17 @@ def test_repository_contract_uses_a_dedicated_lab_compose_and_pinned_calibre() -
     assert "internal: true" in compose
     assert "--disable-local-write" in compose
     assert "192.168.0.122" not in compose
-    assert "calibre-9.11.0-x86_64.txz" in dockerfile
-    assert "4b2250124e73b907dc84f30d413e095193735ffe3f933793a7d021885efbb37b2" in dockerfile
+    assert "ARG CALIBRE_VERSION=9.11.0" in dockerfile
+    assert "calibre-${CALIBRE_VERSION}-x86_64.txz" in dockerfile
+    assert (
+        "ARG CALIBRE_X86_64_SHA512="
+        "4b2250124e73b907dc84f30d413e095193735ffe3f933793a7d021885efbb37b2"
+        "a92254e36c17e0a52c555729a7cd67c5229a1b62b9968baf61764463aeea47e"
+    ) in dockerfile
+    assert "sha512sum --check --strict" in dockerfile
     assert "      calibre \\\n" not in dockerfile
-    assert "PATH=/opt/venv/bin:/usr/local/bin:/opt/calibre:$PATH" in dockerfile
+    assert "PATH=/opt/venv/bin:/usr/local/bin:$PATH" in dockerfile
+    assert "ENV PATH=/opt/calibre:$PATH" in dockerfile
     assert "      libglx0 \\\n" in dockerfile
     assert "      libxkbcommon0 \\\n" in dockerfile
 

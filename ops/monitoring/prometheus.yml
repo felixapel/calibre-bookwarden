@@ -6,11 +6,10 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
-  - job_name: bookaudit
+  - job_name: bookaudit-certificate-a
     metrics_path: /api/metrics
     static_configs:
-      - targets: ["app:8080"]
-    # Replace before deployment or inject this header at a trusted reverse proxy.
+      - targets: ["127.0.0.1:8080"]
     http_headers:
       X-API-Key:
-        values: ["REPLACE_WITH_BOOKAUDIT_API_KEY"]
+        files: ["/etc/prometheus/secrets/bookaudit_api_key"]

@@ -1,0 +1,31 @@
+{
+	# Supply this through the root-readable Caddy service environment.
+	email {$BOOKAUDIT_ACME_EMAIL}
+}
+
+{$BOOKAUDIT_DOMAIN} {
+	# This directive has no path matcher: authentication covers the SPA, assets,
+	# API, metrics, health endpoints, and every future route.
+	basic_auth {
+		{$BOOKAUDIT_BASIC_AUTH_USER} {$BOOKAUDIT_BASIC_AUTH_HASH}
+	}
+
+	encode zstd gzip
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+	}
+
+	# The application port remains loopback-only. Run Caddy on the same host;
+	# do not publish the backend container onto the LAN.
+	reverse_proxy 127.0.0.1:{$BOOKAUDIT_PORT:8080} {
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 30s
+		}
+	}
+}

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import signal
 from pathlib import Path
 from typing import Any
 
@@ -19,10 +21,57 @@ from calibre_ai_auditor.verification.identity_v2 import (
     FormatEvidenceStatus,
     SourceEvidence,
 )
-from calibre_ai_auditor.verification.ocr_router import OCRPageResult, OCRQuality
+from calibre_ai_auditor.verification.ocr_router import (
+    OCRPageResult,
+    OCRProcessTimeoutError,
+    OCRQuality,
+    TesseractProvider,
+)
 from calibre_ai_auditor.verification.pipeline_v2 import BookSnapshot
 
 ISBN = "9780306406157"
+
+
+@pytest.mark.asyncio
+async def test_tesseract_timeout_kills_the_entire_ocr_process_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf = tmp_path / "scan.pdf"
+    pdf.write_bytes(b"pdf")
+    process_group_kills: list[tuple[int, signal.Signals]] = []
+    options: dict[str, object] = {}
+
+    class HangingProcess:
+        pid = 4242
+        returncode: int | None = None
+
+        async def communicate(self) -> tuple[None, None]:
+            await asyncio.Future()
+            return None, None
+
+        async def wait(self) -> int:
+            self.returncode = -signal.SIGKILL
+            return self.returncode
+
+        def kill(self) -> None:
+            self.returncode = -signal.SIGKILL
+
+    async def create_process(*_args: object, **kwargs: object) -> HangingProcess:
+        options.update(kwargs)
+        return HangingProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    monkeypatch.setattr(
+        "calibre_ai_auditor.verification.ocr_router.os.killpg",
+        lambda pid, sig: process_group_kills.append((pid, sig)),
+    )
+
+    with pytest.raises(OCRProcessTimeoutError):
+        await TesseractProvider(timeout_seconds=0.01).ocr_pdf_pages(pdf, page_range="1-2")
+
+    assert options["start_new_session"] is True
+    assert process_group_kills == [(4242, signal.SIGKILL)]
 
 
 def _inspection(path: Path) -> FormatInspection:

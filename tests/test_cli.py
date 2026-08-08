@@ -3,7 +3,7 @@ import json
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.exceptions import Exit
@@ -11,6 +11,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from typer.testing import CliRunner
 
 from calibre_ai_auditor.cli.main import _verify_backup_manifest, app
+from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.storage.models import (
     OperationIncidentAcknowledgement,
     OperationLedger,
@@ -92,6 +93,76 @@ def test_migrate_runs_explicit_schema_upgrade() -> None:
     assert result.exit_code == 0
     upgrade.assert_called_once()
     assert "Database schema upgraded" in result.stdout
+
+
+def test_production_web_uses_isolated_app_and_never_migrates_at_runtime(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    settings = Settings(
+        profile="production",
+        library={"path": library, "read_only": True},
+        database={"backend": "postgres", "postgres_dsn": "postgresql+psycopg://app:test@db/audit"},
+        queue={"backend": "valkey"},
+    )
+    engine = MagicMock()
+
+    with (
+        patch("calibre_ai_auditor.cli.main.load_settings", return_value=settings),
+        patch("calibre_ai_auditor.cli.main.get_engine", return_value=engine),
+        patch("calibre_ai_auditor.cli.main._require_current_schema") as schema,
+        patch("calibre_ai_auditor.cli.main._require_database_role") as role,
+        patch("calibre_ai_auditor.cli.main.init_db") as migrate_at_runtime,
+        patch("uvicorn.run") as uvicorn_run,
+    ):
+        result = runner.invoke(app, ["web", "--host", "127.0.0.1", "--port", "8081"])
+
+    assert result.exit_code == 0, result.stdout
+    schema.assert_called_once_with(engine)
+    role.assert_called_once_with(engine, "bookaudit_app")
+    migrate_at_runtime.assert_not_called()
+    uvicorn_run.assert_called_once_with(
+        "calibre_ai_auditor.web.production:app",
+        host="127.0.0.1",
+        port=8081,
+        reload=False,
+    )
+
+
+def test_certificate_a_verifier_requires_role_and_current_schema(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    scratch = tmp_path / "scratch"
+    settings = Settings(
+        profile="production",
+        release_digest=f"sha256:{'a' * 64}",
+        library={"path": library, "read_only": True},
+        database={"backend": "postgres", "postgres_dsn": "postgresql+psycopg://verifier:test@db/audit"},
+        queue={"backend": "valkey"},
+        verifier={"scratch_dir": scratch},
+    )
+    settings.database = settings.database.model_copy(
+        update={"backend": "postgres", "postgres_dsn": "postgresql+psycopg://verifier:test@db/audit"}
+    )
+    engine = MagicMock()
+    worker = AsyncMock(return_value=True)
+
+    with (
+        patch("calibre_ai_auditor.cli.main.load_settings", return_value=settings),
+        patch("calibre_ai_auditor.cli.main.get_engine", return_value=engine),
+        patch("calibre_ai_auditor.cli.main._require_current_schema") as schema,
+        patch("calibre_ai_auditor.cli.main._require_database_role") as role,
+        patch(
+            "calibre_ai_auditor.verification.certificate_a_worker.run_certificate_a_worker",
+            worker,
+        ),
+    ):
+        result = runner.invoke(app, ["verifier", "--once"])
+
+    assert result.exit_code == 0, result.stdout
+    assert scratch.is_dir()
+    schema.assert_called_once_with(engine)
+    role.assert_called_once_with(engine, "bookaudit_verifier")
+    worker.assert_awaited_once_with(settings, once=True)
 
 
 def test_pilot_stop_requires_confirmation_and_closes_exact_session() -> None:

@@ -1,5 +1,10 @@
 # Manifestation V2 calibration and supervised rollout
 
+> **Certificate B historical document:** Do not use this runbook for the
+> Certificate A production stack. ADR-005 and the Certificate A environment
+> validator prohibit the writer pilot. This material is retained only for a
+> future, separately approved Certificate B design and disposable research.
+
 ## Objective
 
 Measure exact-edition precision on the real library before considering any

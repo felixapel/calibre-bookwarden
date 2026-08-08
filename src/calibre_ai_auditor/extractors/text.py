@@ -3,8 +3,6 @@ import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 
-import pymupdf4llm  # type: ignore
-
 from calibre_ai_auditor.storage.models import Snippet
 
 logger = logging.getLogger(__name__)
@@ -39,6 +37,8 @@ def extract_snippets(file_path: Path, max_pages: int = 5) -> list[Snippet]:
     if suffix == ".pdf":
         logger.info(f"Extracting snippets from PDF: {file_path}")
         try:
+            import pymupdf4llm  # type: ignore
+
             # pymupdf4llm.to_markdown returns the whole document as markdown usually.
             md_text = pymupdf4llm.to_markdown(str(file_path), pages=list(range(max_pages)))
             snippets.append(Snippet(source="first_pages", text=md_text, page_range=f"0-{max_pages - 1}"))

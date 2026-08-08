@@ -81,6 +81,24 @@ def test_operational_health_helpers_expose_writer_and_durable_queue() -> None:
     assert 'bookaudit_operations{state="failed_rollback_failed"} 2.0' in out
 
 
+def test_certificate_a_metrics_use_only_bounded_status_labels() -> None:
+    m = Metrics()
+    m.set_certificate_a_ready(ready=True)
+    m.set_verifier_health(fresh=True)
+    m.set_certificate_a_run_depth("running", 2)
+    m.set_certificate_a_oldest_active_heartbeat_age(42.5)
+    m.set_certificate_a_metrics_collection(success=True)
+
+    out = m.render()
+
+    assert "bookaudit_certificate_a_ready 1.0" in out
+    assert "bookaudit_verifier_heartbeat_fresh 1.0" in out
+    assert 'bookaudit_certificate_a_runs{status="running"} 2.0' in out
+    assert "bookaudit_certificate_a_oldest_active_heartbeat_age_seconds 42.5" in out
+    assert "bookaudit_certificate_a_metrics_collection_success 1.0" in out
+    assert "run_id" not in out
+
+
 def test_v2_pilot_metrics_use_only_bounded_outcomes() -> None:
     m = Metrics()
     m.record_v2_authorization("success")

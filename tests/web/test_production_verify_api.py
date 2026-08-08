@@ -70,6 +70,7 @@ def api(
         engine_provider=lambda _settings: engine,
         static_dir=tmp_path / "missing-static",
     )
+    app.state.database_readiness_checker = lambda _settings: None
 
     async def allow_rate_limit(
         _url: str,
@@ -193,6 +194,7 @@ def test_start_only_persists_a_pending_request_without_inventorying_the_library(
             "ocr_backend": "tesseract",
             "ocr_language": "eng",
             "ocr_max_pages": 6,
+            "ocr_timeout_seconds": 180,
             "vision_enabled": False,
             "llm_enabled": False,
         }

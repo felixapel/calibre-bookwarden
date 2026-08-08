@@ -1,299 +1,182 @@
-# calibre-ai-auditor
+# Calibre AI Auditor
 
-A safer, more scalable, **content-ground metadata verification** system for
-Calibre libraries. Built around the principle that the book file is the
-ground truth and LLMs are witnesses, not generators.
+Calibre AI Auditor is a local, content-grounded metadata auditor for Calibre
+libraries. Its production contract is deliberately narrow: it reads a stopped
+Calibre library, gathers bounded evidence, checks checksum-valid ISBNs against
+Google Books and Open Library, and presents sealed findings for human review.
+It does not modify Calibre metadata.
 
-## Status
+## Release status
 
-- **Development head**: Manifestation V2 exact-edition auditor
-- **Package version**: 1.2.1; the latest repository tag is `v1.2.0` and Gitea
-  currently has no published release
-- **Interface**: Supervised local WebUI (React 19 / FastAPI) + CLI
-- **Default verification contract**: V2, shadow/read-only, one book at a time
-- **V2 writes**: Disabled by default; the development head supports only an
-  explicitly enabled, serial, manually authorized pilot of at most five operations
-- **Runtime**: Docker/Linux x86_64 recommended; the image pins the official
-  Calibre 9.11.0 x86_64 artifact. Native verification works with `uv`.
-  The supervised writer requires Linux `/proc` descriptor passing and memfd seals.
-- **Remote inventory**: A capability-limited Content Server adapter supports
-  aggregate inventory and one-book-at-a-time shadow verification through an
-  operator-created loopback SSH tunnel. It cannot authorize writes.
-- **Production profile**: **Certificate A (shadow production)** is supported on
-  a production-profile Compose stack with pilot and auto-apply disabled,
-  readiness, backup/restore, and MCP read tools. It is **not** approval for live
-  Calibre writes. Unattended and legacy direct apply stay disabled. Live write
-  promotion (Certificate B) still requires a reviewed corpus, disposable
-  apply/undo, restored-clone rehearsal, and serial canaries. See
-  [docs/production-readiness.md](docs/production-readiness.md).
+The repository implements the **Certificate A production candidate** for
+version 1.2.1. Promotion requires an automatically triggered, green canonical
+Gitea run for the exact commit and immutable image digest being deployed.
 
-Manifestation V2 inspects every format attached to each Calibre book, anchors
-identity to checksum-valid edition-bearing content, performs exact-ISBN checks
-against Google Books and Open Library, and seals all evidence before review.
-OCR, vision, and LLM output can assist recognition but cannot identify a Tier A
-book by themselves. See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md).
+- Production mode is shadow/read-only only.
+- The default image contains no Calibre executable, LLM SDK, vector client,
+  MCP server, filesystem watcher, upload handler, or legacy WebUI.
+- Only the verifier mounts the offline library, and the mount is read-only.
+- PostgreSQL is the authoritative request, lease, fence, progress, and evidence
+  store. Valkey is limited to rate limiting and verifier health.
+- Tesseract is the only production OCR backend and is bounded by page and
+  wall-clock limits.
+- The app never receives a library mount and its database role cannot write
+  evidence or worker progress.
+- The backend listens on loopback. Caddy provides same-host TLS and whole-site
+  authentication for private home/VPN access.
 
-## Current V2 pipeline
+Certificate B—supervised metadata writes—remains quarantined. Its separately
+built image and explicit Compose profiles are retained for future disposable
+rehearsals, but the Certificate A validator rejects an enabled writer pilot.
 
-1. Freeze the run's Calibre membership and snapshot the current record.
-2. Hash and inspect every EPUB/PDF/CBZ or temporary MOBI/AZW3/CBR conversion.
-3. OCR bounded PDF front matter when native edition evidence is absent; cover
-   vision is opt-in and always non-authoritative.
-4. Query structured providers only by one checksum-valid ISBN candidate.
-5. Resolve Tier A (exact), B (incomplete/review), or C (conflict/defer), then
-   produce only field values supported by two independent roots.
-6. Persist a strict, SHA-256-checksummed evidence package and continue with the next
-   book even when one book fails.
-7. During an explicitly enabled supervised pilot, queue only one manually
-   authorized Tier A package at a time. The writer verifies
-   the exact pilot ID/release/schema/root/budget binding, the monotonic operation
-   count, live metadata, and every pre-write ebook path/hash. After Calibre
-   performs a metadata-driven directory move, the writer accepts new paths only
-   when the unique live format/SHA-256 multiset still matches the seal; all
-   other metadata remains under full readback. It then creates OPF/custom-column/
-   cover rollback artifacts. Library and artifact paths are opened component by
-   component beneath sealed roots; OPF and cover bytes are handed to Calibre
-   through immutable descriptors rather than re-opened pathnames.
+## Production architecture
 
-## Historical v1.0 engine
+```text
+private browser / VPN
+        |
+  TLS + whole-site auth
+        |
+  same-host Caddy
+        |
+  127.0.0.1:8080
+        |
+  Certificate A app -------- PostgreSQL (bookaudit_app ACL)
+        |                         ^
+        | request only            | atomic claim, fence, evidence
+        v                         |
+  PostgreSQL queue <------- read-only verifier
+                                  |
+                    /library:ro + private tmpfs scratch
 
-v1.0 replaces the v0.9 evidence-first pipeline with a **content-ground
-verification engine** that adjudicates each declared metadata field against
-the actual book content.
+Valkey: API rate limits + release/schema/library-bound verifier heartbeat
+External providers: exact checksum-valid ISBN only; no book text or images
+```
 
-| Component | v0.9 | v1.0 |
-|---|---|---|
-| Decision unit | Single `MetadataResolution` aggregate | **Per-field `FieldVerdict`** with cited `EvidenceSpan`s |
-| Adjudication | One LLM call decides everything | **8 deterministic rules** per field; **LLM witness** called only for ambiguous cases |
-| Auto-apply | Manual review queue | **Conservative auto-apply gate** (≥80% confidence, no high-risk flags, per-book restore point) |
-| Undo | OPF backup only | **RestorePointStore**: OPF + cover + secure file copy + JSON snapshot, 30-day retention target |
-| Resume | None | **PostgreSQL ledger/outbox** with single-writer crash reconciliation |
-| OCR | None | **OCR routing** with Tesseract and optional PaddleOCR |
-| Inference | Single Ollama | **Multi-host discovery** (3090 + 5060 Ti + 1660 SUPER + remote) |
-| Observability | Logs | **Prometheus `/metrics`** with counters, gauges, histograms |
-| Scale tested | Hundreds of books | Resolver and metadata microbenchmarks up to 50k synthetic records; full-library throughput is unproven |
+The app and verifier are separate processes and database roles. A verifier
+claim increments a monotonic fence; every durable worker write must still own
+that fence and a live lease. Recovery can reclaim an expired run, while a stale
+worker is rejected from all subsequent writes.
 
-## Historical v1.0 design
+## Certificate A workflow
 
-1.  **The book is the ground truth.** Extract ISBNs, titles, authors, dates,
-    publishers directly from EPUB/PDF content via deterministic rules before
-    anything else.
-2.  **Eight deterministic rules per field.** Title (fuzzy + edition-tag aware),
-    authors (set + transliteration), ISBN-13 (checksum), publisher (variant-tolerant),
-    date (year tolerance), language (ISO), series, series_index.
-3.  **LLMs are witnesses, not dictators.** The LLM is invoked only when a field
-    comes back `ambiguous` from the deterministic rules — never as the primary
-    source of truth.
-4.  **Conservative auto-apply.** A field is auto-applied only when (a) every
-    declared field has a deterministic verdict, (b) overall confidence ≥80,
-    (c) no high-risk flag is present, (d) per-field confidence ≥75.
-5.  **Every apply creates a restore point.** Per-book snapshot of OPF, cover,
-    secure file copy, and JSON metadata diff. 30-day retention target; bulk undo is queued by run ID through the API.
-6.  **Resumable on crash.** A durable PostgreSQL operation ledger/outbox and
-    per-book locks reconcile interrupted external writes before new work begins.
+1. Stop the Calibre desktop application, Content Server, and every other
+   process that can touch `metadata.db` or book files.
+2. Open the WebUI and explicitly confirm that Calibre is stopped.
+3. Start a bounded audit. The app only inserts an immutable request.
+4. The verifier snapshots `metadata.db`, freezes selected membership and format
+   hashes, and audits from private scratch space.
+5. Review run progress and sealed evidence. Cancel if the source was restarted
+   or changed.
+6. Treat `source_changed`, `blocked_recovery`, or stale-heartbeat states as hard
+   operator stops. Never work around them by changing the database.
 
-## Key Features
+Supported production screens are Overview, Verify, and Evidence. Supported API
+routes are documented in [docs/API.md](docs/API.md).
 
-- **Manifestation V2 review** — Review shows exact sealed evidence, all format
-  hashes, source provenance, current-versus-proposed values, tier, authorization,
-  and the state of one queued operation. Tier B/C cannot be queued.
-- **Supervised serial apply** with a persisted max-five budget, exact image,
-  schema and library binding, writer-side budget reconciliation, append-only
-  acknowledgement of reviewed safe failures, and per-book restore points — see
-  [docs/SAFETY.md](docs/SAFETY.md).
-- **Multi-host LLM routing** — auto-discovers 3090 (high), Unraid Ollama
-  (medium), and remote providers. Tasks route by GPU class.
-- **OCR routing** — Tesseract is the baseline; the `[ocr]` optional extra adds
-  PaddleOCR. Surya is not packaged by this project.
-- **WebUI Verify page** — start a verify run from the browser, watch live
-  progress, drill into per-book verdicts.
-- **Privacy by default** — `allow_remote_text: false` and `allow_remote_images:
-  false` block sending snippets to cloud LLMs unless explicitly enabled.
-- **Read-Only by Default** — the application never modifies your library unless
-  you explicitly opt in.
-- **Disposable Content Server gate** — a pinned Calibre 9.11.0 lab generates
-  CC0 fixtures and proves ACL denial, unchanged library hashes, empty scratch,
-  and complete cleanup before any live-library access is considered.
+## First production deployment
 
-## Quick Start (Docker)
+Prerequisites are Docker Engine with Compose v2, a private DNS/VPN name for the
+host, Caddy on that same host, and an existing Calibre library that can be
+stopped during every audit.
 
 ```bash
-git clone http://192.168.0.122:3010/felix/calibre-ai-auditor.git
-cd calibre-ai-auditor
 cp .env.example .env
-# Replace placeholders, use distinct secrets and an immutable image digest.
 chmod 600 .env
+# Replace every placeholder. Use distinct database passwords and a digest-pinned image.
 ./scripts/prepare-production.sh
+
 docker compose up -d --wait postgres valkey
 docker compose --profile maintenance run --rm migrate
-docker compose up -d writer app
+docker compose up -d --wait verifier app
 ```
 
-WebUI at <http://localhost:8080>. To add optional PaddleOCR support:
+Runtime services never migrate the database. Run the migration profile exactly
+once per reviewed upgrade.
+
+Install the same-host edge only after the loopback readiness check passes:
 
 ```bash
-pip install -e .[ocr]
+sudo install -m 0644 deploy/caddy/Caddyfile.example /etc/caddy/Caddyfile
+caddy hash-password
+# Store BOOKAUDIT_DOMAIN, BOOKAUDIT_BASIC_AUTH_USER,
+# BOOKAUDIT_BASIC_AUTH_HASH, BOOKAUDIT_PORT, and BOOKAUDIT_ACME_EMAIL in the
+# root-readable environment used by the Caddy service.
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
 ```
 
-## CLI Quick Start
+`BOOKAUDIT_BASIC_AUTH_HASH` must be a Caddy-supported password hash, not the
+plaintext password. After Caddy login, the WebUI asks for the separate internal
+API key and holds it only in page memory; a reload requires it again. The app
+port remains bound to `127.0.0.1`; do not publish it to the LAN. See the complete
+[production operations runbook](docs/runbooks/production-operations.md) before
+an upgrade, backup, restore, or incident.
+
+## Development
+
+Python 3.12.13 and Node 20.19.4 are the tested toolchain.
 
 ```bash
-source .venv/bin/activate
-
-# Sanity checks
-bookaudit doctor          # verify calibredb, Tika, Qdrant, etc.
-bookaudit hosts           # discover homelab inference hosts
-
-# Manifestation V2 (default): shadow audit, one book at a time
-bookaudit verify --pipeline v2 --limit 100 --use-ocr
-bookaudit verify --pipeline v2 --limit 100 --use-ocr --use-llm
-bookaudit verify --pipeline v2 --limit 0 --format json > out.json
-
-# Aggregate-only inventory through an existing SSH tunnel to Content Server.
-# The password is prompted securely and the output contains no titles/authors/paths.
-bookaudit inventory \
-  --content-server http://127.0.0.1:18086 \
-  --library-id EXACT_LIBRARY_ID \
-  --username READONLY_USER \
-  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
-  --output reports/unraid-audit/inventory.json
-
-# After reviewing the aggregate inventory, audit one remote book in shadow mode.
-# Use a Calibre account independently verified as read-only.
-bookaudit migrate
-bookaudit verify-content-server \
-  --content-server http://127.0.0.1:18086 \
-  --library-id EXACT_LIBRARY_ID \
-  --username READONLY_USER \
-  --source-identity SHA256:VERIFIED_SSH_HOST_FINGERPRINT \
-  --scratch-root reports/unraid-audit/scratch \
-  --limit 1 --use-ocr
-
-# Reproduce the isolated safety gate without mounting a real library.
-uv run python scripts/disposable_calibre_lab.py run
-
-# Emergency close of one persisted supervised pilot (stop app/writer first)
-bookaudit pilot-stop pilot-YYYYMMDD --yes
-
-# Only after stopping its pilot and reconciling a terminal failed operation
-bookaudit incident-ack OPERATION_ID --actor OPERATOR \
-  --reason "Verified pre-write failure and unchanged Calibre metadata" --yes
-
-# Legacy v0.9 commands (still work as fallback)
-bookaudit inspect --path "/path/to/book.epub"
-bookaudit scan --limit 10
-bookaudit audit --run latest
-```
-
-## Documentation
-
-### Quick reference
-- **[ROADMAP.md](ROADMAP.md)** — v0.1 through v1.2 milestones
-- **[USAGE.md](USAGE.md)** — Step-by-step WebUI and CLI workflows
-- **[CLI_REFERENCE.md](CLI_REFERENCE.md)** — All commands and flags
-
-### Architecture & design
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Component overview, data flow, design principles
-- **[docs/architecture/target-advanced-architecture.md](docs/architecture/target-advanced-architecture.md)** — Detailed v1.0 component breakdown
-- **[docs/architecture/integration-decisions.md](docs/architecture/integration-decisions.md)** — Architecture Decision Records
-- **[docs/decisions/ADR-002-exact-manifestation-v2.md](docs/decisions/ADR-002-exact-manifestation-v2.md)** — Exact-edition V2 trust and write contract
-- **[docs/decisions/ADR-003-supervised-local-auditor-scope.md](docs/decisions/ADR-003-supervised-local-auditor-scope.md)** — Product scope and explicit non-goals
-- **[docs/decisions/ADR-004-read-only-content-server-inventory.md](docs/decisions/ADR-004-read-only-content-server-inventory.md)** — Remote inventory trust boundary
-- **[docs/architecture/v1_scope_decisions.md](docs/architecture/v1_scope_decisions.md)** — What's in / out of v1.0
-- **[docs/research/PEER_PROJECTS.md](docs/research/PEER_PROJECTS.md)** — Comparison vs `paperless-gpt`, `book-memex`, etc.
-
-### Operations
-- **[INSTALL.md](INSTALL.md)** — Native + Docker install paths
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** — Production deploy guide
-- **[docs/HOMELAB.md](docs/HOMELAB.md)** — Homelab-specific config
-- **[docs/DATABASE.md](docs/DATABASE.md)** — SQLite / PostgreSQL setup
-- **[docs/API.md](docs/API.md)** — REST endpoints reference
-- **[docs/SAFETY.md](docs/SAFETY.md)** — Read-only mode + restore points
-- **[docs/production-readiness.md](docs/production-readiness.md)** — Current
-  production gate evidence, trust boundaries, and operator prerequisites
-- **[docs/runbooks/disposable-calibre-lab.md](docs/runbooks/disposable-calibre-lab.md)** — Isolated Calibre 9.11 Content Server safety gate
-
-### Quality & calibration
-- **[TESTING.md](TESTING.md)** — Unit / integration / E2E / benchmark strategy
-- **[tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md)** — Performance baseline
-- **[docs/calibration/v1.0_calibration_runbook.md](docs/calibration/v1.0_calibration_runbook.md)** — Real-world calibration on Unraid
-- **[docs/calibration/manifestation-v2-runbook.md](docs/calibration/manifestation-v2-runbook.md)** — V2 gold-corpus calibration and supervised rollout
-
-## Project Principles
-
-- **The book is the ground truth.** Content extraction always runs first;
-  LLMs only adjudicate, never replace.
-- **Read-Only by Default.** The application never modifies your library unless
-  you explicitly opt in.
-- **Deterministic before generative.** Rules run before optional model evidence;
-  their real coverage and precision must be measured on a reviewed corpus.
-- **Privacy-Centric.** Remote LLMs receive minimal context, capped by
-  strict token limits and privacy filters.
-- **Fail-safe, not fail-fast.** A failed LLM call is a `needs_review`, not
-  a crash. A failed OCR is a fallback path, not an error.
-
-## Testing & Benchmarks
-
-The local verification script runs locked formatting, lint, typing,
-hermetic backend/integration tests and a CLI smoke check. Gitea CI adds
-real PostgreSQL concurrency/ACL tests, the required no-skip Calibre/Tesseract/
-PostgreSQL/Valkey V2 apply-readback-undo round trip, the 50k metadata gate,
-dependency audits, desktop/mobile browser tests, image scanning and the Compose
-contract.
-
-### Backend (pytest)
-
-```bash
-# Deterministic local gate (live-service tests remain in Gitea)
-./scripts/verify-calibre-gate.sh
-
-# Full benchmark suite (duration depends on the host)
-uv run pytest --benchmark-only tests/benchmarks/
-
-# OCR comparison (requires real OCR deps)
-uv sync --extra ocr
-uv run pytest -m ocr_live tests/benchmarks/test_bench_ocr_comparison.py
-
-# With coverage
-uv run pytest --cov=src --cov-report=html
-```
-
-Baseline numbers are tracked in [tests/benchmarks/BASELINE.md](tests/benchmarks/BASELINE.md).
-
-### WebUI E2E (Playwright)
-
-```bash
-# From the repository root, prepare the backend used by Playwright
-uv sync --python 3.12.13 --frozen --extra dev
+uv sync --frozen
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest \
+  -m 'not benchmark and not ocr_live and not network' \
+  --ignore=tests/test_retention_postgres_valkey.py \
+  --ignore=tests/test_v2_supervised_pilot_integration.py
 
 cd webui
 npm ci
+npm audit --audit-level=high
+npm run lint -- --max-warnings=0
 npm run build
-
-# Install Playwright browser (one-time)
-npx playwright install --with-deps chromium
-
-# Run all E2E tests
-npm run e2e
-
-# Run with UI inspector
-npm run e2e:ui
-
-# Run specific spec
-npx playwright test review.spec.ts
+npx playwright test --project=chromium --project=mobile-chromium
 ```
 
-The E2E suite covers every page, authentication recovery, accessibility,
-responsive navigation and browser performance budgets.
+The canonical Gitea pipeline adds disposable PostgreSQL ACL and concurrency
+abuse tests, real Calibre/Tesseract boundary tests, Python and npm dependency
+audits, both browser viewports, the 50k metadata microbenchmark, separated image
+builds, exact Compose-graph validation, and vulnerability/secret scans.
 
-### CI integration
+The convenience command below runs the deterministic local backend gate. It
+does not replace the Gitea live-service or container gates.
 
-- **Gitea Actions** is the canonical development pipeline.
-  `.gitea/workflows/v1-tests.yml` runs backend/PostgreSQL, benchmarks, browser,
-  and production-image gates on the self-hosted runner.
-- Files under `.github/workflows/` remain mirror/release compatibility assets;
-  normal development and review use the Gitea remote and Gitea Actions.
+```bash
+./scripts/verify-calibre-gate.sh
+```
+
+## Safety invariants
+
+- Never test against a running or live-mounted library.
+- Never use a library write as a readiness or integration probe.
+- Do not mount the library into the app, PostgreSQL, or Valkey containers.
+- Do not enable `writer` or `writer-maintenance` profiles for Certificate A.
+- Do not enable auto-apply or the supervised pilot; preflight rejects both.
+- Do not add cloud OCR, LLM, vision, upload, watcher, MCP, Paperless, Qdrant,
+  Gotenberg, Tika, manga, or Content Server paths to the production closure.
+- Do not retry or manually edit a `source_changed` or `blocked_recovery` run.
+- Do not treat an old green CI run as evidence for a new commit or image.
+
+The isolated legacy CLI and future writer work remain available to developers
+through the explicit `writer` image, but they are not part of the Certificate A
+support or threat model.
+
+## Documentation
+
+- [Production readiness](docs/production-readiness.md)
+- [Production operations](docs/runbooks/production-operations.md)
+- [Certificate A API](docs/API.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Safety model](docs/SAFETY.md)
+- [ADR-005: Certificate A production boundary](docs/decisions/ADR-005-certificate-a-production-boundary.md)
+- [Testing](TESTING.md)
+
+Historical V1, remote Content Server, and supervised writer documents remain
+for research and future Certificate B work. They do not override ADR-005 or the
+Certificate A runbook.
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE.md](LICENSE.md).
+GPL-3.0-or-later. See [LICENSE](LICENSE) for the canonical text and
+[LICENSE.md](LICENSE.md) for the short notice.

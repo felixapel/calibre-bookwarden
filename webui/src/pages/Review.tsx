@@ -1,48 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  BookOpenCheck,
   CheckCircle2,
-  Clock3,
   FileCheck2,
+  FileKey2,
   Fingerprint,
+  Hash,
   Loader2,
   LockKeyhole,
-  RefreshCw,
-  ShieldAlert,
   ShieldCheck,
 } from 'lucide-react'
 import clsx from 'clsx'
+
 import {
-  authorizeReviewV2,
-  fetchOperationV2,
   fetchReviewV2,
   fetchReviewV2Detail,
-  queueReviewV2,
   type EvidencePackageV2,
   type IdentityTier,
-  type OperationStatusV2,
-  type ReviewV2Detail,
-  type ReviewV2Summary,
 } from '../api/client'
-import { useToast } from '../context/ToastContext'
 
-const PAGE_SIZE = 50
-const TERMINAL_OPERATION_STATES = new Set([
-  'succeeded',
-  'restored',
-  'restore_failed',
-  'unknown',
-  'failed',
-  'cancelled',
-])
-
-const tierStyle: Record<IdentityTier, string> = {
-  A: 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300',
-  B: 'border-amber-500/40 bg-amber-950/35 text-amber-300',
-  C: 'border-rose-500/40 bg-rose-950/35 text-rose-300',
+const TIER_STYLE: Record<IdentityTier, string> = {
+  A: 'border-emerald-600/50 bg-emerald-950/35 text-emerald-300',
+  B: 'border-amber-600/50 bg-amber-950/35 text-amber-300',
+  C: 'border-rose-600/50 bg-rose-950/35 text-rose-300',
 }
 
 function titleOf(metadata: Record<string, unknown>): string {
@@ -50,516 +32,105 @@ function titleOf(metadata: Record<string, unknown>): string {
 }
 
 function authorsOf(metadata: Record<string, unknown>): string {
-  if (Array.isArray(metadata.authors)) {
-    const authors = metadata.authors.map(String).filter(Boolean)
-    if (authors.length) return authors.join(', ')
-  }
-  if (typeof metadata.authors === 'string' && metadata.authors.trim()) return metadata.authors
-  return 'Unknown author'
+  if (Array.isArray(metadata.authors)) return metadata.authors.map(String).filter(Boolean).join(', ') || 'Unknown author'
+  return typeof metadata.authors === 'string' && metadata.authors.trim() ? metadata.authors : 'Unknown author'
 }
 
-function formatValue(value: unknown): string {
+function valueOf(value: unknown): string {
   if (value === null || value === undefined || value === '') return '∅'
   if (Array.isArray(value)) return value.map(String).join(', ')
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }
 
-function currentPatchValue(packageData: EvidencePackageV2, field: string): unknown {
-  if (field === 'edition_statement') {
-    return packageData.snapshot.current_metadata['#edition']
-      ?? packageData.snapshot.current_metadata.edition_statement
-  }
-  return packageData.snapshot.current_metadata[field]
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback
+function currentValue(pkg: EvidencePackageV2, field: string): unknown {
+  if (field === 'edition_statement') return pkg.snapshot.current_metadata['#edition'] ?? pkg.snapshot.current_metadata.edition_statement
+  return pkg.snapshot.current_metadata[field]
 }
 
 export default function Review() {
-  const [items, setItems] = useState<ReviewV2Summary[]>([])
-  const [total, setTotal] = useState(0)
+  const { evidenceId } = useParams<{ evidenceId: string }>()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const runId = searchParams.get('run_id') ?? undefined
+  const [tier, setTier] = useState<'all' | IdentityTier>('all')
   const [offset, setOffset] = useState(0)
-  const [tierFilter, setTierFilter] = useState<'all' | IdentityTier>('all')
-  const [loading, setLoading] = useState(true)
-  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ReviewV2Detail | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [reason, setReason] = useState('')
-  const [authorizationId, setAuthorizationId] = useState<string | null>(null)
-  const [operation, setOperation] = useState<OperationStatusV2 | null>(null)
-  const [authorizing, setAuthorizing] = useState(false)
-  const [queueing, setQueueing] = useState(false)
-  const [refreshingOperation, setRefreshingOperation] = useState(false)
-  const detailRequestId = useRef(0)
-  const { showToast } = useToast()
 
-  const loadQueue = useCallback(async () => {
-    setLoading(true)
-    try {
-      const response = await fetchReviewV2({
-        tier: tierFilter === 'all' ? undefined : tierFilter,
-        limit: PAGE_SIZE,
-        offset,
-      })
-      setItems(response.data)
-      setTotal(response.meta.total)
-    } catch (error) {
-      setItems([])
-      setTotal(0)
-      showToast(errorMessage(error, 'Failed to load Manifestation V2 review queue'), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }, [offset, showToast, tierFilter])
+  useEffect(() => setOffset(0), [runId, tier])
 
-  useEffect(() => {
-    void loadQueue()
-  }, [loadQueue])
+  const listQuery = useQuery({
+    queryKey: ['reviewV2', runId, tier, offset],
+    queryFn: () => fetchReviewV2({ runId, tier: tier === 'all' ? undefined : tier, limit: 50, offset }),
+  })
+  const detailQuery = useQuery({
+    queryKey: ['reviewV2Detail', evidenceId],
+    queryFn: () => fetchReviewV2Detail(evidenceId!),
+    enabled: Boolean(evidenceId),
+  })
 
-  const selectEvidence = async (evidenceId: string) => {
-    const requestId = detailRequestId.current + 1
-    detailRequestId.current = requestId
-    setSelectedEvidenceId(evidenceId)
-    setDetail(null)
-    setReason('')
-    setAuthorizationId(null)
-    setOperation(null)
-    setDetailLoading(true)
-    try {
-      const loaded = await fetchReviewV2Detail(evidenceId)
-      if (detailRequestId.current !== requestId) return
-      setDetail(loaded)
-      setAuthorizationId(loaded.authorization?.authorization_id ?? null)
-      setOperation(loaded.operation)
-    } catch (error) {
-      if (detailRequestId.current !== requestId) return
-      showToast(errorMessage(error, 'Failed to load sealed V2 evidence'), 'error')
-    } finally {
-      if (detailRequestId.current === requestId) setDetailLoading(false)
-    }
-  }
-
-  const packageData = detail?.package.evidence_id === selectedEvidenceId ? detail.package : null
-  const patchEntries = useMemo(
-    () => Object.entries(packageData?.identity.auto_patch ?? {}),
-    [packageData],
-  )
-  const isTierA = packageData?.identity.tier === 'A'
-  const operationIsTerminal = operation ? TERMINAL_OPERATION_STATES.has(operation.state) : false
-  const canAuthorize = Boolean(isTierA && patchEntries.length > 0 && !operation)
-  const canQueue = Boolean(isTierA && authorizationId && !operation)
-
-  const authorize = async () => {
-    if (!packageData || !canAuthorize || !reason.trim()) return
-    setAuthorizing(true)
-    try {
-      const result = await authorizeReviewV2(packageData.evidence_id, reason.trim())
-      setAuthorizationId(result.authorization_id)
-      showToast('Exact sealed patch authorized. It has not been queued yet.', 'success')
-    } catch (error) {
-      showToast(errorMessage(error, 'Authorization failed'), 'error')
-    } finally {
-      setAuthorizing(false)
-    }
-  }
-
-  const queueWrite = async () => {
-    if (!packageData || !authorizationId || !canQueue) return
-    setQueueing(true)
-    try {
-      const result = await queueReviewV2(packageData.evidence_id, authorizationId)
-      const now = new Date().toISOString()
-      setOperation({
-        operation_id: result.operation_id,
-        state: 'requested',
-        pilot_id: result.pilot_id,
-        change_id: null,
-        created_at: now,
-        updated_at: now,
-        completed_at: null,
-        error_code: null,
-      })
-      showToast('One supervised writer operation was queued.', 'success')
-    } catch (error) {
-      showToast(errorMessage(error, 'Supervised queue request failed'), 'error')
-    } finally {
-      setQueueing(false)
-    }
-  }
-
-  const refreshOperation = async () => {
-    if (!operation) return
-    setRefreshingOperation(true)
-    try {
-      setOperation(await fetchOperationV2(operation.operation_id))
-    } catch (error) {
-      showToast(errorMessage(error, 'Could not refresh operation status'), 'error')
-    } finally {
-      setRefreshingOperation(false)
-    }
-  }
+  const items = listQuery.data?.data ?? []
+  const total = listQuery.data?.meta.total ?? 0
+  const pkg = detailQuery.data?.package
+  const patchEntries = useMemo(() => Object.entries(pkg?.identity.auto_patch ?? {}), [pkg])
 
   return (
-    <div className="page-transition min-h-[calc(100vh-2rem)] lg:flex">
-      <aside className="border-b border-slate-800/50 bg-[#070b13]/85 backdrop-blur-md lg:w-[22rem] lg:shrink-0 lg:border-b-0 lg:border-r">
-        <header className="space-y-4 border-b border-slate-800/50 p-5">
+    <div className="min-h-full lg:flex">
+      <aside className="border-b border-slate-800/60 bg-[#070b13]/80 lg:w-[23rem] lg:shrink-0 lg:border-b-0 lg:border-r">
+        <header className="space-y-4 border-b border-slate-800/60 p-5">
           <div>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.22em] text-emerald-400">
-                  Sealed evidence V2
-                </p>
-                <h1 className="flex items-center gap-2 text-lg font-bold text-slate-100">
-                  <ShieldAlert className="h-5 w-5 text-purple-400" aria-hidden="true" />
-                  Manifestation review
-                </h1>
-              </div>
-              <span className="rounded-full border border-slate-700/70 bg-slate-950/50 px-2.5 py-1 font-mono text-xs text-slate-400">
-                {total}
-              </span>
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-400">Certificate A · read only</p>
+            <div className="mt-2 flex items-start justify-between gap-3">
+              <div><h1 className="flex items-center gap-2 text-xl font-bold text-slate-100"><FileCheck2 aria-hidden="true" className="h-5 w-5 text-cyan-400" /> Sealed evidence</h1><p className="mt-2 text-xs leading-5 text-slate-500">Inspect what the verifier observed. Nothing on this screen can authorize, queue, or apply metadata.</p></div>
+              <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2.5 py-1 font-mono text-xs text-slate-400">{total}</span>
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              One evidence package, one authorization, one writer operation.
-            </p>
           </div>
-
-          <label className="block text-xs font-semibold text-slate-400">
-            Identity tier
-            <select
-              value={tierFilter}
-              onChange={(event) => {
-                setTierFilter(event.target.value as 'all' | IdentityTier)
-                setOffset(0)
-              }}
-              className="mt-1.5 w-full rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
-            >
-              <option value="all">All V2 tiers</option>
-              <option value="A">Tier A — exact</option>
-              <option value="B">Tier B — review only</option>
-              <option value="C">Tier C — blocked</option>
-            </select>
-          </label>
-
-          <div className="rounded-lg border border-slate-800 bg-slate-950/35 p-3 text-[11px] leading-5 text-slate-500">
-            Legacy V1 records are historical and read-only. They remain in run history and cannot be
-            authorized from this queue.
-          </div>
+          {runId && <div className="rounded-lg border border-cyan-900/50 bg-cyan-950/20 p-3 text-xs text-cyan-200"><span className="block text-[10px] uppercase tracking-wider text-cyan-500">Run filter</span><span className="mt-1 block break-all font-mono">{runId}</span></div>}
+          <label className="block text-xs font-semibold text-slate-400">Identity tier<select value={tier} onChange={(event) => setTier(event.target.value as 'all' | IdentityTier)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-500"><option value="all">All tiers</option><option value="A">Tier A — exact</option><option value="B">Tier B — review</option><option value="C">Tier C — blocked</option></select></label>
         </header>
 
-        <div className="max-h-[34vh] overflow-y-auto lg:max-h-[calc(100vh-19rem)]">
-          {loading ? (
-            <div className="flex justify-center p-12" role="status" aria-label="Loading review queue">
-              <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
-            </div>
-          ) : items.length ? (
-            <div className="divide-y divide-slate-800/40">
-              {items.map((item) => (
-                <button
-                  key={item.evidence_id}
-                  type="button"
-                  onClick={() => void selectEvidence(item.evidence_id)}
-                  className={clsx(
-                    'w-full border-l-2 p-4 text-left transition-colors',
-                    selectedEvidenceId === item.evidence_id
-                      ? 'border-l-purple-500 bg-purple-950/20'
-                      : 'border-l-transparent hover:bg-slate-900/50',
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-200">
-                        {titleOf(item.current_metadata)}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {authorsOf(item.current_metadata)}
-                      </p>
-                    </div>
-                    <span className={clsx('rounded border px-1.5 py-0.5 font-mono text-[10px]', tierStyle[item.tier])}>
-                      Tier {item.tier}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[10px] text-slate-500">
-                    <span>{item.state}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{item.patch_fields.length} patch fields</span>
-                  </div>
-                  {item.risk_flags.length > 0 && (
-                    <p className="mt-2 truncate text-[11px] text-rose-400">{item.risk_flags.join(', ')}</p>
-                  )}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="p-10 text-center text-sm text-slate-500">No sealed V2 evidence matches this filter.</div>
+        <div className="max-h-[38vh] overflow-y-auto lg:max-h-[calc(100vh-16rem)]">
+          {listQuery.isLoading ? <div className="flex justify-center p-12" role="status" aria-label="Loading evidence"><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin text-cyan-400" /></div> : listQuery.isError ? <p className="p-6 text-sm text-rose-300">Evidence could not be loaded.</p> : items.length === 0 ? <p className="p-10 text-center text-sm text-slate-500">No sealed Certificate A evidence matches this filter.</p> : (
+            <div className="divide-y divide-slate-800/60">{items.map((item) => (
+              <button key={item.evidence_id} type="button" onClick={() => navigate(`/review/${encodeURIComponent(item.evidence_id)}${runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`)} className={clsx('w-full border-l-2 p-4 text-left transition-colors', item.evidence_id === evidenceId ? 'border-cyan-400 bg-cyan-950/20' : 'border-transparent hover:bg-slate-900/60')}>
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-200">{titleOf(item.current_metadata)}</p><p className="mt-1 truncate text-xs text-slate-500">{authorsOf(item.current_metadata)}</p></div><span className={clsx('shrink-0 rounded border px-2 py-0.5 font-mono text-[10px]', TIER_STYLE[item.tier])}>Tier {item.tier}</span></div>
+                <p className="mt-3 font-mono text-[10px] text-slate-500">{item.state.replaceAll('_', ' ')} · {item.patch_fields.length} observed differences</p>
+                {item.risk_flags.length > 0 && <p className="mt-2 truncate text-[11px] text-rose-400">{item.risk_flags.join(', ')}</p>}
+              </button>
+            ))}</div>
           )}
         </div>
 
-        <footer className="flex items-center justify-between border-t border-slate-800/50 p-3">
-          <button
-            type="button"
-            disabled={offset === 0 || loading}
-            onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}
-            className="rounded-lg border border-slate-800 p-2 text-slate-400 hover:text-slate-100 disabled:opacity-30"
-            aria-label="Previous review page"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <span className="font-mono text-[10px] text-slate-500">
-            {total ? `${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} of ${total}` : '0 items'}
-          </span>
-          <button
-            type="button"
-            disabled={offset + PAGE_SIZE >= total || loading}
-            onClick={() => setOffset((value) => value + PAGE_SIZE)}
-            className="rounded-lg border border-slate-800 p-2 text-slate-400 hover:text-slate-100 disabled:opacity-30"
-            aria-label="Next review page"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </footer>
+        {total > 50 && <footer className="flex items-center justify-between border-t border-slate-800 p-3 text-xs"><button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))} className="rounded-lg px-3 py-2 text-slate-300 disabled:opacity-30">Previous</button><span className="text-slate-500">{offset + 1}–{Math.min(offset + 50, total)}</span><button type="button" disabled={offset + 50 >= total} onClick={() => setOffset(offset + 50)} className="rounded-lg px-3 py-2 text-slate-300 disabled:opacity-30">Next</button></footer>}
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto bg-[#090d16]/35">
-        {detailLoading ? (
-          <div className="flex min-h-[55vh] items-center justify-center" role="status">
-            <Loader2 className="h-7 w-7 animate-spin text-purple-400" />
-            <span className="sr-only">Validating sealed evidence</span>
-          </div>
-        ) : packageData ? (
-          <div className="mx-auto max-w-6xl space-y-6 p-5 sm:p-8">
-            <section className="flex flex-col gap-5 border-b border-slate-800/50 pb-6 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0">
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <span className={clsx('rounded-md border px-2.5 py-1 text-xs font-bold', tierStyle[packageData.identity.tier])}>
-                    Tier {packageData.identity.tier}
-                  </span>
-                  <span className="rounded-md border border-slate-700/70 bg-slate-950/50 px-2.5 py-1 font-mono text-xs text-slate-400">
-                    {packageData.state}
-                  </span>
-                </div>
-                <h2 className="text-2xl font-extrabold tracking-tight text-slate-100 sm:text-3xl">
-                  {titleOf(packageData.snapshot.current_metadata)}
-                </h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  {authorsOf(packageData.snapshot.current_metadata)}
-                </p>
-                <p className="mt-3 break-all font-mono text-[11px] text-slate-600">
-                  {packageData.book_key} · evidence {packageData.evidence_id}
-                </p>
-              </div>
-
-              <div className="w-full rounded-xl border border-slate-800/80 bg-slate-950/45 p-4 xl:max-w-md">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-                  <Fingerprint className="h-4 w-4 text-cyan-400" aria-hidden="true" />
-                  Sealed package
-                </div>
-                <p className="mt-2 break-all font-mono text-[10px] leading-5 text-slate-500">
-                  {packageData.package_sha256}
-                </p>
-              </div>
-            </section>
-
-            {!isTierA && (
-              <section className="flex gap-3 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 text-amber-200">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-                <div>
-                  <p className="font-semibold">Tier {packageData.identity.tier} cannot be authorized or queued</p>
-                  <p className="mt-1 text-sm leading-6 text-amber-300/70">
-                    This package remains review-only because the exact manifestation was not corroborated.
-                  </p>
-                </div>
-              </section>
-            )}
-
-            <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-              <div className="glass-card overflow-hidden rounded-2xl">
-                <div className="flex items-center gap-2 border-b border-slate-800/50 px-5 py-4">
-                  <BookOpenCheck className="h-5 w-5 text-emerald-400" aria-hidden="true" />
-                  <h3 className="font-bold text-slate-200">Current versus exact patch</h3>
-                </div>
-                {patchEntries.length ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[34rem] text-left text-sm">
-                      <thead className="bg-slate-950/30 font-mono text-[10px] uppercase tracking-wider text-slate-500">
-                        <tr>
-                          <th className="px-5 py-3">Field</th>
-                          <th className="px-5 py-3">Current</th>
-                          <th className="px-5 py-3">Authorized value</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/40">
-                        {patchEntries.map(([field, value]) => (
-                          <tr key={field}>
-                            <th className="px-5 py-4 font-mono text-xs text-slate-400">{field}</th>
-                            <td className="px-5 py-4 text-rose-300">{formatValue(currentPatchValue(packageData, field))}</td>
-                            <td className="px-5 py-4 font-semibold text-emerald-300">{formatValue(value)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="p-5 text-sm text-slate-500">No canonical patch is permitted for this package.</p>
-                )}
-              </div>
-
-              <div className="glass-card rounded-2xl p-5">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-5 w-5 text-cyan-400" aria-hidden="true" />
-                  <h3 className="font-bold text-slate-200">Manifestation identity</h3>
-                </div>
-                {Object.keys(packageData.identity.manifestation_ids).length ? (
-                  <dl className="mt-4 space-y-3">
-                    {Object.entries(packageData.identity.manifestation_ids).map(([kind, value]) => (
-                      <div key={kind} className="rounded-lg border border-slate-800/70 bg-slate-950/35 p-3">
-                        <dt className="font-mono text-[10px] uppercase tracking-wider text-slate-500">{kind}</dt>
-                        <dd className="mt-1 break-all font-mono text-sm text-cyan-200">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : (
-                  <p className="mt-4 text-sm text-slate-500">No exact manifestation identifier was established.</p>
-                )}
-                {packageData.identity.reasons.length > 0 && (
-                  <ul className="mt-4 space-y-2 text-xs leading-5 text-slate-400">
-                    {packageData.identity.reasons.map((reasonText) => <li key={reasonText}>• {reasonText}</li>)}
-                  </ul>
-                )}
-              </div>
-            </section>
-
-            <section className="glass-card rounded-2xl p-5">
-              <div className="flex items-center gap-2">
-                <FileCheck2 className="h-5 w-5 text-purple-400" aria-hidden="true" />
-                <h3 className="font-bold text-slate-200">Inspected ebook formats</h3>
-              </div>
-              <div className="mt-4 grid gap-3">
-                {packageData.formats.map((format) => (
-                  <article key={format.path} className="rounded-xl border border-slate-800/70 bg-slate-950/30 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded border border-purple-500/30 bg-purple-950/30 px-2 py-0.5 font-mono text-xs text-purple-300">
-                          {format.format}
-                        </span>
-                        <span className="text-xs text-emerald-400">{format.status}</span>
-                      </div>
-                      <span className="text-xs text-slate-500">{format.languages.join(', ') || 'language unknown'}</span>
-                    </div>
-                    <p className="mt-3 break-all font-mono text-[11px] text-slate-500">{format.path}</p>
-                    <p className="mt-2 break-all font-mono text-[10px] text-slate-600">{format.sha256}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="glass-card rounded-2xl p-5">
-              <h3 className="font-bold text-slate-200">Independent evidence roots</h3>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {packageData.source_evidence.map((source) => (
-                  <article key={source.evidence_id} className="rounded-xl border border-slate-800/70 bg-slate-950/30 p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-[10px] uppercase tracking-wider text-cyan-400">{source.source_kind}</span>
-                      <span className="text-[10px] text-slate-600">root {source.independence_root ?? source.root_id}</span>
-                      {source.authoritative && (
-                        <span className="rounded bg-emerald-950/40 px-1.5 py-0.5 text-[10px] text-emerald-300">authoritative</span>
-                      )}
-                    </div>
-                    <p className="mt-2 text-sm text-slate-300">{source.field}</p>
-                    {source.locator && <p className="mt-1 text-xs text-slate-500">{source.locator}</p>}
-                    <code className="mt-3 block break-words rounded bg-black/20 p-2 text-[11px] text-slate-400">
-                      value: {JSON.stringify(source.value)}
-                    </code>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="glass-card rounded-2xl border-purple-500/20 p-5">
-              <div className="flex items-center gap-2">
-                <LockKeyhole className="h-5 w-5 text-purple-400" aria-hidden="true" />
-                <h3 className="font-bold text-slate-100">Supervised write gate</h3>
-              </div>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                Authorization binds your reason to this package seal and canonical patch. Queueing is a separate action
-                and always creates exactly one operation.
-              </p>
-
-              <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_auto_auto] xl:items-end">
-                <label htmlFor="authorization-reason" className="block text-sm font-semibold text-slate-300">
-                  Authorization reason
-                  <textarea
-                    id="authorization-reason"
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                    disabled={!canAuthorize || Boolean(authorizationId)}
-                    rows={2}
-                    placeholder="What exact evidence did you cross-check?"
-                    className="mt-2 w-full resize-y rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 disabled:opacity-50"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void authorize()}
-                  disabled={!canAuthorize || !reason.trim() || Boolean(authorizationId) || authorizing}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-purple-500/40 bg-purple-600/20 px-4 py-2.5 text-sm font-semibold text-purple-200 transition-colors hover:bg-purple-600/30 disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  {authorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  Authorize exact patch
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void queueWrite()}
-                  disabled={!canQueue || queueing}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-bold text-white shadow-[0_0_14px_rgba(16,185,129,0.15)] transition-opacity disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  {queueing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Queue this write
-                </button>
-              </div>
-
-              {authorizationId && (
-                <p className="mt-4 break-all rounded-lg border border-emerald-800/40 bg-emerald-950/20 p-3 font-mono text-xs text-emerald-300">
-                  Authorization {authorizationId} is bound to this exact package.
-                </p>
-              )}
-
-              {operation && (
-                <div className="mt-4 rounded-xl border border-cyan-800/40 bg-cyan-950/15 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="flex items-center gap-2 text-sm font-semibold text-cyan-200">
-                        <Clock3 className="h-4 w-4" aria-hidden="true" />
-                        Writer operation: {operation.state}
-                      </p>
-                      <p className="mt-2 break-all font-mono text-xs text-cyan-400">{operation.operation_id}</p>
-                      {operation.error_code && <p className="mt-2 text-xs text-rose-300">{operation.error_code}</p>}
-                      {operationIsTerminal && operation.change_id && (
-                        <p className="mt-2 text-xs text-slate-400">Restore point change #{operation.change_id}</p>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void refreshOperation()}
-                      disabled={refreshingOperation}
-                      className="inline-flex items-center gap-2 rounded-lg border border-cyan-700/40 px-3 py-2 text-xs font-semibold text-cyan-300 hover:bg-cyan-950/30 disabled:opacity-40"
-                    >
-                      <RefreshCw className={clsx('h-3.5 w-3.5', refreshingOperation && 'animate-spin')} />
-                      Refresh status
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
+      <main className="min-w-0 flex-1 p-6 md:p-8 lg:p-10">
+        {!evidenceId ? (
+          <div className="mx-auto mt-20 max-w-lg text-center"><ShieldCheck aria-hidden="true" className="mx-auto h-12 w-12 text-cyan-500/60" /><h2 className="mt-5 text-xl font-bold text-slate-200">Choose a sealed evidence package</h2><p className="mt-2 text-sm leading-6 text-slate-500">You can inspect hashes, exact manifestation identifiers, provider observations, and the metadata differences the shadow policy calculated.</p></div>
+        ) : detailQuery.isLoading ? (
+          <div className="flex items-center gap-3 text-sm text-slate-400" role="status"><Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" /> Verifying evidence seal…</div>
+        ) : detailQuery.isError || !pkg ? (
+          <div className="flex items-center gap-3 rounded-xl border border-rose-800/50 bg-rose-950/25 p-5 text-sm text-rose-300"><AlertTriangle aria-hidden="true" className="h-5 w-5" /> Evidence is unavailable or failed integrity validation.</div>
         ) : (
-          <div className="flex min-h-[60vh] items-center justify-center p-8 text-center">
-            <div>
-              <Fingerprint className="mx-auto h-10 w-10 text-slate-700" aria-hidden="true" />
-              <p className="mt-4 text-sm text-slate-500">Select a sealed V2 evidence package to inspect it.</p>
-            </div>
-          </div>
+          <article className="mx-auto max-w-5xl space-y-7">
+            <header className="space-y-4 border-b border-slate-800 pb-6">
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs uppercase tracking-wider text-slate-500">Current Calibre record</p><h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-50">{titleOf(pkg.snapshot.current_metadata)}</h2><p className="mt-2 text-sm text-slate-400">{authorsOf(pkg.snapshot.current_metadata)}</p></div><span className={clsx('rounded-xl border px-3 py-2 font-mono text-sm', TIER_STYLE[pkg.identity.tier])}>Tier {pkg.identity.tier}</span></div>
+              <div className="flex flex-wrap gap-2 font-mono text-[11px] text-slate-500"><span className="rounded-lg border border-slate-800 px-2.5 py-1">{pkg.state}</span><span className="rounded-lg border border-slate-800 px-2.5 py-1">{pkg.book_key}</span><span className="rounded-lg border border-slate-800 px-2.5 py-1">{new Date(pkg.created_at).toLocaleString()}</span></div>
+            </header>
+
+            <section aria-labelledby="boundary-heading" className="rounded-2xl border border-emerald-800/50 bg-emerald-950/20 p-5"><h3 id="boundary-heading" className="flex items-center gap-2 font-bold text-emerald-200"><LockKeyhole aria-hidden="true" className="h-5 w-5" /> Read-only production boundary</h3><p className="mt-2 text-sm leading-6 text-emerald-100/70">This is a sealed observation from a shadow run. Authorization and operations are absent, and writes are disabled by the API contract.</p></section>
+
+            <section aria-labelledby="identity-heading" className="glass-card rounded-2xl p-6"><h3 id="identity-heading" className="flex items-center gap-2 text-lg font-bold text-slate-100"><Fingerprint aria-hidden="true" className="h-5 w-5 text-cyan-400" /> Manifestation identity</h3><dl className="mt-5 grid gap-3 sm:grid-cols-2">{Object.entries(pkg.identity.manifestation_ids).map(([kind, value]) => <div key={kind} className="rounded-xl border border-slate-800 bg-slate-950/35 p-4"><dt className="text-xs uppercase tracking-wider text-slate-500">{kind}</dt><dd className="mt-2 break-all font-mono text-sm text-slate-200">{value}</dd></div>)}{Object.keys(pkg.identity.manifestation_ids).length === 0 && <p className="text-sm text-slate-500">No exact manifestation identifier was established.</p>}</dl>{pkg.identity.reasons.length > 0 && <ul className="mt-4 space-y-2 text-sm text-slate-400">{pkg.identity.reasons.map((reason) => <li key={reason} className="flex gap-2"><CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-cyan-500" />{reason}</li>)}</ul>}</section>
+
+            <section aria-labelledby="formats-heading" className="space-y-3"><h3 id="formats-heading" className="flex items-center gap-2 text-lg font-bold text-slate-100"><FileKey2 aria-hidden="true" className="h-5 w-5 text-cyan-400" /> Format inventory</h3>{pkg.formats.map((format) => <div key={`${format.path}:${format.sha256}`} className="glass-card rounded-2xl p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold text-slate-200">{format.format}</p><p className="mt-1 break-all font-mono text-xs text-slate-500">{format.path}</p></div><span className="rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300">{format.status}</span></div><p className="mt-4 flex items-start gap-2 break-all font-mono text-xs text-slate-400"><Hash aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-cyan-500" />{format.sha256}</p>{format.error && <p className="mt-3 text-sm text-rose-300">{format.error}</p>}</div>)}</section>
+
+            <section aria-labelledby="sources-heading" className="space-y-3"><h3 id="sources-heading" className="text-lg font-bold text-slate-100">Source evidence</h3>{pkg.source_evidence.length === 0 ? <p className="text-sm text-slate-500">No source evidence was retained.</p> : <div className="grid gap-3">{pkg.source_evidence.map((source) => <div key={source.evidence_id} className="glass-card rounded-2xl p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-200">{source.field}: <span className="font-normal text-cyan-200">{valueOf(source.value)}</span></p><p className="mt-1 text-xs text-slate-500">{source.source_kind} · root {source.root_id}</p></div>{source.authoritative && <span className="rounded-full border border-emerald-700/60 bg-emerald-950/30 px-2.5 py-1 text-[10px] uppercase tracking-wider text-emerald-300">authoritative</span>}</div>{source.locator && <p className="mt-3 text-sm text-slate-400">{source.locator}</p>}<p className="mt-3 break-all font-mono text-[10px] text-slate-600">{source.evidence_id}</p></div>)}</div>}</section>
+
+            <section aria-labelledby="differences-heading" className="space-y-3"><h3 id="differences-heading" className="text-lg font-bold text-slate-100">Shadow metadata differences</h3><p className="text-sm text-slate-500">Calculated observations only. Certificate A cannot apply them.</p>{patchEntries.length === 0 ? <p className="rounded-xl border border-slate-800 p-5 text-sm text-slate-500">No safe patch was calculated for this evidence package.</p> : <div className="overflow-x-auto rounded-2xl border border-slate-800"><table className="w-full text-left text-sm"><thead className="bg-slate-950/70 text-xs uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">Field</th><th className="px-4 py-3">Current</th><th className="px-4 py-3">Observed</th></tr></thead><tbody className="divide-y divide-slate-800">{patchEntries.map(([field, observed]) => <tr key={field}><th className="px-4 py-3 font-mono text-xs text-slate-400">{field}</th><td className="px-4 py-3 text-slate-400">{valueOf(currentValue(pkg, field))}</td><td className="px-4 py-3 text-cyan-200">{valueOf(observed)}</td></tr>)}</tbody></table></div>}</section>
+
+            {(pkg.identity.risk_flags.length > 0 || pkg.warnings.length > 0 || pkg.error) && <section aria-labelledby="warnings-heading" className="rounded-2xl border border-amber-800/50 bg-amber-950/20 p-5"><h3 id="warnings-heading" className="flex items-center gap-2 font-bold text-amber-200"><AlertTriangle aria-hidden="true" className="h-5 w-5" /> Risks and warnings</h3><ul className="mt-3 space-y-2 text-sm text-amber-100/75">{[...pkg.identity.risk_flags, ...pkg.warnings, ...(pkg.error ? [pkg.error] : [])].map((warning) => <li key={warning}>{warning}</li>)}</ul></section>}
+
+            <footer className="space-y-2 border-t border-slate-800 pt-5 font-mono text-[10px] text-slate-600"><p className="break-all">Evidence: {pkg.evidence_id}</p><p className="break-all">Snapshot SHA-256: {pkg.snapshot.snapshot_sha256}</p><p className="break-all">Package SHA-256: {pkg.package_sha256}</p></footer>
+          </article>
         )}
       </main>
     </div>

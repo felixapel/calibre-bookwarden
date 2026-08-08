@@ -1,72 +1,72 @@
-import { test, expect } from '@playwright/test'
-import { mockApi } from './helpers/api-mock'
-import { setApiKey } from './helpers/auth'
+import { expect, test, type Page } from '@playwright/test'
 
-test.describe('Dashboard page', () => {
-  test.beforeEach(async ({ page }) => {
-    await setApiKey(page)
-    await mockApi(page, /\/api\/health/, {
-      get: { body: { status: 'ok' } },
-    })
-    await mockApi(page, /\/api\/config/, {
-      get: {
-        body: {
-          status: 'success',
-          data: {
-            library: { path: '/library', read_only: true },
-            ollama_enabled: true,
-          },
-        },
-      },
-    })
-    await mockApi(page, /\/api\/doctor/, {
-      get: {
-        body: {
-          status: 'success',
-          data: {
-            dependencies: { calibredb: { found: true, path: '/usr/bin/calibredb' } },
-            connectivity: { llms: { ollama: { ok: true } }, inference_hosts: { total_hosts: 3, healthy_hosts: 2 } },
-          },
-        },
-      },
-    })
-    await mockApi(page, /\/api\/books$/, {
-      get: { body: { status: 'success', data: [] } },
-    })
-    await mockApi(page, /\/api\/books\/all\/duplicates/, {
-      get: { body: { status: 'success', data: [] } },
-    })
-    await mockApi(page, /\/api\/runs$/, {
-      get: { body: [] },
-    })
+async function mockDashboard(page: Page) {
+  await page.route(/\/api\/health\/ready$/, (route) => route.fulfill({ json: { status: 'ready', certificate: 'A' } }))
+  await page.route(/\/api\/capabilities$/, (route) => route.fulfill({
+    json: {
+      certificate: 'A',
+      mode: 'shadow',
+      pipeline: 'manifestation-v2',
+      library_source: 'offline-folder',
+      providers: ['google_books_isbn', 'openlibrary_isbn'],
+      ocr: { enabled: true, backend: 'tesseract', max_pages: 12 },
+      writes_enabled: false,
+    },
+  }))
+  await page.route(/\/api\/verify\/runs$/, (route) => route.fulfill({
+    json: {
+      runs: [{
+        run_id: 'verify_certificate_a_001',
+        status: 'completed',
+        started_at: '2026-08-08T10:00:00Z',
+        finished_at: '2026-08-08T10:03:00Z',
+        total: 25,
+        completed: 25,
+        counts: { shadowed: 25 },
+        error_code: null,
+      }],
+      limit: 50,
+      offset: 0,
+    },
+  }))
+}
+
+test.beforeEach(async ({ page }) => mockDashboard(page))
+
+test('presents the production Certificate A boundary', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: /Audit your Calibre metadata/ })).toBeVisible()
+  await expect(page.getByText('Shadow only', { exact: true })).toBeVisible()
+  await expect(page.getByText('Read-only', { exact: true })).toBeVisible()
+  await expect(page.getByText('google_books_isbn + openlibrary_isbn', { exact: true })).toBeVisible()
+  await expect(page.getByText('Writes', { exact: true })).toBeVisible()
+  await expect(page.getByText('Disabled', { exact: true })).toBeVisible()
+})
+
+test('shows the stopped-library sequence and latest run', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Stop Calibre', { exact: true })).toBeVisible()
+  await expect(page.getByText('verify_certificate_a_001')).toBeVisible()
+  await page.getByRole('link', { name: 'Start a shadow audit' }).click()
+  await expect(page).toHaveURL(/\/verify$/)
+})
+
+test('contains no quarantined production navigation', async ({ page }) => {
+  await page.goto('/')
+  for (const label of ['Scan', 'Duplicates', 'Inspect', 'Undo', 'Settings']) {
+    await expect(page.getByRole('link', { name: label, exact: true })).toHaveCount(0)
+  }
+})
+
+test('loads no third-party browser resources', async ({ page }) => {
+  const thirdPartyRequests: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.origin !== 'http://127.0.0.1:5174') thirdPartyRequests.push(url.href)
   })
 
-  test('renders health card as green when API is healthy', async ({ page }) => {
-    await page.goto('/')
-    await expect(page.locator('text=ok').first()).toBeVisible()
-  })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 
-  test('displays homelab host count from doctor', async ({ page }) => {
-    await page.goto('/')
-    // Dashboard renders the doctor info; just verify the page loads
-    await expect(page.locator('body')).toBeVisible()
-  })
-
-  test('shows review queue count', async ({ page }) => {
-    await page.goto('/')
-    // Just verify the dashboard loads without errors
-    await expect(page.locator('body')).toBeVisible()
-  })
-
-  test('navigates to Review page on link click', async ({ page }) => {
-    await page.goto('/')
-    await page.click('a[href="/review"]')
-    await expect(page).toHaveURL(/\/review/)
-  })
-
-  test('navigates to Scan page on link click', async ({ page }) => {
-    await page.goto('/')
-    await page.click('a[href="/scan"]')
-    await expect(page).toHaveURL(/\/scan/)
-  })
+  expect(thirdPartyRequests).toEqual([])
 })

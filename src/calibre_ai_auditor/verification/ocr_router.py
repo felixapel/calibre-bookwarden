@@ -21,12 +21,33 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
+import signal
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
+MAX_OCR_SIDECAR_BYTES = 2 * 1024 * 1024
+
+
+class OCRProcessTimeoutError(TimeoutError):
+    """The bounded OCR subprocess exceeded its wall-clock budget."""
+
+
+async def _kill_process_group(process: Any) -> None:
+    if process.returncode is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (AttributeError, PermissionError, ProcessLookupError):
+        process.kill()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=5.0)
+    except TimeoutError:
+        process.kill()
 
 
 class PageHint(StrEnum):
@@ -87,9 +108,17 @@ class TesseractProvider:
     supports_languages = ["en", "de", "fr", "es", "it", "pt", "nl", "ru", "ja", "zh"]
     best_for = [PageHint.clean_scan, PageHint.unknown, PageHint.comic_cover, PageHint.manga_scan]
 
-    def __init__(self, ocrmypdf_path: str = "ocrmypdf", tesseract_lang: str = "eng"):
+    def __init__(
+        self,
+        ocrmypdf_path: str = "ocrmypdf",
+        tesseract_lang: str = "eng",
+        timeout_seconds: float = 180.0,
+    ):
+        if timeout_seconds <= 0:
+            raise ValueError("OCR timeout must be positive")
         self.ocrmypdf_path = ocrmypdf_path
         self.tesseract_lang = tesseract_lang
+        self.timeout_seconds = timeout_seconds
 
     async def ocr_page(self, image: bytes, *, language: str = "en") -> OCRPageResult:
         raise NotImplementedError(
@@ -105,8 +134,13 @@ class TesseractProvider:
             "--version",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
-        await proc.communicate()
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=min(self.timeout_seconds, 10.0))
+        except TimeoutError:
+            await _kill_process_group(proc)
+            return False
         return proc.returncode == 0
 
     async def ocr_pdf_pages(
@@ -121,6 +155,13 @@ class TesseractProvider:
         ocrmypdf outputs a sidecar .txt file with form-feed-separated pages.
         """
         import tempfile
+
+        if not re.fullmatch(r"[1-9]\d*(?:-[1-9]\d*)?", page_range):
+            raise ValueError("OCR page range is invalid")
+        start, _, raw_end = page_range.partition("-")
+        end = int(raw_end or start)
+        if int(start) > end or end > 12:
+            raise ValueError("OCR page range exceeds the Certificate A limit")
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
@@ -140,16 +181,27 @@ class TesseractProvider:
                 str(pdf_path),
                 str(out_pdf),
             ]
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                logger.error("ocrmypdf failed: %s", stderr.decode(errors="replace")[:500])
-                return []
+            with tempfile.TemporaryFile() as error_log:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=error_log,
+                    start_new_session=True,
+                )
+                try:
+                    await asyncio.wait_for(proc.communicate(), timeout=self.timeout_seconds)
+                except TimeoutError as exc:
+                    await _kill_process_group(proc)
+                    raise OCRProcessTimeoutError("ocrmypdf exceeded its wall-clock limit") from exc
+                if proc.returncode != 0:
+                    error_log.seek(0)
+                    stderr = error_log.read(500)
+                    logger.error("ocrmypdf failed: %s", stderr.decode(errors="replace"))
+                    return []
             if not sidecar.exists():
+                return []
+            if sidecar.stat().st_size > MAX_OCR_SIDECAR_BYTES:
+                logger.error("ocrmypdf sidecar exceeded the size limit")
                 return []
             text = sidecar.read_text(errors="replace")
             pages = text.split("\f")

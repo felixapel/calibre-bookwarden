@@ -19,18 +19,23 @@ def test_runtime_roles_cannot_mutate_each_others_security_tables() -> None:
 
     admin = create_engine(url)
     app_password = "acl-app-test-password"
+    verifier_password = "acl-verifier-test-password"
     writer_password = "acl-writer-test-password"
     with admin.begin() as connection:
-        for role in ("bookaudit_app", "bookaudit_writer"):
+        for role in ("bookaudit_app", "bookaudit_verifier", "bookaudit_writer"):
             connection.execute(text(f"DROP OWNED BY {role}") if _role_exists(connection, role) else text("SELECT 1"))
             connection.execute(text(f"DROP ROLE IF EXISTS {role}"))
         connection.execute(text(f"CREATE ROLE bookaudit_app LOGIN PASSWORD '{app_password}'"))
+        connection.execute(text(f"CREATE ROLE bookaudit_verifier LOGIN PASSWORD '{verifier_password}'"))
         connection.execute(text(f"CREATE ROLE bookaudit_writer LOGIN PASSWORD '{writer_password}'"))
         database_identifier = (url.database or "").replace('"', '""')
         connection.execute(
-            text(f'GRANT CONNECT ON DATABASE "{database_identifier}" TO bookaudit_app, bookaudit_writer')
+            text(
+                f'GRANT CONNECT ON DATABASE "{database_identifier}" '
+                "TO bookaudit_app, bookaudit_verifier, bookaudit_writer"
+            )
         )
-        connection.execute(text("GRANT USAGE ON SCHEMA public TO bookaudit_app, bookaudit_writer"))
+        connection.execute(text("GRANT USAGE ON SCHEMA public TO bookaudit_app, bookaudit_verifier, bookaudit_writer"))
 
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", url.render_as_string(hide_password=False).replace("%", "%%"))
@@ -38,22 +43,41 @@ def test_runtime_roles_cannot_mutate_each_others_security_tables() -> None:
     command.upgrade(config, "head")
 
     app = create_engine(url.set(username="bookaudit_app", password=app_password))
+    verifier = create_engine(url.set(username="bookaudit_verifier", password=verifier_password))
     writer = create_engine(url.set(username="bookaudit_writer", password=writer_password))
     try:
         with app.connect() as connection:
-            connection.execute(text("SELECT count(*) FROM operationledger"))
             assert connection.execute(
-                text("SELECT has_table_privilege(current_user, 'pilotsession', 'SELECT,INSERT,UPDATE')")
+                text("SELECT has_table_privilege(current_user, 'verificationrun', 'SELECT,INSERT')")
             ).scalar_one()
             assert not connection.execute(
-                text("SELECT has_table_privilege(current_user, 'pilotsession', 'DELETE')")
+                text("SELECT has_table_privilege(current_user, 'verificationrun', 'UPDATE,DELETE')")
             ).scalar_one()
             assert connection.execute(
-                text("SELECT has_table_privilege(current_user, 'operationincidentacknowledgement', 'SELECT,INSERT')")
+                text("SELECT has_column_privilege(current_user, 'verificationrun', 'status', 'UPDATE')")
             ).scalar_one()
             assert not connection.execute(
-                text("SELECT has_table_privilege(current_user, 'operationincidentacknowledgement', 'UPDATE,DELETE')")
+                text("SELECT has_column_privilege(current_user, 'verificationrun', 'heartbeat_at', 'UPDATE')")
             ).scalar_one()
+            for table in ("bookrecord", "manualauthorization", "operationledger", "outboxevent", "pilotsession"):
+                assert not connection.execute(
+                    text("SELECT has_table_privilege(current_user, :table, 'SELECT,INSERT,UPDATE,DELETE')"),
+                    {"table": table},
+                ).scalar_one()
+        with verifier.connect() as connection:
+            for table in ("bookrecord", "evidencepackage", "verificationrun", "verificationresult"):
+                assert connection.execute(
+                    text("SELECT has_table_privilege(current_user, :table, 'SELECT')"),
+                    {"table": table},
+                ).scalar_one()
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'verificationrun', 'UPDATE')")
+            ).scalar_one()
+            for table in ("manualauthorization", "operationledger", "outboxevent", "pilotsession", '"change"'):
+                assert not connection.execute(
+                    text("SELECT has_table_privilege(current_user, :table, 'SELECT,INSERT,UPDATE,DELETE')"),
+                    {"table": table},
+                ).scalar_one()
         with writer.connect() as connection:
             connection.execute(text("SELECT count(*) FROM manualauthorization"))
             assert connection.execute(
@@ -73,12 +97,12 @@ def test_runtime_roles_cannot_mutate_each_others_security_tables() -> None:
             ).scalar_one()
 
         with pytest.raises(ProgrammingError) as denied_update, app.begin() as connection:
-            connection.execute(text("UPDATE operationledger SET state = state WHERE false"))
+            connection.execute(text("SELECT count(*) FROM operationledger"))
         assert denied_update.value.orig.sqlstate == "42501"
         with pytest.raises(ProgrammingError), app.begin() as connection:
-            connection.execute(
-                text("INSERT INTO \"change\" (book_key, run_id, backup_opf_path) VALUES ('x', 'x', 'x')")
-            )
+            connection.execute(text("UPDATE verificationrun SET heartbeat_at = now() WHERE false"))
+        with pytest.raises(ProgrammingError), verifier.begin() as connection:
+            connection.execute(text("SELECT count(*) FROM operationledger"))
         with pytest.raises(ProgrammingError), writer.begin() as connection:
             connection.execute(
                 text(
@@ -89,10 +113,11 @@ def test_runtime_roles_cannot_mutate_each_others_security_tables() -> None:
             )
     finally:
         app.dispose()
+        verifier.dispose()
         writer.dispose()
         with admin.begin() as connection:
-            connection.execute(text("DROP OWNED BY bookaudit_app, bookaudit_writer"))
-            connection.execute(text("DROP ROLE bookaudit_app, bookaudit_writer"))
+            connection.execute(text("DROP OWNED BY bookaudit_app, bookaudit_verifier, bookaudit_writer"))
+            connection.execute(text("DROP ROLE bookaudit_app, bookaudit_verifier, bookaudit_writer"))
         admin.dispose()
 
 
