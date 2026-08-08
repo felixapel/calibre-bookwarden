@@ -166,9 +166,10 @@ async def run_persisted_library_audit(
     if limit > 0:
         books = books[:limit]
     source_kind = getattr(cli, "source_kind", None)
-    if source_kind == "calibre_content_server":
+    if source_kind in {"calibre_content_server", "offline_calibre_snapshot"}:
         fingerprint = str(getattr(cli, "fingerprint", ""))
-        book_keys = [f"calibre-server:{fingerprint}:{int(item['id'])}" for item in books]
+        prefix = "calibre-server" if source_kind == "calibre_content_server" else "calibre-offline"
+        book_keys = [f"{prefix}:{fingerprint}:{int(item['id'])}" for item in books]
     else:
         book_keys = [f"calibre:{int(item['id'])}" for item in books]
     store = SQLAuditStore(database_engine, run_id)

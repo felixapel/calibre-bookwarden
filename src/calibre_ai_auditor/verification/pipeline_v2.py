@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from calibre_ai_auditor.calibre.offline import OfflineLibraryChangedError
 from calibre_ai_auditor.extractors.multiformat import FormatInspection, inspect_format
 from calibre_ai_auditor.security.files import SecurePathError, ensure_secure_directory, open_file_beneath
 from calibre_ai_auditor.verification.identity_v2 import (
@@ -105,11 +106,11 @@ class NullEvidenceEnricher:
 
 
 class BookSourceDescriptor(BaseModel):
-    """Stable identity for evidence read through a remote Calibre boundary."""
+    """Stable identity for evidence materialized through a read-only boundary."""
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["calibre_content_server"]
+    kind: Literal["calibre_content_server", "offline_calibre_snapshot"]
     fingerprint: str
     access_mode: Literal["read_only"] = "read_only"
 
@@ -190,11 +191,12 @@ class EvidencePackageV2(BaseModel):
 
     def verify_invariants(self) -> bool:
         source = self.snapshot.source
-        expected_book_key = (
-            f"calibre:{self.snapshot.calibre_book_id}"
-            if source is None
-            else f"calibre-server:{source.fingerprint}:{self.snapshot.calibre_book_id}"
-        )
+        if source is None:
+            expected_book_key = f"calibre:{self.snapshot.calibre_book_id}"
+        elif source.kind == "calibre_content_server":
+            expected_book_key = f"calibre-server:{source.fingerprint}:{self.snapshot.calibre_book_id}"
+        else:
+            expected_book_key = f"calibre-offline:{source.fingerprint}:{self.snapshot.calibre_book_id}"
         if (
             self.book_key != self.snapshot.book_key
             or self.book_key != expected_book_key
@@ -361,13 +363,13 @@ class LibraryAuditPipeline:
         self.scratch_root: Path | None
         self.library_root: Path | None
         self.remote_cli: Any | None
-        if source_kind == "calibre_content_server":
+        if source_kind in {"calibre_content_server", "offline_calibre_snapshot"}:
             self.source = BookSourceDescriptor(
-                kind="calibre_content_server",
+                kind=cast(Literal["calibre_content_server", "offline_calibre_snapshot"], source_kind),
                 fingerprint=getattr(cli, "fingerprint", ""),
             )
             if scratch_root is None:
-                raise ValueError("remote Content Server verification requires a scratch root")
+                raise ValueError("materialized Calibre verification requires a scratch root")
             self.scratch_root = ensure_secure_directory(scratch_root)
             self.library_root = None
             self.remote_cli = cli
@@ -392,7 +394,8 @@ class LibraryAuditPipeline:
     def _book_key(self, book_id: int) -> str:
         if self.source is None:
             return f"calibre:{book_id}"
-        return f"calibre-server:{self.source.fingerprint}:{book_id}"
+        prefix = "calibre-server" if self.source.kind == "calibre_content_server" else "calibre-offline"
+        return f"{prefix}:{self.source.fingerprint}:{book_id}"
 
     def _file_references(self, book_id: int, raw_formats: object) -> list[str]:
         if self.remote_cli is None:
@@ -529,20 +532,25 @@ class LibraryAuditPipeline:
                     warnings.append(warning)
 
         materialized_collector = getattr(self.evidence_enricher, "collect_materialized", None)
-        for reference in snapshot.files:
-            with self.remote_cli.export_format(
-                snapshot.calibre_book_id,
-                self.remote_cli.format_from_reference(reference),
-                scratch_root=self.scratch_root,
-            ) as path:
-                inspection = self.inspector(path)
-                if callable(materialized_collector):
-                    merge(await materialized_collector(snapshot, inspection))
-                inspections.append(
-                    inspection.model_copy(
-                        update={"format_evidence": inspection.format_evidence.model_copy(update={"path": reference})}
+        try:
+            for reference in snapshot.files:
+                with self.remote_cli.export_format(
+                    snapshot.calibre_book_id,
+                    self.remote_cli.format_from_reference(reference),
+                    scratch_root=self.scratch_root,
+                ) as path:
+                    inspection = self.inspector(path)
+                    if callable(materialized_collector):
+                        merge(await materialized_collector(snapshot, inspection))
+                    inspections.append(
+                        inspection.model_copy(
+                            update={
+                                "format_evidence": inspection.format_evidence.model_copy(update={"path": reference})
+                            }
+                        )
                     )
-                )
+        except OfflineLibraryChangedError as exc:
+            raise SourceChangedError(snapshot) from exc
         aggregate_collector = getattr(self.evidence_enricher, "collect_aggregate", None)
         if callable(aggregate_collector):
             merge(await aggregate_collector(snapshot, inspections))
@@ -565,6 +573,12 @@ class LibraryAuditPipeline:
             or _canonical_json_hash(current_raw) != snapshot.source_revision_sha256
         ):
             raise SourceChangedError(snapshot)
+        assert_unchanged = getattr(self.cli, "assert_unchanged", None)
+        if callable(assert_unchanged):
+            try:
+                assert_unchanged(snapshot.calibre_book_id)
+            except OfflineLibraryChangedError as exc:
+                raise SourceChangedError(snapshot) from exc
         return inspections, combined_enrichment
 
     async def _process_book(
