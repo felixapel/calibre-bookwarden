@@ -174,6 +174,7 @@ class Settings(BaseSettings):
         return env_settings, file_secret_settings, init_settings, dotenv_settings
 
     profile: str = "default"
+    release_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     library: LibrarySettings = Field(default_factory=_default_library)
     storage: StorageSettings = Field(default_factory=_default_storage)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)  # type: ignore[arg-type]

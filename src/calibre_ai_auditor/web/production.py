@@ -14,21 +14,26 @@ import re
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.engine import Engine
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.gzip import GZipMiddleware
 
 from calibre_ai_auditor.config.settings import Settings, load_settings
+from calibre_ai_auditor.storage.db import get_engine
 from calibre_ai_auditor.verification.metrics import get_metrics
+from calibre_ai_auditor.web.api.production_verify import router as production_verify_router
 from calibre_ai_auditor.web.observability import request_id_context
 
 logger = logging.getLogger(__name__)
 
 SettingsProvider = Callable[[], Settings]
+EngineProvider = Callable[[Settings], Engine]
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 COVER_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
@@ -55,7 +60,7 @@ def _default_static_dir() -> Path:
 
 
 def _settings(request: Request) -> Settings:
-    provider = request.app.state.settings_provider
+    provider = cast(SettingsProvider, request.app.state.settings_provider)
     return provider()
 
 
@@ -70,6 +75,7 @@ def _unavailable() -> JSONResponse:
 def create_production_app(
     *,
     settings_provider: SettingsProvider = load_settings,
+    engine_provider: EngineProvider = get_engine,
     static_dir: Path | None = None,
 ) -> FastAPI:
     """Build the isolated Certificate A ASGI application."""
@@ -81,10 +87,11 @@ def create_production_app(
         openapi_url=None,
     )
     application.state.settings_provider = settings_provider
+    application.state.engine_provider = engine_provider
     application.add_middleware(GZipMiddleware, minimum_size=1_000)
 
     @application.middleware("http")
-    async def measure_http_requests(request: Request, call_next: Any) -> Response:
+    async def measure_http_requests(request: Request, call_next: RequestResponseEndpoint) -> Response:
         if request.url.path == "/api/metrics":
             return await call_next(request)
         started = time.perf_counter()
@@ -104,7 +111,7 @@ def create_production_app(
             )
 
     @application.middleware("http")
-    async def add_security_headers(request: Request, call_next: Any) -> Response:
+    async def add_security_headers(request: Request, call_next: RequestResponseEndpoint) -> Response:
         response: Response = await call_next(request)
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -115,7 +122,7 @@ def create_production_app(
         return response
 
     @application.middleware("http")
-    async def correlate_request(request: Request, call_next: Any) -> Response:
+    async def correlate_request(request: Request, call_next: RequestResponseEndpoint) -> Response:
         supplied = request.headers.get("X-Request-ID", "")
         request_id = supplied if REQUEST_ID_PATTERN.fullmatch(supplied) else str(uuid4())
         token = request_id_context.set(request_id)
@@ -127,7 +134,7 @@ def create_production_app(
             request_id_context.reset(token)
 
     @application.middleware("http")
-    async def add_cache_control(request: Request, call_next: Any) -> Response:
+    async def add_cache_control(request: Request, call_next: RequestResponseEndpoint) -> Response:
         response: Response = await call_next(request)
         if request.url.path.startswith("/assets/"):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
@@ -138,7 +145,7 @@ def create_production_app(
         return response
 
     @application.middleware("http")
-    async def enforce_api_key(request: Request, call_next: Any) -> Response:
+    async def enforce_api_key(request: Request, call_next: RequestResponseEndpoint) -> Response:
         is_api = request.url.path == "/api" or request.url.path.startswith("/api/")
         if not is_api or request.url.path == "/api/health/live":
             return await call_next(request)
@@ -158,7 +165,7 @@ def create_production_app(
         return await call_next(request)
 
     @application.middleware("http")
-    async def enforce_trusted_host(request: Request, call_next: Any) -> Response:
+    async def enforce_trusted_host(request: Request, call_next: RequestResponseEndpoint) -> Response:
         settings = _settings(request)
         allowed = {host.strip().lower() for host in settings.trusted_hosts.split(",") if host.strip()}
         hostname = (request.url.hostname or "").lower()
@@ -167,7 +174,7 @@ def create_production_app(
         return await call_next(request)
 
     @application.middleware("http")
-    async def enforce_rate_limit(request: Request, call_next: Any) -> Response:
+    async def enforce_rate_limit(request: Request, call_next: RequestResponseEndpoint) -> Response:
         is_api = request.url.path == "/api" or request.url.path.startswith("/api/")
         if not is_api or request.url.path == "/api/health/live":
             return await call_next(request)
@@ -255,14 +262,7 @@ def create_production_app(
             "writes_enabled": False,
         }
 
-    # The exact public route surface is registered up front, but all durable
-    # verification/review operations fail closed until their repository is
-    # attached in the next implementation slice. This module is not the
-    # default runtime entrypoint until that slice is complete.
-    application.add_api_route("/api/verify", _unavailable, methods=["POST"])
-    application.add_api_route("/api/verify/runs", _unavailable, methods=["GET"])
-    application.add_api_route("/api/verify/{run_id}", _unavailable, methods=["GET"])
-    application.add_api_route("/api/verify/{run_id}/cancel", _unavailable, methods=["POST"])
+    application.include_router(production_verify_router, prefix="/api")
     application.add_api_route("/api/review/v2", _unavailable, methods=["GET"])
     application.add_api_route("/api/review/v2/{evidence_id}", _unavailable, methods=["GET"])
 

@@ -5,6 +5,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 
 def _config(database_path: Path) -> Config:
@@ -37,6 +38,19 @@ def test_clean_database_upgrades_and_downgrades(tmp_path: Path) -> None:
     assert {column["name"] for column in inspector.get_columns("verificationrun")} >= {
         "pipeline_version",
         "mode",
+        "contract_version",
+        "idempotency_key",
+        "request_sha256",
+        "source_root",
+        "source_root_sha256",
+        "effective_config",
+        "source_snapshot",
+        "fence_token",
+        "claimed_at",
+        "heartbeat_at",
+        "inventory_finished_at",
+        "cancel_requested_at",
+        "error_code",
     }
     assert {column["name"] for column in inspector.get_columns("verificationresult")} >= {
         "evidence_id",
@@ -95,6 +109,145 @@ def test_v2_migration_preserves_legacy_verification_rows(tmp_path: Path) -> None
         ).one()
     assert row.pipeline_version == "v1"
     assert row.mode == "legacy"
+
+
+def test_certificate_a_migration_quarantines_precontract_nonterminal_v2_runs(tmp_path: Path) -> None:
+    database_path = tmp_path / "precontract-v2.db"
+    config = _config(database_path)
+    command.upgrade(config, "c8e1f0a2b4d6")
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO verificationrun
+                  (run_id, status, started_at, finished_at, total, completed, counts, use_llm,
+                   pipeline_version, mode, lease_owner, lease_expires_at)
+                VALUES
+                  ('precontract-active', 'running', '2026-08-08 08:00:00', NULL,
+                   3, 1, '{}', 0, 'manifestation-v2', 'shadow',
+                   'old-app-worker', '2099-08-08 08:05:00')
+                """
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT status, finished_at, lease_owner, lease_expires_at, error_code, contract_version "
+                "FROM verificationrun WHERE run_id = 'precontract-active'"
+            )
+        ).one()
+    assert row.status == "blocked_recovery"
+    assert row.finished_at is not None
+    assert row.lease_owner is None
+    assert row.lease_expires_at is None
+    assert row.error_code == "pre_certificate_a_contract"
+    assert row.contract_version is None
+
+
+def test_certificate_a_active_source_and_idempotency_constraints_are_enforced(tmp_path: Path) -> None:
+    database_path = tmp_path / "certificate-a-constraints.db"
+    config = _config(database_path)
+    command.upgrade(config, "head")
+    engine = create_engine(f"sqlite:///{database_path}")
+    insert = text(
+        """
+        INSERT INTO verificationrun
+          (run_id, status, started_at, total, completed, counts, use_llm,
+           pipeline_version, mode, contract_version, idempotency_key,
+           request_sha256, source_root, source_root_sha256, effective_config, fence_token)
+        VALUES
+          (:run_id, :status, '2026-08-08 08:00:00', 0, 0, '{}', 0,
+           'manifestation-v2', 'shadow', 'certificate-a-v1', :idempotency_key,
+           :request_sha256, '/library', :source_root_sha256, '{}', 0)
+        """
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            insert,
+            {
+                "run_id": "request-one",
+                "status": "pending",
+                "idempotency_key": "idempotency-one",
+                "request_sha256": "a" * 64,
+                "source_root_sha256": "b" * 64,
+            },
+        )
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            insert,
+            {
+                "run_id": "request-two",
+                "status": "pending",
+                "idempotency_key": "idempotency-two",
+                "request_sha256": "c" * 64,
+                "source_root_sha256": "b" * 64,
+            },
+        )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE verificationrun SET status='completed', "
+                "finished_at='2026-08-08 09:00:00' WHERE run_id='request-one'"
+            )
+        )
+        connection.execute(
+            insert,
+            {
+                "run_id": "request-two",
+                "status": "pending",
+                "idempotency_key": "idempotency-two",
+                "request_sha256": "c" * 64,
+                "source_root_sha256": "b" * 64,
+            },
+        )
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            insert,
+            {
+                "run_id": "request-three",
+                "status": "completed",
+                "idempotency_key": "idempotency-two",
+                "request_sha256": "d" * 64,
+                "source_root_sha256": "d" * 64,
+            },
+        )
+
+
+def test_certificate_a_downgrade_refuses_to_drop_contracted_runs(tmp_path: Path) -> None:
+    database_path = tmp_path / "certificate-a-downgrade.db"
+    config = _config(database_path)
+    command.upgrade(config, "head")
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO verificationrun
+                  (run_id, status, started_at, finished_at, total, completed, counts, use_llm,
+                   pipeline_version, mode, contract_version, idempotency_key,
+                   request_sha256, source_root, source_root_sha256, effective_config, fence_token)
+                VALUES
+                  ('certificate-a-terminal', 'completed', '2026-08-08 08:00:00',
+                   '2026-08-08 09:00:00', 0, 0, '{}', 0,
+                   'manifestation-v2', 'shadow', 'certificate-a-v1', 'request-key-terminal',
+                   :request_sha256, '/library', :source_root_sha256, '{}', 0)
+                """
+            ),
+            {"request_sha256": "a" * 64, "source_root_sha256": "b" * 64},
+        )
+
+    with pytest.raises(RuntimeError, match="Certificate A verifier state"):
+        command.downgrade(config, "c8e1f0a2b4d6")
+
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "e3c1a4b7d902"
 
 
 def test_downgrade_refuses_to_drop_persisted_v2_audit_evidence(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import CheckConstraint, UniqueConstraint
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint, text
 from sqlmodel import JSON, Column, Field, SQLModel
 
 
@@ -227,6 +227,24 @@ class OutboxEvent(SQLModel, table=True):
 class VerificationRun(SQLModel, table=True):
     """Durable progress and aggregate counts for a verification run."""
 
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_verificationrun_idempotency_key"),
+        CheckConstraint("fence_token >= 0", name="ck_verificationrun_fence_nonnegative"),
+        Index(
+            "uq_verificationrun_active_source",
+            "source_root_sha256",
+            unique=True,
+            postgresql_where=text(
+                "contract_version = 'certificate-a-v1' "
+                "AND status IN ('pending', 'inventorying', 'running', 'cancelling')"
+            ),
+            sqlite_where=text(
+                "contract_version = 'certificate-a-v1' "
+                "AND status IN ('pending', 'inventorying', 'running', 'cancelling')"
+            ),
+        ),
+    )
+
     id: int | None = Field(default=None, primary_key=True)
     run_id: str = Field(index=True, unique=True)
     status: str = Field(default="running", index=True)
@@ -238,9 +256,23 @@ class VerificationRun(SQLModel, table=True):
     use_llm: bool = False
     pipeline_version: str = "v1"
     mode: str = "legacy"
-    # Worker lease so an app restart can reclaim orphaned V2 shadow runs.
+    # Certificate A request identity and immutable effective run contract.
+    contract_version: str | None = Field(default=None, index=True)
+    idempotency_key: str | None = None
+    request_sha256: str | None = None
+    source_root: str | None = None
+    source_root_sha256: str | None = Field(default=None, index=True)
+    effective_config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    source_snapshot: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    # Worker claim, fencing, progress, and durable cancellation state.
     lease_owner: str | None = Field(default=None, index=True)
     lease_expires_at: datetime | None = Field(default=None, index=True)
+    fence_token: int = 0
+    claimed_at: datetime | None = None
+    heartbeat_at: datetime | None = Field(default=None, index=True)
+    inventory_finished_at: datetime | None = None
+    cancel_requested_at: datetime | None = Field(default=None, index=True)
+    error_code: str | None = None
 
 
 class VerificationResult(SQLModel, table=True):
