@@ -298,6 +298,10 @@ dev = [
     { name = "ruff" },
     { name = "watchdog" },
 ]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -350,6 +354,10 @@ dev = [
     { name = "qdrant-client", specifier = ">=1.9.0" },
     { name = "ruff", specifier = ">=0.4.4" },
     { name = "watchdog", specifier = ">=4.0.0" },
+]
+test = [
+    { name = "pytest", specifier = ">=8.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
 ]
 
 [[package]]

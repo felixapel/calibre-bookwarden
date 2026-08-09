@@ -1,5 +1,6 @@
 """Static release-contract checks for the Certificate A deployment."""
 
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -126,8 +127,18 @@ def test_canonical_gitea_pipeline_proves_the_exact_release_boundary() -> None:
     assert "tests/test_certificate_a_worker_postgres.py" in content
     assert "tests/test_certificate_a_real_boundaries.py" in content
     assert "uv run pytest tests/test_v2_supervised_pilot_integration.py" not in content
-    assert "uv run ocrmypdf --version" in content
+    assert "uv run --no-sync ocrmypdf --version" in content
     assert "command -v ocrmypdf" not in content
+    real_services = content.split("\n  real-services:\n", 1)[1].split("\n  webui:\n", 1)[0]
+    assert 'uv sync --python "$PYTHON_VERSION" --frozen --no-dev --group test' in real_services
+    assert real_services.count("uv run --no-sync") == 4
+    assert "uv run ocrmypdf" not in real_services
+    assert "uv run bookaudit-certificate-a" not in real_services
+    assert "uv run pytest" not in real_services
+    assert (
+        "mcr.microsoft.com/playwright:v1.61.1-jammy"
+        "@sha256:e4f20543d7da3faeddbce0176b447331ad652f0ca8c669dc7e7b205f2067677e"
+    ) in content
     assert "uvx pip-audit==2.10.1" in content
     assert "npm audit --audit-level=high" in content
     assert "--project=chromium --project=mobile-chromium" in content
@@ -135,6 +146,17 @@ def test_canonical_gitea_pipeline_proves_the_exact_release_boundary() -> None:
         for line in (line.strip() for line in content.splitlines() if action in line):
             revision = line.rsplit("@", 1)[1]
             assert len(revision) == 40
+
+
+def test_real_service_dependencies_are_a_small_locked_group() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    groups = project["dependency-groups"]
+
+    assert set(groups["test"]) == {
+        "pytest>=8.2.0",
+        "pytest-asyncio>=1.3.0",
+    }
+    assert {"include-group": "test"} in groups["dev"]
 
 
 def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:

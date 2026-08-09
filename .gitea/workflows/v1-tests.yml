@@ -129,11 +129,11 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             calibre fonts-dejavu-core postgresql-client redis-tools tesseract-ocr tesseract-ocr-eng
           uv python install "$PYTHON_VERSION"
-          uv sync --python "$PYTHON_VERSION" --frozen
+          uv sync --python "$PYTHON_VERSION" --frozen --no-dev --group test
           command -v calibredb
           command -v ebook-meta
           command -v tesseract
-          uv run ocrmypdf --version
+          uv run --no-sync ocrmypdf --version
           pg_isready -h postgres -U bookaudit -d bookaudit_certificate_a_test
           test "$(redis-cli -u redis://valkey:6379/0 ping)" = "PONG"
       - name: Provision and migrate the disposable integration database
@@ -152,17 +152,17 @@ jobs:
           BOOKAUDIT_DATABASE__POSTGRES_DSN: postgresql+psycopg://bookaudit_migrator:gitea-certificate-a-migrator-password@postgres:5432/bookaudit_certificate_a_test
         run: |
           ./scripts/postgres-init-roles.sh
-          uv run bookaudit-certificate-a migrate
+          uv run --no-sync bookaudit-certificate-a migrate
       - name: Prove concurrent claim, fence recovery, real Calibre, and real OCR
         env:
           TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:gitea-certificate-a-required-password@postgres:5432/bookaudit_certificate_a_test
           TEST_VALKEY_URL: redis://valkey:6379/0
         run: |
           set -o pipefail
-          uv run pytest tests/test_certificate_a_worker_postgres.py -q -rs \
+          uv run --no-sync pytest tests/test_certificate_a_worker_postgres.py -q -rs \
             | tee /tmp/certificate-a-required-pytest.log
           test "${PIPESTATUS[0]}" -eq 0
-          uv run pytest tests/test_certificate_a_real_boundaries.py -m ocr_live -q -rs \
+          uv run --no-sync pytest tests/test_certificate_a_real_boundaries.py -m ocr_live -q -rs \
             | tee -a /tmp/certificate-a-required-pytest.log
           test "${PIPESTATUS[0]}" -eq 0
           ! grep -Eq "[0-9]+ skipped|SKIPPED" /tmp/certificate-a-required-pytest.log
@@ -174,7 +174,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: backend
     container:
-      image: mcr.microsoft.com/playwright:v1.61.1-jammy@sha256:7b86926fff94374389e8e1f4fdc5c76d050d4a06a7886bb537bf412b20e2b71e
+      image: mcr.microsoft.com/playwright:v1.61.1-jammy@sha256:e4f20543d7da3faeddbce0176b447331ad652f0ca8c669dc7e7b205f2067677e
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
