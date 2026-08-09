@@ -35,15 +35,21 @@ Preflight validates the secret relationships, image/release binding, existing
 absolute library, and exact default service graph. It rejects auto-apply and an
 enabled writer pilot.
 
-Pull or build the reviewed image, then start infrastructure, migrate once, and
-start the verifier before the app:
+Pull or build the reviewed image, then start infrastructure, provision roles,
+migrate once, and start the verifier before the app:
 
 ```bash
 docker compose pull app verifier postgres valkey
 docker compose up -d --wait postgres valkey
+docker compose --profile maintenance run --rm provision-roles
 docker compose --profile maintenance run --rm migrate
 docker compose up -d --wait verifier app
 ```
+
+`provision-roles` is an idempotent maintenance task, not a runtime service. Run
+it before every reviewed migration so an existing PostgreSQL volume receives
+new release roles and the passwords declared in `.env`. The initdb copy of the
+same script runs only when PostgreSQL creates an empty data directory.
 
 For a local candidate build, `BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` is permitted
 only for disposable validation. It is not production promotion evidence.
@@ -173,7 +179,14 @@ docker compose -p "$restore_project" down --volumes
 2. Wait for terminal runs. Stop `app` and `verifier` and take the backup above.
 3. Retain the previous image digest. Update `.env`, keeping the image and
    release digest identical, then rerun preflight.
-4. Pull the image and execute the migration profile once.
+4. Pull the image. Provision roles idempotently, then execute the migration
+   profile exactly once:
+
+   ```bash
+   docker compose --profile maintenance run --rm provision-roles
+   docker compose --profile maintenance run --rm migrate
+   ```
+
 5. Start `verifier`, then `app`; require authenticated readiness and the Caddy
    HTTPS check.
 6. Run one small stopped-library audit before returning to normal limits.

@@ -75,8 +75,12 @@ rows:
   and rollback values for apply, undo, and crash reconciliation.
 
 Run migrations explicitly with `bookaudit migrate` or the Compose maintenance
-profile. Runtime services do not migrate automatically. The migration suite
-tests a clean upgrade/downgrade and upgrade of legacy verification rows.
+profile. For a Compose PostgreSQL deployment, run the idempotent
+`provision-roles` maintenance task before `migrate`; direct CLI migration
+assumes the release's database roles already exist. Runtime services do not
+provision roles or migrate automatically. The migration suite tests a clean
+upgrade/downgrade, an existing-volume role upgrade, and upgrade of legacy
+verification rows.
 Downgrade is intentionally refused when V2 audit evidence or V2
 writer/recovery records exist, because dropping those columns would destroy the
 ability to audit or recover operations. The package SHA-256 is an integrity

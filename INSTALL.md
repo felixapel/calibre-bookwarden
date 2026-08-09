@@ -20,9 +20,13 @@ chmod 600 .env
 # Replace every placeholder.
 ./scripts/prepare-production.sh
 docker compose up -d --wait postgres valkey
+docker compose --profile maintenance run --rm provision-roles
 docker compose --profile maintenance run --rm migrate
 docker compose up -d --wait verifier app
 ```
+
+Always run the idempotent `provision-roles` maintenance task before Alembic.
+PostgreSQL does not rerun initdb hooks for an existing data volume.
 
 Continue with the [production runbook](docs/runbooks/production-operations.md)
 before exposing the Caddy hostname.

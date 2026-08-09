@@ -21,6 +21,29 @@ def test_compose_bootstraps_least_privilege_database_roles() -> None:
     assert "current_database()" in script
 
 
+def test_compose_can_provision_roles_for_an_existing_postgres_volume() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    provisioner = compose["services"]["provision-roles"]
+
+    assert provisioner["profiles"] == ["maintenance"]
+    assert provisioner["user"] == "70:70"
+    assert provisioner["entrypoint"] == ["/opt/bookaudit/postgres-provision-roles.sh"]
+    assert provisioner["environment"]["PGHOST"] == "postgres"
+    assert provisioner["depends_on"]["postgres"]["condition"] == "service_healthy"
+    assert "./scripts/postgres-init-roles.sh:/opt/bookaudit/postgres-provision-roles.sh:ro" in provisioner["volumes"]
+
+
+def test_upgrade_runbook_provisions_roles_before_migrating() -> None:
+    runbook = (ROOT / "docs" / "runbooks" / "production-operations.md").read_text()
+    upgrade = runbook.split("## Upgrade", 1)[1].split("## Rollback", 1)[0]
+    provision = "docker compose --profile maintenance run --rm provision-roles"
+    migrate = "docker compose --profile maintenance run --rm migrate"
+
+    assert provision in upgrade
+    assert migrate in upgrade
+    assert upgrade.index(provision) < upgrade.index(migrate)
+
+
 def test_default_compose_is_the_exact_certificate_a_graph() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     services = compose["services"]

@@ -1,13 +1,73 @@
 """PostgreSQL abuse checks for the app/writer privilege boundary."""
 
 import os
+import subprocess
+from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import DBAPIError, ProgrammingError
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN is not configured")
+def test_existing_database_provisions_verifier_before_certificate_a_upgrade() -> None:
+    dsn = os.environ["TEST_POSTGRES_DSN"]
+    url = make_url(dsn)
+    if "test" not in (url.database or "").lower():
+        pytest.fail("TEST_POSTGRES_DSN must name an unmistakably disposable test database")
+
+    passwords = {
+        "POSTGRES_APP_PASSWORD": "upgrade-app-test-password",
+        "POSTGRES_VERIFIER_PASSWORD": "upgrade-verifier-test-password",
+        "POSTGRES_WRITER_PASSWORD": "upgrade-writer-test-password",
+        "POSTGRES_MIGRATOR_PASSWORD": "upgrade-migrator-test-password",
+    }
+    _provision_roles(url, passwords)
+    migrator_url = url.set(
+        username="bookaudit_migrator",
+        password=passwords["POSTGRES_MIGRATOR_PASSWORD"],
+    )
+    config = Config("alembic.ini")
+    config.set_main_option(
+        "sqlalchemy.url",
+        migrator_url.render_as_string(hide_password=False).replace("%", "%%"),
+    )
+    command.upgrade(config, "head")
+    command.downgrade(config, "e3c1a4b7d902")
+
+    admin = create_engine(url)
+    with admin.begin() as connection:
+        connection.execute(text("DROP OWNED BY bookaudit_verifier"))
+        connection.execute(text("DROP ROLE bookaudit_verifier"))
+        assert not _role_exists(connection, "bookaudit_verifier")
+
+    with pytest.raises(DBAPIError, match="roles must be provisioned first"):
+        command.upgrade(config, "head")
+
+    _provision_roles(url, passwords)
+    with admin.connect() as connection:
+        assert _role_exists(connection, "bookaudit_verifier")
+
+    command.upgrade(config, "head")
+    verifier = create_engine(
+        url.set(
+            username="bookaudit_verifier",
+            password=passwords["POSTGRES_VERIFIER_PASSWORD"],
+        )
+    )
+    try:
+        with verifier.connect() as connection:
+            assert connection.execute(
+                text("SELECT has_table_privilege(current_user, 'verificationrun', 'SELECT,UPDATE')")
+            ).scalar_one()
+    finally:
+        verifier.dispose()
+        admin.dispose()
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_DSN"), reason="TEST_POSTGRES_DSN is not configured")
@@ -128,3 +188,27 @@ def _role_exists(connection, role: str) -> bool:
             {"role": role},
         ).scalar_one()
     )
+
+
+def _provision_roles(url, passwords: dict[str, str]) -> None:
+    environment = os.environ.copy()
+    environment.update(passwords)
+    environment.update(
+        {
+            "PGHOST": url.host or "localhost",
+            "PGPORT": str(url.port or 5432),
+            "PGPASSWORD": url.password or "",
+            "POSTGRES_USER": url.username or "",
+            "POSTGRES_DB": url.database or "",
+        }
+    )
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "postgres-init-roles.sh")],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr

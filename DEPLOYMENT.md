@@ -9,9 +9,9 @@ The supported deployment is the four-service Certificate A Compose graph:
 | `postgres` | Authoritative queue, contracts, progress, and sealed evidence |
 | `valkey` | Rate limits and verifier heartbeat only |
 
-`migrate` is an explicit one-shot maintenance profile. `writer` and
-`writer-maintenance` are quarantined Certificate B profiles and must not be
-started for Certificate A.
+`provision-roles` and `migrate` are explicit one-shot maintenance tasks.
+`writer` and `writer-maintenance` are quarantined Certificate B profiles and
+must not be started for Certificate A.
 
 ## Images
 
@@ -37,12 +37,15 @@ chmod 600 .env
 
 docker compose pull app verifier postgres valkey
 docker compose up -d --wait postgres valkey
+docker compose --profile maintenance run --rm provision-roles
 docker compose --profile maintenance run --rm migrate
 docker compose up -d --wait verifier app
 ```
 
-Preflight verifies the exact default graph and rejects writer flags. Runtime
-services validate but never migrate the schema.
+`provision-roles` is idempotent and must run before migration on fresh and
+existing PostgreSQL volumes. The initdb hook alone cannot upgrade existing
+volumes. Preflight verifies the exact default graph and rejects writer flags.
+Runtime services validate but never provision roles or migrate the schema.
 
 Only the app port is published, and only on
 `127.0.0.1:${BOOKAUDIT_PORT:-8080}`. PostgreSQL and Valkey have no host ports.

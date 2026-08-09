@@ -30,7 +30,7 @@ both auto-apply and an enabled supervised writer pilot.
 | Web/API | Dedicated production app; Overview, Verify, Evidence; docs and legacy routes absent |
 | Network edge | Backend loopback only; same-host Caddy TLS and whole-site basic authentication |
 | Images | Minimal Certificate A default; quarantined writer is a separate explicit target/profile |
-| Schema | Explicit one-shot migration; runtime services never migrate |
+| Schema | Explicit role provisioning then one-shot migration; runtime services do neither |
 
 The verifier heartbeat is bound to the immutable release digest, Alembic head,
 and canonical library-root hash. Readiness requires the exact database role and
@@ -44,8 +44,10 @@ not release evidence.
 
 1. Lock verification, Ruff, format, strict mypy, and the complete hermetic
    backend suite pass.
-2. Disposable PostgreSQL proves the runtime ACL matrix, denied abuse cases,
-   concurrent single-owner claim, fence increment, and stale-worker rejection.
+2. Disposable PostgreSQL proves an existing-volume upgrade that initially
+   lacks the verifier role, idempotent role provisioning, the runtime ACL
+   matrix, denied abuse cases, concurrent single-owner claim, fence increment,
+   and stale-worker rejection.
 3. Real Calibre creates a disposable library that the offline source reads at
    the pinned schema contract, and real Tesseract reads a bounded raster PDF.
    Neither live-service test may skip.

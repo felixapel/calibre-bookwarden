@@ -86,12 +86,15 @@ chmod 600 .env
 ./scripts/prepare-production.sh
 
 docker compose up -d --wait postgres valkey
+docker compose --profile maintenance run --rm provision-roles
 docker compose --profile maintenance run --rm migrate
 docker compose up -d --wait verifier app
 ```
 
-Runtime services never migrate the database. Run the migration profile exactly
-once per reviewed upgrade.
+The idempotent role-provisioning step is required for both new and existing
+PostgreSQL volumes; initdb hooks do not rerun on an existing volume. Runtime
+services never provision roles or migrate the database. Run the migration
+profile exactly once per reviewed upgrade.
 
 Install the same-host edge only after the loopback readiness check passes:
 

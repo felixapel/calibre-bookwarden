@@ -139,6 +139,31 @@ services:
       timeout: 3s
       retries: 5
 
+  provision-roles:
+    <<: *runtime-security
+    image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
+    profiles: ["maintenance"]
+    user: "70:70"
+    restart: "no"
+    entrypoint: ["/opt/bookaudit/postgres-provision-roles.sh"]
+    environment:
+      HOME: /tmp
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_USER: bookaudit
+      POSTGRES_DB: bookaudit
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?set app database password in .env}
+      POSTGRES_VERIFIER_PASSWORD: ${POSTGRES_VERIFIER_PASSWORD:?set verifier database password in .env}
+      POSTGRES_WRITER_PASSWORD: ${POSTGRES_WRITER_PASSWORD:?set writer database password in .env}
+      POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:?set migrator database password in .env}
+    volumes:
+      - ./scripts/postgres-init-roles.sh:/opt/bookaudit/postgres-provision-roles.sh:ro
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=70,gid=70
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   migrate:
     <<: *runtime-security
     image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}

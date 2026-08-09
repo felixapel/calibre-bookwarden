@@ -215,6 +215,7 @@ BOOKAUDIT_MANIFESTATION_V2__SUPERVISED_PILOT__MAX_OPERATIONS=5
 docker compose stop app writer
 chmod 600 .env
 ./scripts/prepare-production.sh
+docker compose --profile maintenance run --rm provision-roles
 docker compose --profile maintenance run --rm migrate
 docker compose up -d writer app
 ```
