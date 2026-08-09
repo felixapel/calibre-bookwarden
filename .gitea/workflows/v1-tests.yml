@@ -241,7 +241,7 @@ jobs:
           trap 'rm -f .env' EXIT
           install -m 0600 /dev/null .env
           docker-compose config -q
-          test "$(docker-compose config --services | sort | tr '\n' ' ')" = "app postgres valkey verifier "
+          test "$(docker-compose --profile maintenance --profile writer --profile writer-maintenance config --services | sort | tr '\n' ' ')" = "app migrate postgres provision-roles retention valkey verifier writer "
           docker-compose --profile maintenance --profile writer --profile writer-maintenance config -q
       - name: Scan both images for high vulnerabilities and secrets
         run: |
