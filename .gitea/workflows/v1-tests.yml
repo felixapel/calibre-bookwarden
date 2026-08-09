@@ -133,7 +133,7 @@ jobs:
           command -v calibredb
           command -v ebook-meta
           command -v tesseract
-          command -v ocrmypdf
+          uv run ocrmypdf --version
           pg_isready -h postgres -U bookaudit -d bookaudit_certificate_a_test
           test "$(redis-cli -u redis://valkey:6379/0 ping)" = "PONG"
       - name: Provision and migrate the disposable integration database

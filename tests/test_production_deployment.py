@@ -103,6 +103,8 @@ def test_canonical_gitea_pipeline_proves_the_exact_release_boundary() -> None:
     assert "tests/test_certificate_a_worker_postgres.py" in content
     assert "tests/test_certificate_a_real_boundaries.py" in content
     assert "uv run pytest tests/test_v2_supervised_pilot_integration.py" not in content
+    assert "uv run ocrmypdf --version" in content
+    assert "command -v ocrmypdf" not in content
     assert "uvx pip-audit==2.10.1" in content
     assert "npm audit --audit-level=high" in content
     assert "--project=chromium --project=mobile-chromium" in content
