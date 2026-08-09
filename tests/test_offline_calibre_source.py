@@ -104,6 +104,12 @@ def _create_calibre_fixture(root: Path) -> Path:
     return database
 
 
+def _set_schema_marker(database: Path, *, schema_version: int, application_id: int) -> None:
+    with sqlite3.connect(database) as connection:
+        connection.execute(f"PRAGMA user_version = {schema_version:d}")
+        connection.execute(f"PRAGMA application_id = {application_id:d}")
+
+
 def test_offline_source_requires_explicit_stopped_confirmation(tmp_path: Path) -> None:
     library = tmp_path / "library"
     _create_calibre_fixture(library)
@@ -190,17 +196,67 @@ def test_offline_source_reads_pinned_calibre_27_field_contract(tmp_path: Path) -
             "last_modified": "2026-01-02 10:00:00+00:00",
         }
         assert source.schema_version == 27
+        assert source.application_id == 0x63616C69
         assert source.snapshot_manifest["book_count"] == 1
         assert source.snapshot_manifest["format_count"] == 2
+        assert source.snapshot_manifest["application_id"] == 0x63616C69
         assert source.snapshot_manifest["metadata_sha256"]
         assert source.fingerprint
 
 
-def test_offline_source_rejects_wrong_calibre_schema(tmp_path: Path) -> None:
+@pytest.mark.parametrize("schema_version", [25, 26])
+def test_offline_source_reads_supported_pre_application_id_schemas(
+    tmp_path: Path,
+    schema_version: int,
+) -> None:
     library = tmp_path / "library"
     database = _create_calibre_fixture(library)
-    with sqlite3.connect(database) as connection:
-        connection.execute("PRAGMA user_version = 26")
+    _set_schema_marker(database, schema_version=schema_version, application_id=0)
+
+    with OfflineCalibreSource(
+        library,
+        snapshot_root=tmp_path / "scratch",
+        confirm_calibre_stopped=True,
+    ) as source:
+        assert source.schema_version == schema_version
+        assert source.application_id == 0
+        assert source.snapshot_manifest["application_id"] == 0
+        assert source.list_books()[0]["title"] == "Exact Book"
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "application_id"),
+    [(25, 42), (25, 0x63616C69), (26, 0x63616C69), (27, 0)],
+)
+def test_offline_source_rejects_schema_application_id_mismatch(
+    tmp_path: Path,
+    schema_version: int,
+    application_id: int,
+) -> None:
+    library = tmp_path / "library"
+    database = _create_calibre_fixture(library)
+    _set_schema_marker(
+        database,
+        schema_version=schema_version,
+        application_id=application_id,
+    )
+
+    with pytest.raises(OfflineCalibreError, match="application id"):
+        OfflineCalibreSource(
+            library,
+            snapshot_root=tmp_path / "scratch",
+            confirm_calibre_stopped=True,
+        )
+
+
+@pytest.mark.parametrize("schema_version", [24, 28])
+def test_offline_source_rejects_unsupported_calibre_schema(
+    tmp_path: Path,
+    schema_version: int,
+) -> None:
+    library = tmp_path / "library"
+    database = _create_calibre_fixture(library)
+    _set_schema_marker(database, schema_version=schema_version, application_id=0)
 
     with pytest.raises(OfflineCalibreError, match="schema version"):
         OfflineCalibreSource(

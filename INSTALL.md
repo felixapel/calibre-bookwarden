@@ -96,7 +96,8 @@ Gitea pipeline must pass those gates without skips for a release commit.
   `BOOKAUDIT_RELEASE_DIGEST` must be that exact digest.
 - **Verifier refuses the library:** stop Calibre and Content Server, confirm the
   path and read permission, and investigate rather than delete any SQLite
-  sidecar.
+  sidecar. Certificate A supports reviewed Calibre schema versions 25-27 and
+  deliberately rejects unknown or marker-mismatched databases.
 - **Readiness says verifier unavailable:** require the same release digest,
   Alembic head, and library root in app and verifier; then inspect the verifier
   logs and Valkey connectivity.

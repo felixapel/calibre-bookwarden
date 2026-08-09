@@ -76,11 +76,17 @@ def test_real_calibre_library_is_read_through_the_offline_snapshot(tmp_path: Pat
         confirm_calibre_stopped=True,
     ) as source:
         books = source.list_books()
-        assert source.schema_version == 27
+        assert (source.schema_version, source.application_id) in {
+            (25, 0),
+            (26, 0),
+            (27, 0x63616C69),
+        }
         assert len(books) == 1
         assert books[0]["title"] == "Certificate A Fixture"
         assert books[0]["identifiers"] == {"isbn": "9780306406157"}
         assert source.snapshot_manifest["book_count"] == 1
+        assert source.snapshot_manifest["schema_version"] == source.schema_version
+        assert source.snapshot_manifest["application_id"] == source.application_id
 
 
 @pytest.mark.asyncio

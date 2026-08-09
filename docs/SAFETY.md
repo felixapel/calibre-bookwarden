@@ -7,7 +7,9 @@ from removing authority, not from asking a broad application to behave.
 
 - Calibre and Content Server must be stopped. The offline source rejects a
   missing/unsafe `metadata.db`, unsupported schema, symlinked roots or metadata,
-  and WAL/SHM/journal sidecars.
+  mismatched schema/application-ID marker, and WAL/SHM/journal sidecars. Known
+  schemas 25-27 are checked against their exact official marker state and the
+  complete required table-and-column contract.
 - Only the verifier receives `/library:ro`. The web app has no library mount;
   the Certificate A image has no Calibre executable.
 - Formats are copied to a private bounded tmpfs and inspected there. Logical

@@ -32,6 +32,14 @@ both auto-apply and an enabled supervised writer pilot.
 | Images | Minimal Certificate A default; quarantined writer is a separate explicit target/profile |
 | Schema | Explicit role provisioning then one-shot migration; runtime services do neither |
 
+The offline reader admits only Calibre's reviewed schema markers: versions 25
+and 26 with an unset SQLite application ID, and version 27 with application ID
+`0x63616c69`. Version 25 is exercised with Debian's real Calibre 6.13 boundary;
+version 27 is the schema produced by the separately pinned Calibre 9.11 writer.
+Every accepted version still has to provide the complete table-and-column
+contract, pass SQLite integrity checks, and remain unchanged for the audit.
+Unknown versions and version/application-ID mismatches fail closed.
+
 The verifier heartbeat is bound to the immutable release digest, Alembic head,
 and canonical library-root hash. Readiness requires the exact database role and
 schema plus a fresh matching verifier heartbeat. A different release, schema,
@@ -48,8 +56,9 @@ not release evidence.
    lacks the verifier role, idempotent role provisioning, the runtime ACL
    matrix, denied abuse cases, concurrent single-owner claim, fence increment,
    and stale-worker rejection.
-3. Real Calibre creates a disposable library that the offline source reads at
-   the pinned schema contract, and real Tesseract reads a bounded raster PDF.
+3. Real Calibre creates a disposable version-25 library that the offline source
+   reads through the reviewed compatibility contract, and real Tesseract reads
+   a bounded raster PDF.
    Neither live-service test may skip.
 4. The exact Certificate A Python dependency closure passes `pip-audit` at the
    pinned audit-tool version.

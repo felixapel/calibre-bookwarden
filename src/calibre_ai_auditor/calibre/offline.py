@@ -31,7 +31,20 @@ from calibre_ai_auditor.security.files import (
 )
 
 CALIBRE_APPLICATION_ID = 0x63616C69
-SUPPORTED_SCHEMA_VERSION = 27
+# Calibre increments ``user_version`` after every schema upgrade.  Versions 25
+# and 26 predate its application-id marker; the upgrade to version 27 is the
+# first one that stamps ``0x63616c69``.  Keep the pairs explicit so a generic
+# SQLite database cannot pass by combining a known version with the wrong
+# marker, and so future Calibre schemas fail closed until their read contract is
+# reviewed.
+SUPPORTED_SCHEMA_MARKERS = frozenset(
+    {
+        (25, 0),
+        (26, 0),
+        (27, CALIBRE_APPLICATION_ID),
+    }
+)
+SUPPORTED_SCHEMA_VERSIONS = frozenset(version for version, _application_id in SUPPORTED_SCHEMA_MARKERS)
 MAX_METADATA_DB_BYTES = 4 * 1024 * 1024 * 1024
 MAX_EBOOK_BYTES = 2 * 1024 * 1024 * 1024
 _SIDECARS = ("metadata.db-wal", "metadata.db-shm", "metadata.db-journal")
@@ -163,6 +176,7 @@ class OfflineCalibreSource:
         self._formats: dict[int, tuple[_FrozenFile, ...]] = {}
         self._metadata_sha256 = ""
         self._schema_signature = ""
+        self.application_id = 0
         self.schema_version = 0
         self.fingerprint = ""
 
@@ -241,14 +255,15 @@ class OfflineCalibreSource:
         return self._connection
 
     def _validate_schema(self) -> None:
-        application_id = int(self._db.execute("PRAGMA application_id").fetchone()[0])
+        self.application_id = int(self._db.execute("PRAGMA application_id").fetchone()[0])
         self.schema_version = int(self._db.execute("PRAGMA user_version").fetchone()[0])
-        if application_id != CALIBRE_APPLICATION_ID:
-            raise OfflineCalibreError("metadata.db does not have the Calibre application id")
-        if self.schema_version != SUPPORTED_SCHEMA_VERSION:
+        if self.schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+            expected = ", ".join(str(version) for version in sorted(SUPPORTED_SCHEMA_VERSIONS))
             raise OfflineCalibreError(
-                f"unsupported Calibre schema version {self.schema_version}; expected {SUPPORTED_SCHEMA_VERSION}"
+                f"unsupported Calibre schema version {self.schema_version}; supported versions are {expected}"
             )
+        if (self.schema_version, self.application_id) not in SUPPORTED_SCHEMA_MARKERS:
+            raise OfflineCalibreError(f"Calibre schema version {self.schema_version} has an unexpected application id")
 
         tables = {
             str(row[0]) for row in self._db.execute("SELECT name FROM sqlite_schema WHERE type = 'table'").fetchall()
@@ -433,6 +448,7 @@ class OfflineCalibreSource:
             "kind": self.source_kind,
             "fingerprint": self.fingerprint,
             "metadata_sha256": self._metadata_sha256,
+            "application_id": self.application_id,
             "schema_version": self.schema_version,
             "schema_signature": self._schema_signature,
             "book_count": len(self._metadata),
