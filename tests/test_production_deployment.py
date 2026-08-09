@@ -68,6 +68,14 @@ def test_default_compose_is_the_exact_certificate_a_graph() -> None:
     assert any(volume.endswith(":/library:rw") for volume in services["writer"]["volumes"])
 
 
+def test_compose_project_name_is_portable_to_legacy_compose() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    environment_example = (ROOT / ".env.example").read_text().splitlines()
+
+    assert "name" not in compose
+    assert "COMPOSE_PROJECT_NAME=calibre-ai-auditor" in environment_example
+
+
 def test_compose_uses_separate_configurable_certificate_and_writer_images() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 

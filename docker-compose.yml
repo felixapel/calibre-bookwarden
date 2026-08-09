@@ -1,5 +1,3 @@
-name: calibre-ai-auditor
-
 x-runtime-security: &runtime-security
   read_only: true
   cap_drop: ["ALL"]
