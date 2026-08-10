@@ -61,6 +61,8 @@ Compose with only Docker transport variables inherited from the shell, and
 rejects writer profiles, scaling, or identity/file overrides.
 Commands that execute inside an existing container also require its Compose
 configuration hash to match the service resolved from the reviewed `.env`.
+Production volume removal is prohibited; `down --volumes` is accepted only for
+the separately named disposable restore-drill project.
 
 For a local candidate build, `BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` is permitted
 only for disposable validation. It is not production promotion evidence.

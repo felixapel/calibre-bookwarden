@@ -37,6 +37,12 @@ for argument in "$@"; do
       echo "Certificate A services cannot be scaled through the production wrapper." >&2
       exit 1
       ;;
+    -v|--volumes)
+      if [[ "$project" == "bookaudit-certificate-a" ]]; then
+        echo "Certificate A production volumes cannot be removed through the wrapper." >&2
+        exit 1
+      fi
+      ;;
   esac
 done
 if [[ "$expect_profile" == true ]]; then

@@ -332,6 +332,8 @@ def test_certificate_a_compose_wrapper_rejects_writer_and_identity_overrides(tmp
         ("up", "--scale", "verifier=2"),
         ("up", "--scale=verifier=2"),
         ("scale", "verifier=2"),
+        ("down", "--volumes"),
+        ("down", "-v"),
     ):
         result = subprocess.run(
             [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],
@@ -342,6 +344,27 @@ def test_certificate_a_compose_wrapper_rejects_writer_and_identity_overrides(tmp
         )
 
         assert result.returncode == 1
+
+
+def test_restore_drill_wrapper_permits_disposable_volume_removal(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "exit 0")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts" / "certificate-a-compose.sh"),
+            "--restore-drill",
+            "down",
+            "--volumes",
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 0
 
 
 def test_restore_drill_uses_the_pinned_wrapper_project() -> None:
