@@ -47,6 +47,11 @@ def validate(path: Path, *, allow_local_image: bool = False) -> list[str]:
     if any(not value.isdigit() or int(value) <= 0 for value in runtime_ids):
         errors.append("UID and GID must be explicit positive non-root integers")
 
+    if values.get("COMPOSE_PROJECT_NAME") != "bookaudit-certificate-a":
+        errors.append(
+            "COMPOSE_PROJECT_NAME must be bookaudit-certificate-a to isolate Certificate A from legacy stacks"
+        )
+
     library = Path(values.get("BOOKAUDIT_LIBRARY_HOST_PATH", ""))
     if not library.is_absolute() or not library.is_dir():
         errors.append("BOOKAUDIT_LIBRARY_HOST_PATH must be an existing absolute directory")

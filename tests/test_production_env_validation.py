@@ -13,6 +13,7 @@ def _valid_env(library: Path, backups: Path) -> str:
     return f"""\
 UID=1000
 GID=1000
+COMPOSE_PROJECT_NAME=bookaudit-certificate-a
 BOOKAUDIT_LIBRARY_HOST_PATH={library}
 BOOKAUDIT_BACKUP_HOST_PATH={backups}
 POSTGRES_PASSWORD=admin-password-abcdefghijklmnopqrstuvwxyz
@@ -29,6 +30,25 @@ BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,books.example.test
 BOOKAUDIT_IMAGE=registry.example.test/bookaudit@sha256:{"a" * 64}
 BOOKAUDIT_RELEASE_DIGEST=sha256:{"a" * 64}
 """
+
+
+def test_legacy_compose_project_name_is_rejected(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    env.write_text(
+        _valid_env(library, backups).replace(
+            "COMPOSE_PROJECT_NAME=bookaudit-certificate-a",
+            "COMPOSE_PROJECT_NAME=calibre-ai-auditor",
+        )
+    )
+    env.chmod(0o600)
+
+    assert MODULE.validate(env) == [
+        "COMPOSE_PROJECT_NAME must be bookaudit-certificate-a to isolate Certificate A from legacy stacks"
+    ]
 
 
 def test_valid_production_environment_passes(tmp_path: Path) -> None:

@@ -28,22 +28,25 @@ pinned by digest. `BOOKAUDIT_RELEASE_DIGEST` must be the same digest.
 cp .env.example .env
 chmod 600 .env
 # Edit .env and replace every placeholder.
+# Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a.
 ./scripts/prepare-production.sh
 ```
 
 Preflight validates the secret relationships, image/release binding, existing
-absolute library, and exact default service graph. It rejects auto-apply and an
-enabled writer pilot.
+absolute library, dedicated Compose project, and exact default service graph.
+It rejects the legacy `calibre-ai-auditor` project name, any unexpected service
+already attached to the Certificate A project, auto-apply, and an enabled
+writer pilot.
 
 Pull or build the reviewed image, then start infrastructure, provision roles,
 migrate once, and start the verifier before the app:
 
 ```bash
-docker compose pull app verifier postgres valkey
-docker compose up -d --wait postgres valkey
-docker compose --profile maintenance run --rm provision-roles
-docker compose --profile maintenance run --rm migrate
-docker compose up -d --wait verifier app
+./scripts/certificate-a-compose.sh pull app verifier postgres valkey
+./scripts/certificate-a-compose.sh up -d --wait postgres valkey
+./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
+./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
+./scripts/certificate-a-compose.sh up -d --wait verifier app
 ```
 
 `provision-roles` is an idempotent maintenance task, not a runtime service. Run
@@ -51,13 +54,23 @@ it before every reviewed migration so an existing PostgreSQL volume receives
 new release roles and the passwords declared in `.env`. The initdb copy of the
 same script runs only when PostgreSQL creates an empty data directory.
 
+Use `scripts/certificate-a-compose.sh` for every Certificate A operation. It
+pins the dedicated project plus the reviewed Compose and environment files,
+verifies the existing project's service and Compose-file provenance, runs
+Compose with only Docker transport variables inherited from the shell, and
+rejects writer profiles, scaling, or identity/file overrides.
+Commands that execute inside an existing container also require its Compose
+configuration hash to match the service resolved from the reviewed `.env`.
+Production volume removal is prohibited; `down --volumes` is accepted only for
+the separately named disposable restore-drill project.
+
 For a local candidate build, `BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` is permitted
 only for disposable validation. It is not production promotion evidence.
 
 Check readiness without placing the API key in the host process list:
 
 ```bash
-docker compose exec -T app sh -c \
+./scripts/certificate-a-compose.sh exec -T app sh -c \
   'curl --fail --silent --show-error -H "X-API-Key: $BOOKAUDIT_API_KEY" \
   http://127.0.0.1:8080/api/health/ready'
 ```
@@ -133,15 +146,15 @@ does not need to be restored for correctness.
 Wait for every run to become terminal, then stop intake and the verifier:
 
 ```bash
-docker compose stop app verifier
+./scripts/certificate-a-compose.sh stop app verifier
 backup_dir="${BOOKAUDIT_BACKUP_HOST_PATH:-./backups}/$(date -u +%Y%m%dT%H%M%SZ)-certificate-a"
 install -d -m 0700 "$backup_dir"
-docker compose exec -T postgres \
+./scripts/certificate-a-compose.sh exec -T postgres \
   pg_dump -U bookaudit -d bookaudit -Fc > "$backup_dir/bookaudit.dump"
 chmod 600 "$backup_dir/bookaudit.dump"
 (cd "$backup_dir" && sha256sum bookaudit.dump > SHA256SUMS)
 chmod 600 "$backup_dir/SHA256SUMS"
-docker compose up -d --wait verifier app
+./scripts/certificate-a-compose.sh up -d --wait verifier app
 ```
 
 Copy the dump and checksum together to protected backup storage. Record the
@@ -154,13 +167,12 @@ Never prove restore by overwriting the production database. Use a clearly named
 disposable Compose project on the same reviewed commit:
 
 ```bash
-restore_project=bookaudit-certificate-a-restore-drill
-docker compose -p "$restore_project" up -d --wait postgres
+./scripts/certificate-a-compose.sh --restore-drill up -d --wait postgres
 (cd /protected/path/to/backup && sha256sum --check SHA256SUMS)
-docker compose -p "$restore_project" exec -T postgres \
+./scripts/certificate-a-compose.sh --restore-drill exec -T postgres \
   pg_restore -U bookaudit -d bookaudit --clean --if-exists < \
   /protected/path/to/backup/bookaudit.dump
-docker compose -p "$restore_project" exec -T postgres \
+./scripts/certificate-a-compose.sh --restore-drill exec -T postgres \
   psql -U bookaudit -d bookaudit -Atc 'SELECT version_num FROM alembic_version'
 ```
 
@@ -169,7 +181,7 @@ verifier in the restore drill with a live library path. After evidence is
 recorded, remove only the explicitly named disposable project:
 
 ```bash
-docker compose -p "$restore_project" down --volumes
+./scripts/certificate-a-compose.sh --restore-drill down --volumes
 ```
 
 ## Upgrade
@@ -183,8 +195,8 @@ docker compose -p "$restore_project" down --volumes
    profile exactly once:
 
    ```bash
-   docker compose --profile maintenance run --rm provision-roles
-   docker compose --profile maintenance run --rm migrate
+   ./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
+   ./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
    ```
 
 5. Start `verifier`, then `app`; require authenticated readiness and the Caddy

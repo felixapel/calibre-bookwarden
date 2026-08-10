@@ -33,19 +33,28 @@ Production must set `BOOKAUDIT_IMAGE` to an immutable registry digest and set
 cp .env.example .env
 chmod 600 .env
 # Replace every placeholder and use distinct database role passwords.
+# Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a.
 ./scripts/prepare-production.sh
 
-docker compose pull app verifier postgres valkey
-docker compose up -d --wait postgres valkey
-docker compose --profile maintenance run --rm provision-roles
-docker compose --profile maintenance run --rm migrate
-docker compose up -d --wait verifier app
+./scripts/certificate-a-compose.sh pull app verifier postgres valkey
+./scripts/certificate-a-compose.sh up -d --wait postgres valkey
+./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
+./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
+./scripts/certificate-a-compose.sh up -d --wait verifier app
 ```
 
 `provision-roles` is idempotent and must run before migration on fresh and
 existing PostgreSQL volumes. The initdb hook alone cannot upgrade existing
 volumes. Preflight verifies the exact default graph and rejects writer flags.
 Runtime services validate but never provision roles or migrate the schema.
+
+`bookaudit-certificate-a` is a dedicated Compose project. Do not reuse the
+legacy `calibre-ai-auditor` project: it can contain a quarantined writer and
+legacy volumes. Preflight rejects that name and refuses any unexpected service
+already attached to the dedicated Certificate A project. Every Certificate A
+command uses `scripts/certificate-a-compose.sh`, which pins the project,
+Compose file, environment file, and only permitted maintenance profile instead
+of trusting ambient Compose variables.
 
 Only the app port is published, and only on
 `127.0.0.1:${BOOKAUDIT_PORT:-8080}`. PostgreSQL and Valkey have no host ports.

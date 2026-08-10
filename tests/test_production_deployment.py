@@ -1,5 +1,7 @@
 """Static release-contract checks for the Certificate A deployment."""
 
+import os
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -7,6 +9,13 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".gitea" / "workflows" / "v1-tests.yml"
+
+
+def _fake_docker(tmp_path: Path, body: str) -> Path:
+    executable = tmp_path / "docker"
+    executable.write_text(f"#!/bin/sh\nset -eu\n{body}\n")
+    executable.chmod(0o755)
+    return executable
 
 
 def test_compose_bootstraps_least_privilege_database_roles() -> None:
@@ -37,8 +46,8 @@ def test_compose_can_provision_roles_for_an_existing_postgres_volume() -> None:
 def test_upgrade_runbook_provisions_roles_before_migrating() -> None:
     runbook = (ROOT / "docs" / "runbooks" / "production-operations.md").read_text()
     upgrade = runbook.split("## Upgrade", 1)[1].split("## Rollback", 1)[0]
-    provision = "docker compose --profile maintenance run --rm provision-roles"
-    migrate = "docker compose --profile maintenance run --rm migrate"
+    provision = "./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles"
+    migrate = "./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate"
 
     assert provision in upgrade
     assert migrate in upgrade
@@ -73,7 +82,297 @@ def test_compose_project_name_is_portable_to_legacy_compose() -> None:
     environment_example = (ROOT / ".env.example").read_text().splitlines()
 
     assert "name" not in compose
-    assert "COMPOSE_PROJECT_NAME=calibre-ai-auditor" in environment_example
+    assert "COMPOSE_PROJECT_NAME=bookaudit-certificate-a" in environment_example
+
+
+def test_certificate_a_compose_wrapper_ignores_ambient_project_override(tmp_path: Path) -> None:
+    guard_log = tmp_path / "guard.log"
+    _fake_docker(
+        tmp_path,
+        f'if [ "${{1:-}}" = ps ]; then printf "checked\\n" > "{guard_log}"; exit 0; fi\n'
+        "printf 'env:%s|%s|%s|%s|%s|%s\\n' "
+        '"${COMPOSE_PROJECT_NAME-unset}" "${COMPOSE_FILE-unset}" '
+        '"${COMPOSE_PROFILES-unset}" "${COMPOSE_ENV_FILES-unset}" '
+        '"${BOOKAUDIT_IMAGE-unset}" "${BOOKAUDIT_LIBRARY_HOST_PATH-unset}"\n'
+        "printf '%s\\n' \"$@\"",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+    environment["COMPOSE_PROJECT_NAME"] = "calibre-ai-auditor"
+    environment["COMPOSE_FILE"] = "compose.shadow-local.yml"
+    environment["COMPOSE_PROFILES"] = "writer"
+    environment["COMPOSE_ENV_FILES"] = "/tmp/hostile.env"
+    environment["BOOKAUDIT_IMAGE"] = "calibre-ai-auditor:1.2.1-shadow"
+    environment["BOOKAUDIT_LIBRARY_HOST_PATH"] = "/tmp/hostile-library"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "certificate-a-compose.sh"), "config", "--services"],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "env:unset|unset||unset|unset|unset",
+        "compose",
+        "--project-name",
+        "bookaudit-certificate-a",
+        "--file",
+        str(ROOT / "docker-compose.yml"),
+        "--env-file",
+        str(ROOT / ".env"),
+        "config",
+        "--services",
+    ]
+    assert guard_log.read_text() == "checked\n"
+
+
+def test_certificate_a_project_guard_rejects_existing_writer(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "printf '%s\\n' 'abc123|writer|/tmp/hostile.yml|deadbeef|False'")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "check-certificate-a-compose-project.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Unexpected service in the Certificate A Compose project: writer\n"
+
+
+def test_certificate_a_project_guard_fails_when_docker_inventory_fails(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "exit 42")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "check-certificate-a-compose-project.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Could not inspect the Certificate A Compose project.\n"
+
+
+def test_certificate_a_project_guard_rejects_missing_service_label(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "printf '%s\\n' 'abc123||/tmp/hostile.yml|deadbeef|False'")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "check-certificate-a-compose-project.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Unexpected container in the Certificate A Compose project: abc123\n"
+
+
+def test_certificate_a_project_guard_rejects_unreviewed_compose_file(tmp_path: Path) -> None:
+    _fake_docker(
+        tmp_path,
+        "printf '%s\\n' 'abc123|app|/tmp/compose.shadow-local.yml|deadbeef|False'",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "check-certificate-a-compose-project.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        "Unexpected Compose file provenance for Certificate A service app: /tmp/compose.shadow-local.yml\n"
+    )
+
+
+def test_certificate_a_project_guard_rejects_duplicate_service_instances(tmp_path: Path) -> None:
+    compose_file = ROOT / "docker-compose.yml"
+    _fake_docker(
+        tmp_path,
+        f"printf '%s\\n' 'abc123|app|{compose_file}|hash-one|False' 'def456|app|{compose_file}|hash-two|False'",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "check-certificate-a-compose-project.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Duplicate Certificate A service instance: app\n"
+
+
+def test_certificate_a_project_guard_rejects_oneoff_container(tmp_path: Path) -> None:
+    compose_file = ROOT / "docker-compose.yml"
+    _fake_docker(
+        tmp_path,
+        f"printf '%s\\n' 'abc123|app|{compose_file}|deadbeef|True'",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "check-certificate-a-compose-project.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Unexpected one-off Certificate A container: abc123\n"
+
+
+def test_certificate_a_project_guard_rejects_compound_service_label(tmp_path: Path) -> None:
+    compose_file = ROOT / "docker-compose.yml"
+    _fake_docker(
+        tmp_path,
+        f"printf '%s\\n' 'abc123|app postgres|{compose_file}|deadbeef|False'",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "check-certificate-a-compose-project.sh")],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Unexpected service in the Certificate A Compose project: app postgres\n"
+
+
+def test_certificate_a_project_guard_rejects_stale_exec_service_hash(tmp_path: Path) -> None:
+    compose_file = ROOT / "docker-compose.yml"
+    _fake_docker(
+        tmp_path,
+        'if [ "${1:-}" = compose ]; then '
+        "printf '%s\\n' 'app reviewed-hash'; exit 0; fi\n"
+        f"printf '%s\\n' 'abc123|app|{compose_file}|stale-hash|False'",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts" / "check-certificate-a-compose-project.sh"),
+            "--require-current",
+            "app",
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Certificate A service app does not match the reviewed environment.\n"
+
+
+def test_certificate_a_compose_wrapper_binds_exec_to_reviewed_service_hash(tmp_path: Path) -> None:
+    compose_file = ROOT / "docker-compose.yml"
+    _fake_docker(
+        tmp_path,
+        'if [ "${1:-}" = compose ]; then '
+        "printf '%s\\n' 'app reviewed-hash'; exit 0; fi\n"
+        f"printf '%s\\n' 'abc123|app|{compose_file}|stale-hash|False'",
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "certificate-a-compose.sh"), "exec", "-T", "app", "true"],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "Certificate A service app does not match the reviewed environment.\n"
+
+
+def test_certificate_a_compose_wrapper_rejects_writer_and_identity_overrides(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "exit 0")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    for arguments in (
+        ("--profile", "writer", "config"),
+        ("--profile=writer-maintenance", "config"),
+        ("--project-name", "calibre-ai-auditor", "config"),
+        ("-pcalibre-ai-auditor", "config"),
+        ("--file=compose.shadow-local.yml", "config"),
+        ("-fcompose.shadow-local.yml", "config"),
+        ("--env-file", "/tmp/hostile.env", "config"),
+        ("run", "writer"),
+        ("up", "retention"),
+        ("up", "--scale", "verifier=2"),
+        ("up", "--scale=verifier=2"),
+        ("scale", "verifier=2"),
+        ("down", "--volumes"),
+        ("down", "-v"),
+    ):
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],
+            check=False,
+            capture_output=True,
+            env=environment,
+            text=True,
+        )
+
+        assert result.returncode == 1
+
+
+def test_restore_drill_wrapper_permits_disposable_volume_removal(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "exit 0")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts" / "certificate-a-compose.sh"),
+            "--restore-drill",
+            "down",
+            "--volumes",
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 0
+
+
+def test_restore_drill_uses_the_pinned_wrapper_project() -> None:
+    runbook = (ROOT / "docs" / "runbooks" / "production-operations.md").read_text()
+    restore = runbook.split("## Empty-environment restore drill", 1)[1].split("## Upgrade", 1)[0]
+
+    assert "docker compose" not in restore
+    assert restore.count("./scripts/certificate-a-compose.sh --restore-drill") == 4
 
 
 def test_compose_uses_separate_configurable_certificate_and_writer_images() -> None:
@@ -88,7 +387,9 @@ def test_certificate_a_preflight_does_not_prepare_writer_or_legacy_state() -> No
     script = (ROOT / "scripts" / "prepare-production.sh").read_text()
 
     assert "Certificate A bind mounts" in script
-    assert 'actual_services="$(COMPOSE_PROFILES=' in script
+    assert 'compose=("./scripts/certificate-a-compose.sh")' in script
+    assert '"./scripts/check-certificate-a-compose-project.sh"' in script
+    assert 'actual_services="$("${compose[@]}" config --services' in script
     assert '"app postgres valkey verifier "' in script
     assert "backups" in script
     for excluded in (".state", ".artifacts", ".writer-artifacts", "user_library"):
