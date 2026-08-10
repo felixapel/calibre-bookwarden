@@ -25,25 +25,12 @@ fi
 install -d -m 0750 -o "$runtime_uid" -g "$runtime_gid" \
   backups
 
-docker compose --profile maintenance config -q
-actual_services="$(COMPOSE_PROFILES='' docker compose config --services | LC_ALL=C sort | tr '\n' ' ')"
+compose=("./scripts/certificate-a-compose.sh")
+"${compose[@]}" --profile maintenance config -q
+actual_services="$("${compose[@]}" config --services | LC_ALL=C sort | tr '\n' ' ')"
 if [[ "$actual_services" != "app postgres valkey verifier " ]]; then
   echo "Default Compose graph is not the exact Certificate A topology: $actual_services" >&2
   exit 1
 fi
-
-compose_project="$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env | tail -n 1)"
-while IFS= read -r project_service; do
-  case "$project_service" in
-    ""|app|postgres|valkey|verifier) ;;
-    *)
-      echo "Unexpected service in the Certificate A Compose project: $project_service" >&2
-      exit 1
-      ;;
-  esac
-done < <(
-  docker ps --all \
-    --filter "label=com.docker.compose.project=$compose_project" \
-    --format '{{.Label "com.docker.compose.service"}}'
-)
+"./scripts/check-certificate-a-compose-project.sh"
 echo "Certificate A bind mounts and exact default Compose graph are ready."

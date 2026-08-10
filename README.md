@@ -86,10 +86,10 @@ chmod 600 .env
 # Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a; never reuse a legacy stack name.
 ./scripts/prepare-production.sh
 
-docker compose up -d --wait postgres valkey
-docker compose --profile maintenance run --rm provision-roles
-docker compose --profile maintenance run --rm migrate
-docker compose up -d --wait verifier app
+./scripts/certificate-a-compose.sh up -d --wait postgres valkey
+./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
+./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
+./scripts/certificate-a-compose.sh up -d --wait verifier app
 ```
 
 The idempotent role-provisioning step is required for both new and existing
