@@ -73,7 +73,7 @@ def test_compose_project_name_is_portable_to_legacy_compose() -> None:
     environment_example = (ROOT / ".env.example").read_text().splitlines()
 
     assert "name" not in compose
-    assert "COMPOSE_PROJECT_NAME=calibre-ai-auditor" in environment_example
+    assert "COMPOSE_PROJECT_NAME=bookaudit-certificate-a" in environment_example
 
 
 def test_compose_uses_separate_configurable_certificate_and_writer_images() -> None:
@@ -90,6 +90,8 @@ def test_certificate_a_preflight_does_not_prepare_writer_or_legacy_state() -> No
     assert "Certificate A bind mounts" in script
     assert 'actual_services="$(COMPOSE_PROFILES=' in script
     assert '"app postgres valkey verifier "' in script
+    assert "label=com.docker.compose.project=$compose_project" in script
+    assert "Unexpected service in the Certificate A Compose project" in script
     assert "backups" in script
     for excluded in (".state", ".artifacts", ".writer-artifacts", "user_library"):
         assert excluded not in script

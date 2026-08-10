@@ -28,12 +28,15 @@ pinned by digest. `BOOKAUDIT_RELEASE_DIGEST` must be the same digest.
 cp .env.example .env
 chmod 600 .env
 # Edit .env and replace every placeholder.
+# Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a.
 ./scripts/prepare-production.sh
 ```
 
 Preflight validates the secret relationships, image/release binding, existing
-absolute library, and exact default service graph. It rejects auto-apply and an
-enabled writer pilot.
+absolute library, dedicated Compose project, and exact default service graph.
+It rejects the legacy `calibre-ai-auditor` project name, any unexpected service
+already attached to the Certificate A project, auto-apply, and an enabled
+writer pilot.
 
 Pull or build the reviewed image, then start infrastructure, provision roles,
 migrate once, and start the verifier before the app:

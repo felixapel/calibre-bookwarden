@@ -83,6 +83,7 @@ stopped during every audit.
 cp .env.example .env
 chmod 600 .env
 # Replace every placeholder. Use distinct database passwords and a digest-pinned image.
+# Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a; never reuse a legacy stack name.
 ./scripts/prepare-production.sh
 
 docker compose up -d --wait postgres valkey
@@ -155,6 +156,8 @@ does not replace the Gitea live-service or container gates.
 - Never use a library write as a readiness or integration probe.
 - Do not mount the library into the app, PostgreSQL, or Valkey containers.
 - Do not enable `writer` or `writer-maintenance` profiles for Certificate A.
+- Do not reuse a legacy/shadow Compose project. Preflight requires the dedicated
+  `bookaudit-certificate-a` project and rejects unexpected services in it.
 - Do not enable auto-apply or the supervised pilot; preflight rejects both.
 - Do not add cloud OCR, LLM, vision, upload, watcher, MCP, Paperless, Qdrant,
   Gotenberg, Tika, manga, or Content Server paths to the production closure.

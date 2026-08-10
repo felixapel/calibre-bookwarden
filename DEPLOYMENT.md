@@ -33,6 +33,7 @@ Production must set `BOOKAUDIT_IMAGE` to an immutable registry digest and set
 cp .env.example .env
 chmod 600 .env
 # Replace every placeholder and use distinct database role passwords.
+# Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a.
 ./scripts/prepare-production.sh
 
 docker compose pull app verifier postgres valkey
@@ -46,6 +47,11 @@ docker compose up -d --wait verifier app
 existing PostgreSQL volumes. The initdb hook alone cannot upgrade existing
 volumes. Preflight verifies the exact default graph and rejects writer flags.
 Runtime services validate but never provision roles or migrate the schema.
+
+`bookaudit-certificate-a` is a dedicated Compose project. Do not reuse the
+legacy `calibre-ai-auditor` project: it can contain a quarantined writer and
+legacy volumes. Preflight rejects that name and refuses any unexpected service
+already attached to the dedicated Certificate A project.
 
 Only the app port is published, and only on
 `127.0.0.1:${BOOKAUDIT_PORT:-8080}`. PostgreSQL and Valkey have no host ports.

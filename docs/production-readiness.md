@@ -82,7 +82,9 @@ Automation cannot prove these facts. Record them for the exact image digest:
 1. The deployment `.env` is mode 0600, contains distinct strong secrets,
    explicit trusted hosts, a digest-pinned image, and a matching release digest.
    Compose interpolation must not become whole-file `env_file` injection into
-   any runtime container.
+   any runtime container. The project is the dedicated
+   `bookaudit-certificate-a` project and contains no legacy or unexpected
+   service.
 2. Calibre and every writer to the library are stopped before the audit; no
    SQLite WAL, SHM, or journal sidecar exists.
 3. PostgreSQL backup and empty-environment restore are performed and verified.

@@ -17,13 +17,18 @@ contain Calibre.
 ```bash
 cp .env.example .env
 chmod 600 .env
-# Replace every placeholder.
+# Replace every placeholder; retain COMPOSE_PROJECT_NAME=bookaudit-certificate-a.
 ./scripts/prepare-production.sh
 docker compose up -d --wait postgres valkey
 docker compose --profile maintenance run --rm provision-roles
 docker compose --profile maintenance run --rm migrate
 docker compose up -d --wait verifier app
 ```
+
+The dedicated Compose project name isolates Certificate A volumes, networks,
+and containers from legacy/shadow deployments. Preflight rejects the old
+`calibre-ai-auditor` project name and any unexpected service already present in
+the Certificate A project.
 
 Always run the idempotent `provision-roles` maintenance task before Alembic.
 PostgreSQL does not rerun initdb hooks for an existing data volume.
