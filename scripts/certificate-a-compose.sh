@@ -33,6 +33,10 @@ for argument in "$@"; do
       echo "Certificate B services cannot be selected through the Certificate A wrapper." >&2
       exit 1
       ;;
+    --scale|--scale=*|scale)
+      echo "Certificate A services cannot be scaled through the production wrapper." >&2
+      exit 1
+      ;;
   esac
 done
 if [[ "$expect_profile" == true ]]; then
@@ -70,7 +74,7 @@ compose_command=""
 compose_command_index=-1
 for index in "${!arguments[@]}"; do
   case "${arguments[$index]}" in
-    attach|build|commit|config|cp|create|down|events|exec|export|images|kill|logs|ls|pause|port|ps|publish|pull|push|restart|rm|run|scale|start|stats|stop|top|unpause|up|version|volumes|wait|watch)
+    attach|build|commit|config|cp|create|down|events|exec|export|images|kill|logs|ls|pause|port|ps|publish|pull|push|restart|rm|run|start|stats|stop|top|unpause|up|version|volumes|wait|watch)
       compose_command="${arguments[$index]}"
       compose_command_index="$index"
       break

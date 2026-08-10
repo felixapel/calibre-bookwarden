@@ -329,6 +329,9 @@ def test_certificate_a_compose_wrapper_rejects_writer_and_identity_overrides(tmp
         ("--env-file", "/tmp/hostile.env", "config"),
         ("run", "writer"),
         ("up", "retention"),
+        ("up", "--scale", "verifier=2"),
+        ("up", "--scale=verifier=2"),
+        ("scale", "verifier=2"),
     ):
         result = subprocess.run(
             [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],

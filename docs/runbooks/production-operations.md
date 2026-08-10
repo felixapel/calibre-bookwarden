@@ -58,7 +58,7 @@ Use `scripts/certificate-a-compose.sh` for every Certificate A operation. It
 pins the dedicated project plus the reviewed Compose and environment files,
 verifies the existing project's service and Compose-file provenance, runs
 Compose with only Docker transport variables inherited from the shell, and
-rejects writer profiles or identity/file overrides.
+rejects writer profiles, scaling, or identity/file overrides.
 Commands that execute inside an existing container also require its Compose
 configuration hash to match the service resolved from the reviewed `.env`.
 
