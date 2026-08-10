@@ -56,8 +56,11 @@ same script runs only when PostgreSQL creates an empty data directory.
 
 Use `scripts/certificate-a-compose.sh` for every Certificate A operation. It
 pins the dedicated project plus the reviewed Compose and environment files,
-clears conflicting ambient Compose variables, and rejects writer profiles or
-identity/file overrides.
+verifies the existing project's service and Compose-file provenance, runs
+Compose with only Docker transport variables inherited from the shell, and
+rejects writer profiles or identity/file overrides.
+Commands that execute inside an existing container also require its Compose
+configuration hash to match the service resolved from the reviewed `.env`.
 
 For a local candidate build, `BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` is permitted
 only for disposable validation. It is not production promotion evidence.
