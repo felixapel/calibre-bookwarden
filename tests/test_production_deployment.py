@@ -573,6 +573,10 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
     assert f"docker compose {profile_command} config -q" in container
     assert "docker compose --profile monitoring config --services" in container
     assert '"app postgres prometheus valkey verifier "' in container
+    assert "docker build --file ops/monitoring/Dockerfile.ci" in container
+    assert '"$PWD/ops/monitoring' not in container
+    assert '"$PWD/.monitoring-ci' not in container
+    assert "docker cp ops/monitoring/.trivyignore" in container
     assert "--scanners vuln,secret" in container
     assert "--severity HIGH,CRITICAL --ignore-unfixed" in container
 
@@ -625,7 +629,7 @@ def test_monitoring_is_certificate_a_only_and_uses_a_secret_file() -> None:
         if line and not line.startswith("#")
     ]
     assert ignored == ["CVE-2026-42154"]
-    assert "--ignorefile /work/ops/monitoring/.trivyignore" in workflow
+    assert "--ignorefile /tmp/bookaudit-prometheus.trivyignore" in workflow
 
 
 def test_canonical_gpl_license_is_installed() -> None:

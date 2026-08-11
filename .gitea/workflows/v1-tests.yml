@@ -253,49 +253,36 @@ jobs:
           docker compose --profile maintenance --profile writer --profile writer-maintenance config -q
       - name: Validate Certificate A monitoring rules
         run: |
-          trap 'docker rm -f bookaudit-prometheus-smoke bookaudit-metrics-smoke >/dev/null 2>&1 || true; docker network rm bookaudit-monitoring-smoke >/dev/null 2>&1 || true; rm -rf .monitoring-ci' EXIT
-          install -d -m 0700 -o 1000 -g 1000 .monitoring-ci
-          install -d -m 0750 -o 1000 -g 1000 .monitoring-ci/data
-          install -d -m 0750 .monitoring-ci/fake/api
-          printf '%s' 'ci-api-key-at-least-thirty-two-characters' > .monitoring-ci/bookaudit_api_key
-          chown 1000:1000 .monitoring-ci/bookaudit_api_key
-          chmod 0600 .monitoring-ci/bookaudit_api_key
-          printf '%s\n' 'bookaudit_certificate_a_ready 1' > .monitoring-ci/fake/api/metrics
+          trap 'docker rm -f bookaudit-prometheus-smoke bookaudit-metrics-smoke >/dev/null 2>&1 || true; docker network rm bookaudit-monitoring-smoke >/dev/null 2>&1 || true' EXIT
+          docker build --file ops/monitoring/Dockerfile.ci \
+            --tag bookaudit-prometheus-ci:rules ops/monitoring
           docker run --rm --network none \
-            -v "$PWD/ops/monitoring:/etc/prometheus:ro" \
-            -v "$PWD/.monitoring-ci/bookaudit_api_key:/run/secrets/bookaudit_api_key:ro" \
             --entrypoint /bin/promtool \
-            prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69 \
+            bookaudit-prometheus-ci:rules \
             check config /etc/prometheus/prometheus.yml
           docker run --rm --network none \
-            -v "$PWD/ops/monitoring:/etc/prometheus:ro" \
             --workdir /etc/prometheus \
             --entrypoint /bin/promtool \
-            prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69 \
+            bookaudit-prometheus-ci:rules \
             test rules alerts.test.yml
           docker run --rm --network none --user 1000:1000 \
-            -v "$PWD/.monitoring-ci/bookaudit_api_key:/run/secrets/bookaudit_api_key:ro" \
             --entrypoint /bin/sh \
-            prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69 \
+            bookaudit-prometheus-ci:rules \
             -c 'test -r /run/secrets/bookaudit_api_key'
           docker network create --internal bookaudit-monitoring-smoke
           docker run -d --name bookaudit-metrics-smoke \
             --network bookaudit-monitoring-smoke --network-alias app \
             --user 1000:1000 \
             --read-only --cap-drop ALL --security-opt no-new-privileges \
-            -v "$PWD/.monitoring-ci/fake:/www:ro" \
             --entrypoint /bin/busybox \
-            prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69 \
+            bookaudit-prometheus-ci:rules \
             httpd -f -p 8080 -h /www
           docker run -d --name bookaudit-prometheus-smoke \
             --network bookaudit-monitoring-smoke --user 1000:1000 \
             --read-only --cap-drop ALL --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m \
-            -v "$PWD/ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
-            -v "$PWD/ops/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro" \
-            -v "$PWD/.monitoring-ci/bookaudit_api_key:/run/secrets/bookaudit_api_key:ro" \
-            -v "$PWD/.monitoring-ci/data:/prometheus" \
-            prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69 \
+            --tmpfs /prometheus:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000 \
+            bookaudit-prometheus-ci:rules \
             --config.file=/etc/prometheus/prometheus.yml \
             --storage.tsdb.path=/prometheus
           ready=false
@@ -311,18 +298,23 @@ jobs:
           test "$ready" = true
       - name: Scan release images for high vulnerabilities and secrets
         run: |
+          trap 'docker rm -f bookaudit-prometheus-trivy >/dev/null 2>&1 || true' EXIT
           for image in calibre-ai-auditor:gitea-ci calibre-ai-auditor-writer:gitea-ci; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
               --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
               --scanners vuln,secret "$image"
           done
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/work:ro" \
+          docker create --name bookaudit-prometheus-trivy \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
             --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
-            --ignorefile /work/ops/monitoring/.trivyignore \
+            --ignorefile /tmp/bookaudit-prometheus.trivyignore \
             --scanners vuln,secret \
             prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69
+          docker cp ops/monitoring/.trivyignore \
+            bookaudit-prometheus-trivy:/tmp/bookaudit-prometheus.trivyignore
+          docker start --attach bookaudit-prometheus-trivy
 
   benchmarks:
     name: Benchmarks
