@@ -564,10 +564,15 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
     assert r"u.find_spec(\"openai\") is None" in container
     assert r"u.find_spec(\"qdrant_client\") is None" in container
     assert r"u.find_spec(\"fastmcp\") is None" in container
+    assert "docker-compose " not in container
+    assert "docker/compose/releases/download/v5.1.4/docker-compose-linux-x86_64" in container
+    assert "33b208d7e76639db742fae84b966cc01dacae58ca3fc4dabbc907045aefdf0c4" in container
     profile_command = "--profile maintenance --profile writer --profile writer-maintenance"
-    assert f"docker-compose {profile_command} config --services" in container
+    assert f"docker compose {profile_command} config --services" in container
     assert '"app migrate postgres provision-roles retention valkey verifier writer "' in container
-    assert f"docker-compose {profile_command} config -q" in container
+    assert f"docker compose {profile_command} config -q" in container
+    assert "docker compose --profile monitoring config --services" in container
+    assert '"app postgres prometheus valkey verifier "' in container
     assert "--scanners vuln,secret" in container
     assert "--severity HIGH,CRITICAL --ignore-unfixed" in container
 

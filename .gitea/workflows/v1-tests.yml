@@ -206,9 +206,15 @@ jobs:
       - name: Install Docker and Compose clients
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends docker.io docker-compose
+          apt-get install -y --no-install-recommends ca-certificates curl docker.io
+          install -d -m 0755 /usr/local/lib/docker/cli-plugins
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            https://github.com/docker/compose/releases/download/v5.1.4/docker-compose-linux-x86_64 \
+            --output /usr/local/lib/docker/cli-plugins/docker-compose
+          echo '33b208d7e76639db742fae84b966cc01dacae58ca3fc4dabbc907045aefdf0c4  /usr/local/lib/docker/cli-plugins/docker-compose' | sha256sum --check --strict
+          chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
           docker version
-          docker-compose version
+          docker compose version
       - name: Build both explicitly separated images
         run: |
           docker build --target certificate-a -t calibre-ai-auditor:gitea-ci .
@@ -240,10 +246,10 @@ jobs:
         run: |
           trap 'rm -f .env' EXIT
           install -m 0600 /dev/null .env
-          docker-compose config -q
-          test "$(docker-compose --profile maintenance --profile writer --profile writer-maintenance config --services | sort | tr '\n' ' ')" = "app migrate postgres provision-roles retention valkey verifier writer "
-          test "$(docker-compose --profile monitoring config --services | sort | tr '\n' ' ')" = "app postgres prometheus valkey verifier "
-          docker-compose --profile maintenance --profile writer --profile writer-maintenance config -q
+          docker compose config -q
+          test "$(docker compose --profile maintenance --profile writer --profile writer-maintenance config --services | sort | tr '\n' ' ')" = "app migrate postgres provision-roles retention valkey verifier writer "
+          test "$(docker compose --profile monitoring config --services | sort | tr '\n' ' ')" = "app postgres prometheus valkey verifier "
+          docker compose --profile maintenance --profile writer --profile writer-maintenance config -q
       - name: Validate Certificate A monitoring rules
         run: |
           trap 'docker rm -f bookaudit-prometheus-smoke bookaudit-metrics-smoke >/dev/null 2>&1 || true; docker network rm bookaudit-monitoring-smoke >/dev/null 2>&1 || true; rm -rf .monitoring-ci' EXIT
