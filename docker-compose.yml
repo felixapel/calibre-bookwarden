@@ -159,7 +159,8 @@ services:
       - ./ops/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - ./.monitoring/data:/prometheus
     secrets:
-      - bookaudit-api-key
+      - source: bookaudit-api-key
+        target: bookaudit_api_key
     tmpfs:
       - /tmp:size=32m,mode=1777
     networks: ["monitoring"]
