@@ -269,7 +269,9 @@ jobs:
             --entrypoint /bin/sh \
             bookaudit-prometheus-ci:rules \
             -c 'test -r /run/secrets/bookaudit_api_key'
-          docker network create --internal bookaudit-monitoring-smoke
+          docker network create \
+            --opt com.docker.network.bridge.enable_ip_masquerade=false \
+            bookaudit-monitoring-smoke
           docker run -d --name bookaudit-metrics-smoke \
             --network bookaudit-monitoring-smoke --network-alias app \
             --user 1000:1000 \
@@ -279,6 +281,7 @@ jobs:
             httpd -f -p 8080 -h /www
           docker run -d --name bookaudit-prometheus-smoke \
             --network bookaudit-monitoring-smoke --user 1000:1000 \
+            -p 127.0.0.1::9090 \
             --read-only --cap-drop ALL --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m \
             --tmpfs /prometheus:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000 \
@@ -296,6 +299,14 @@ jobs:
             sleep 2
           done
           test "$ready" = true
+          test "$(docker inspect bookaudit-prometheus-smoke \
+            --format '{{(index (index .NetworkSettings.Ports "9090/tcp") 0).HostIp}}')" = \
+            "127.0.0.1"
+          if docker exec bookaudit-prometheus-smoke \
+            /bin/busybox nc -z -w 2 1.1.1.1 80; then
+            echo "Prometheus unexpectedly reached an external address" >&2
+            exit 1
+          fi
       - name: Scan release images for high vulnerabilities and secrets
         run: |
           trap 'docker rm -f bookaudit-prometheus-trivy >/dev/null 2>&1 || true' EXIT

@@ -98,7 +98,9 @@ def test_prometheus_is_an_isolated_opt_in_certificate_a_service() -> None:
     assert compose["secrets"]["bookaudit-api-key"]["file"] == "./.monitoring/bookaudit_api_key"
     assert prometheus["networks"] == ["monitoring"]
     assert compose["services"]["app"]["networks"] == ["default", "monitoring"]
-    assert compose["networks"]["monitoring"]["internal"] is True
+    assert compose["networks"]["monitoring"] == {
+        "driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}
+    }
     assert prometheus["healthcheck"]["test"] == [
         "CMD",
         "promtool",
@@ -425,6 +427,13 @@ def test_certificate_a_compose_wrapper_requires_safe_monitoring_selection(tmp_pa
         assert result.returncode == 1
 
 
+def test_monitoring_runbook_uses_unambiguous_force_option_for_rollback() -> None:
+    runbook = (ROOT / "docs" / "runbooks" / "production-operations.md").read_text()
+
+    assert "rm --force prometheus" in runbook
+    assert "rm -f prometheus" not in runbook
+
+
 def test_restore_drill_wrapper_permits_disposable_volume_removal(tmp_path: Path) -> None:
     _fake_docker(tmp_path, "exit 0")
     environment = os.environ.copy()
@@ -574,6 +583,10 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
     assert "docker compose --profile monitoring config --services" in container
     assert '"app postgres prometheus valkey verifier "' in container
     assert "docker build --file ops/monitoring/Dockerfile.ci" in container
+    assert "com.docker.network.bridge.enable_ip_masquerade=false" in container
+    assert "-p 127.0.0.1::9090" in container
+    assert 'index .NetworkSettings.Ports "9090/tcp"' in container
+    assert "Prometheus unexpectedly reached an external address" in container
     assert '"$PWD/ops/monitoring' not in container
     assert '"$PWD/.monitoring-ci' not in container
     assert "docker cp ops/monitoring/.trivyignore" in container

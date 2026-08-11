@@ -286,7 +286,8 @@ volumes:
 
 networks:
   monitoring:
-    internal: true
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
 
 secrets:
   bookaudit-api-key:
