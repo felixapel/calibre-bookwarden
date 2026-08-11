@@ -1,0 +1,14 @@
+# CI-only fixture image. Production uses the unmodified pinned Prometheus image.
+FROM prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69
+
+USER root
+
+COPY prometheus.yml alerts.yml alerts.test.yml /etc/prometheus/
+
+RUN mkdir -p /run/secrets /www/api \
+    && printf '%s' 'ci-api-key-at-least-thirty-two-characters' > /run/secrets/bookaudit_api_key \
+    && printf '%s\n' 'bookaudit_certificate_a_ready 1' > /www/api/metrics \
+    && chown -R 1000:1000 /run/secrets /www \
+    && chmod 0600 /run/secrets/bookaudit_api_key
+
+USER 1000:1000

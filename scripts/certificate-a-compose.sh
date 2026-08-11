@@ -9,11 +9,15 @@ if [[ "${1:-}" == "--restore-drill" ]]; then
 fi
 
 expect_profile=false
+monitoring_profile=false
 for argument in "$@"; do
   if [[ "$expect_profile" == true ]]; then
-    if [[ "$argument" != "maintenance" ]]; then
-      echo "Certificate A permits only the maintenance Compose profile." >&2
+    if [[ "$argument" != "maintenance" && "$argument" != "monitoring" ]]; then
+      echo "Certificate A permits only the maintenance or monitoring Compose profile." >&2
       exit 1
+    fi
+    if [[ "$argument" == "monitoring" ]]; then
+      monitoring_profile=true
     fi
     expect_profile=false
     continue
@@ -21,8 +25,9 @@ for argument in "$@"; do
   case "$argument" in
     --profile) expect_profile=true ;;
     --profile=maintenance) ;;
+    --profile=monitoring) monitoring_profile=true ;;
     --profile=*)
-      echo "Certificate A permits only the maintenance Compose profile." >&2
+      echo "Certificate A permits only the maintenance or monitoring Compose profile." >&2
       exit 1
       ;;
     -p|-p?*|--project-name|--project-name=*|-f|-f?*|--file|--file=*|--env-file|--env-file=*|--project-directory|--project-directory=*)
@@ -87,6 +92,20 @@ for index in "${!arguments[@]}"; do
       ;;
   esac
 done
+prometheus_selected=false
+for argument in "${arguments[@]}"; do
+  if [[ "$argument" == "prometheus" ]]; then
+    prometheus_selected=true
+  fi
+done
+if [[ "$prometheus_selected" == true && "$monitoring_profile" != true ]]; then
+  echo "Certificate A Prometheus operations require the explicit monitoring profile." >&2
+  exit 1
+fi
+if [[ "$monitoring_profile" == true && "$compose_command" == "down" ]]; then
+  echo "The monitoring profile cannot bring down the Certificate A application stack." >&2
+  exit 1
+fi
 if [[ "$compose_command" == "exec" ]]; then
   index=$((compose_command_index + 1))
   while [[ "$index" -lt "${#arguments[@]}" ]]; do

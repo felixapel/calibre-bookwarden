@@ -95,8 +95,8 @@ def validate(path: Path, *, allow_local_image: bool = False) -> list[str]:
     trusted_hosts = [host.strip() for host in values.get("BOOKAUDIT_TRUSTED_HOSTS", "").split(",")]
     if not all(trusted_hosts) or any(host == "*" for host in trusted_hosts):
         errors.append("BOOKAUDIT_TRUSTED_HOSTS must contain explicit hosts and no wildcard")
-    elif not {"localhost", "127.0.0.1"}.issubset(set(trusted_hosts)):
-        errors.append("BOOKAUDIT_TRUSTED_HOSTS must include localhost and 127.0.0.1 for private health checks")
+    elif not {"localhost", "127.0.0.1", "app"}.issubset(set(trusted_hosts)):
+        errors.append("BOOKAUDIT_TRUSTED_HOSTS must include localhost, 127.0.0.1, and app for private health checks")
 
     image = values.get("BOOKAUDIT_IMAGE", "")
     image_digest_match = SHA256_IMAGE_PATTERN.search(image)

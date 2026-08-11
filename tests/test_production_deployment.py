@@ -77,6 +77,41 @@ def test_default_compose_is_the_exact_certificate_a_graph() -> None:
     assert any(volume.endswith(":/library:rw") for volume in services["writer"]["volumes"])
 
 
+def test_prometheus_is_an_isolated_opt_in_certificate_a_service() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    prometheus = compose["services"]["prometheus"]
+
+    assert prometheus["profiles"] == ["monitoring"]
+    assert prometheus["image"] == (
+        "prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69"
+    )
+    assert prometheus["user"] == "${UID:-1000}:${GID:-1000}"
+    assert prometheus["read_only"] is True
+    assert prometheus["cap_drop"] == ["ALL"]
+    assert prometheus["security_opt"] == ["no-new-privileges:true"]
+    assert prometheus["depends_on"]["app"]["condition"] == "service_healthy"
+    assert prometheus["ports"] == ["127.0.0.1:${BOOKAUDIT_PROMETHEUS_PORT:-19090}:9090"]
+    assert "./ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" in prometheus["volumes"]
+    assert "./ops/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro" in prometheus["volumes"]
+    assert "./.monitoring/data:/prometheus" in prometheus["volumes"]
+    assert prometheus["secrets"] == ["bookaudit-api-key"]
+    assert compose["secrets"]["bookaudit-api-key"]["file"] == "./.monitoring/bookaudit_api_key"
+    assert prometheus["networks"] == ["monitoring"]
+    assert compose["services"]["app"]["networks"] == ["default", "monitoring"]
+    assert compose["networks"]["monitoring"]["internal"] is True
+    assert prometheus["healthcheck"]["test"] == [
+        "CMD",
+        "promtool",
+        "check",
+        "ready",
+        "--url=http://localhost:9090",
+    ]
+    assert "--storage.tsdb.retention.time=30d" in prometheus["command"]
+    assert "--storage.tsdb.retention.size=2GB" in prometheus["command"]
+    assert not any("/library" in volume for volume in prometheus["volumes"])
+    assert not any(name in prometheus.get("environment", {}) for name in ("POSTGRES", "VALKEY", "API_KEY"))
+
+
 def test_compose_project_name_is_portable_to_legacy_compose() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     environment_example = (ROOT / ".env.example").read_text().splitlines()
@@ -346,6 +381,50 @@ def test_certificate_a_compose_wrapper_rejects_writer_and_identity_overrides(tmp
         assert result.returncode == 1
 
 
+def test_certificate_a_compose_wrapper_permits_only_monitoring_or_maintenance_profiles(
+    tmp_path: Path,
+) -> None:
+    _fake_docker(tmp_path, "exit 0")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    for arguments in (
+        ("--profile", "monitoring", "config"),
+        ("--profile=monitoring", "config"),
+        ("--profile", "maintenance", "config"),
+    ):
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],
+            check=False,
+            capture_output=True,
+            env=environment,
+            text=True,
+        )
+
+        assert result.returncode == 0
+
+
+def test_certificate_a_compose_wrapper_requires_safe_monitoring_selection(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "exit 0")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    for arguments in (
+        ("up", "prometheus"),
+        ("--profile", "monitoring", "down"),
+        ("--profile=monitoring", "down"),
+    ):
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],
+            check=False,
+            capture_output=True,
+            env=environment,
+            text=True,
+        )
+
+        assert result.returncode == 1
+
+
 def test_restore_drill_wrapper_permits_disposable_volume_removal(tmp_path: Path) -> None:
     _fake_docker(tmp_path, "exit 0")
     environment = os.environ.copy()
@@ -391,6 +470,13 @@ def test_certificate_a_preflight_does_not_prepare_writer_or_legacy_state() -> No
     assert '"./scripts/check-certificate-a-compose-project.sh"' in script
     assert 'actual_services="$("${compose[@]}" config --services' in script
     assert '"app postgres valkey verifier "' in script
+    assert '"app postgres prometheus valkey verifier "' in script
+    assert 'monitoring_root=".monitoring"' in script
+    assert "bookaudit_api_key" in script
+    assert 'git diff --quiet HEAD -- "$monitored_path"' in script
+    assert script.index('git diff --quiet HEAD -- "$monitored_path"') < script.index(
+        'mv -f "$secret_tmp" "$monitoring_root/bookaudit_api_key"'
+    )
     assert "backups" in script
     for excluded in (".state", ".artifacts", ".writer-artifacts", "user_library"):
         assert excluded not in script
@@ -478,10 +564,19 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
     assert r"u.find_spec(\"openai\") is None" in container
     assert r"u.find_spec(\"qdrant_client\") is None" in container
     assert r"u.find_spec(\"fastmcp\") is None" in container
+    assert "docker-compose " not in container
+    assert "docker/compose/releases/download/v5.1.4/docker-compose-linux-x86_64" in container
+    assert "33b208d7e76639db742fae84b966cc01dacae58ca3fc4dabbc907045aefdf0c4" in container
     profile_command = "--profile maintenance --profile writer --profile writer-maintenance"
-    assert f"docker-compose {profile_command} config --services" in container
+    assert f"docker compose {profile_command} config --services" in container
     assert '"app migrate postgres provision-roles retention valkey verifier writer "' in container
-    assert f"docker-compose {profile_command} config -q" in container
+    assert f"docker compose {profile_command} config -q" in container
+    assert "docker compose --profile monitoring config --services" in container
+    assert '"app postgres prometheus valkey verifier "' in container
+    assert "docker build --file ops/monitoring/Dockerfile.ci" in container
+    assert '"$PWD/ops/monitoring' not in container
+    assert '"$PWD/.monitoring-ci' not in container
+    assert "docker cp ops/monitoring/.trivyignore" in container
     assert "--scanners vuln,secret" in container
     assert "--severity HIGH,CRITICAL --ignore-unfixed" in container
 
@@ -519,9 +614,22 @@ def test_monitoring_is_certificate_a_only_and_uses_a_secret_file() -> None:
     assert "bookaudit_certificate_a_metrics_collection_success" in alerts
     for excluded in ("WriterHeartbeat", "OutboxBacklog", "V2Pilot"):
         assert excluded not in alerts
-    assert 'targets: ["127.0.0.1:8080"]' in prometheus
-    assert 'files: ["/etc/prometheus/secrets/bookaudit_api_key"]' in prometheus
+    assert 'targets: ["app:8080"]' in prometheus
+    assert "fallback_scrape_protocol: PrometheusText0.0.4" in prometheus
+    assert 'files: ["/run/secrets/bookaudit_api_key"]' in prometheus
     assert "REPLACE_WITH" not in prometheus
+
+    workflow = WORKFLOW.read_text()
+    assert "promtool" in workflow
+    assert "test rules alerts.test.yml" in workflow
+    assert (ROOT / "ops" / "monitoring" / "alerts.test.yml").is_file()
+    ignored = [
+        line
+        for line in (ROOT / "ops" / "monitoring" / ".trivyignore").read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert ignored == ["CVE-2026-42154"]
+    assert "--ignorefile /tmp/bookaudit-prometheus.trivyignore" in workflow
 
 
 def test_canonical_gpl_license_is_installed() -> None:

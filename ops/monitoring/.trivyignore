@@ -1,0 +1,6 @@
+# Trivy reads Prometheus 3.13.2's embedded module as a pseudo-version ending
+# in +dirty and therefore misses the upstream version boundary. CVE-2026-42154
+# affects versions before 3.5.3 and 3.11.3; this image is the official 3.13.2
+# release and includes the fix. Keep this exception scoped to its dedicated
+# CI command; the auditor images continue to use no ignore file.
+CVE-2026-42154

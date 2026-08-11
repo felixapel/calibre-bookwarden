@@ -90,6 +90,8 @@ chmod 600 .env
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
 ./scripts/certificate-a-compose.sh up -d --wait verifier app
+./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait app
+./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait prometheus
 ```
 
 The idempotent role-provisioning step is required for both new and existing
