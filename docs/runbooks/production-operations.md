@@ -239,11 +239,13 @@ Start or reconcile only this project's collector with:
 ```
 
 The first command safely recreates only the app when needed to attach its
-internal monitoring network. To roll back the collector, do not use `down`:
+dedicated monitoring bridge. IP masquerading is disabled on that bridge so
+Prometheus cannot use it for external egress, while Docker can still publish
+the UI on loopback. To roll back the collector, do not use `down`:
 
 ```bash
 ./scripts/certificate-a-compose.sh --profile monitoring stop prometheus
-./scripts/certificate-a-compose.sh --profile monitoring rm -f prometheus
+./scripts/certificate-a-compose.sh --profile monitoring rm --force prometheus
 ```
 
 Keep `.monitoring/data` for diagnosis; deleting it requires separate
