@@ -205,6 +205,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Install Docker and Compose clients
         run: |
+          # Compose v1 expands every profile in `config --services`; the production gate requires v2 semantics.
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates curl docker.io
           install -d -m 0755 /usr/local/lib/docker/cli-plugins
