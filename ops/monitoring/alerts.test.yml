@@ -1,0 +1,59 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="bookaudit-certificate-a"}'
+        values: '1x4'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: BookAuditUnavailable
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="bookaudit-certificate-a"}'
+        values: '0x4'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: BookAuditUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: bookaudit-certificate-a
+              severity: critical
+            exp_annotations:
+              summary: Certificate A cannot be scraped
+              runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+  - interval: 1m
+    input_series:
+      - series: 'bookaudit_certificate_a_runs{status="running"}'
+        values: '1x8'
+      - series: 'bookaudit_certificate_a_oldest_active_heartbeat_age_seconds'
+        values: '601x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: BookAuditCertificateARunStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: A Certificate A run has made no durable progress for more than ten minutes
+              runbook: docs/runbooks/production-operations.md#monitoring-alerts
+
+  - interval: 1m
+    input_series:
+      - series: 'bookaudit_certificate_a_runs{status="failed"}'
+        values: '0 1x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: BookAuditCertificateARunFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: A Certificate A run recently ended unsuccessfully and needs operator review
+              runbook: docs/runbooks/production-operations.md#monitoring-alerts

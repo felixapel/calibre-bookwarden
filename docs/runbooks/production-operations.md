@@ -43,10 +43,13 @@ migrate once, and start the verifier before the app:
 
 ```bash
 ./scripts/certificate-a-compose.sh pull app verifier postgres valkey
+./scripts/certificate-a-compose.sh --profile monitoring pull prometheus
 ./scripts/certificate-a-compose.sh up -d --wait postgres valkey
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
 ./scripts/certificate-a-compose.sh up -d --wait verifier app
+./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait app
+./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait prometheus
 ```
 
 `provision-roles` is an idempotent maintenance task, not a runtime service. Run
@@ -218,13 +221,45 @@ readiness or verifier startup to fail and must not be bypassed.
 
 ## Monitoring alerts
 
-`ops/monitoring/prometheus.yml` assumes Prometheus runs on the same host and
-scrapes `127.0.0.1:8080`. Store only the internal API key, with no variable name,
-in `/etc/prometheus/secrets/bookaudit_api_key`, owned by the Prometheus account
-and unreadable by other users. The `http_headers.files` setting reads it from
-that protected file; see the official [Prometheus configuration reference](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
+`./scripts/prepare-production.sh` creates `.monitoring/bookaudit_api_key` from
+the validated deployment environment with mode `0600`; it contains only the
+internal API key and is ignored by Git. The opt-in `monitoring` profile mounts
+that value as `/run/secrets/bookaudit_api_key`, persists its TSDB only in the
+dedicated `.monitoring/data` directory, and scrapes `app:8080` over an internal
+network that is not connected to PostgreSQL or Valkey. Its UI is loopback-only at
+`http://127.0.0.1:${BOOKAUDIT_PROMETHEUS_PORT:-19090}`. The
+`http_headers.files` setting reads the protected secret; see the official
+[Prometheus configuration reference](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
 
-Load `ops/monitoring/alerts.yml` and route at least these alerts:
+Start or reconcile only this project's collector with:
+
+```bash
+./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait app
+./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait prometheus
+```
+
+The first command safely recreates only the app when needed to attach its
+internal monitoring network. To roll back the collector, do not use `down`:
+
+```bash
+./scripts/certificate-a-compose.sh --profile monitoring stop prometheus
+./scripts/certificate-a-compose.sh --profile monitoring rm -f prometheus
+```
+
+Keep `.monitoring/data` for diagnosis; deleting it requires separate
+destructive authorization.
+
+Verify the live target and loaded rules without exposing the API key:
+
+```bash
+curl --fail --silent --show-error \
+  'http://127.0.0.1:19090/api/v1/query?query=up%7Bjob%3D%22bookaudit-certificate-a%22%7D'
+curl --fail --silent --show-error \
+  'http://127.0.0.1:19090/api/v1/rules'
+```
+
+Prometheus loads and evaluates at least these alerts from
+`ops/monitoring/alerts.yml`:
 
 - `BookAuditUnavailable`: backend cannot be scraped.
 - `BookAuditCertificateANotReady`: database, config, or verifier binding failed.
@@ -238,8 +273,24 @@ Load `ops/monitoring/alerts.yml` and route at least these alerts:
   blocked-recovery evidence.
 - HTTP server-error and latency alerts.
 
-Prometheus itself should not pass through Caddy; it scrapes the loopback backend
-with the internal API key. Browser users still go through Caddy authentication.
+Prometheus itself should not pass through Caddy; it scrapes the app only over
+the private Compose network with the internal API key. Browser users still go
+through Caddy authentication.
+
+The current application has one API key scope, so the collector's secret can
+also authorize non-metrics API calls. Treat compromise of Prometheus as API-key
+compromise: keep its image pinned and scanned, keep its network internal and its
+UI loopback-only, and rotate the key by rerunning preparation and recreating
+both `app` and `prometheus`. This profile intentionally does not include
+Alertmanager or an external receiver; it evaluates and exposes alerts locally.
+External notification delivery remains an operator integration and must not be
+claimed until a reviewed receiver is configured and tested.
+
+The pinned Prometheus image is the official 3.13.2 release. Its dedicated
+Trivy invocation ignores only `CVE-2026-42154`: Trivy reports the embedded
+Prometheus module as a `+dirty` pseudo-version even though the upstream fix is
+present in releases 3.5.3, 3.11.3, and later. Do not reuse that ignore file for
+the auditor images or add another entry without a new documented review.
 
 ## Incident response
 

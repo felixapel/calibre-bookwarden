@@ -25,6 +25,17 @@ fi
 install -d -m 0750 -o "$runtime_uid" -g "$runtime_gid" \
   backups
 
+for monitored_path in \
+  docker-compose.yml \
+  ops/monitoring/prometheus.yml \
+  ops/monitoring/alerts.yml; do
+  if ! git diff --quiet HEAD -- "$monitored_path"; then
+    echo "Production monitoring input differs from the reviewed commit: $monitored_path" >&2
+    exit 1
+  fi
+  sha256sum "$monitored_path"
+done
+
 compose=("./scripts/certificate-a-compose.sh")
 "${compose[@]}" --profile maintenance config -q
 actual_services="$("${compose[@]}" config --services | LC_ALL=C sort | tr '\n' ' ')"
@@ -32,5 +43,27 @@ if [[ "$actual_services" != "app postgres valkey verifier " ]]; then
   echo "Default Compose graph is not the exact Certificate A topology: $actual_services" >&2
   exit 1
 fi
+monitoring_services="$("${compose[@]}" --profile monitoring config --services | LC_ALL=C sort | tr '\n' ' ')"
+if [[ "$monitoring_services" != "app postgres prometheus valkey verifier " ]]; then
+  echo "Monitoring Compose graph is not the exact Certificate A topology: $monitoring_services" >&2
+  exit 1
+fi
 "./scripts/check-certificate-a-compose-project.sh"
-echo "Certificate A bind mounts and exact default Compose graph are ready."
+
+# Materialize monitoring state only after every fail-closed validation passes.
+# Prometheus runs as this same UID/GID, so the mode-0600 API key stays readable
+# without weakening host permissions or running the collector as root.
+monitoring_root=".monitoring"
+install -d -m 0700 -o "$runtime_uid" -g "$runtime_gid" \
+  "$monitoring_root"
+install -d -m 0750 -o "$runtime_uid" -g "$runtime_gid" \
+  "$monitoring_root/data"
+api_key="$(python -c 'import runpy; from pathlib import Path; module = runpy.run_path("scripts/validate-production-env.py"); print(module["load_env"](Path(".env"))["BOOKAUDIT_API_KEY"], end="")')"
+secret_tmp="$(mktemp "$monitoring_root/.bookaudit_api_key.XXXXXX")"
+trap 'rm -f "$secret_tmp"' EXIT
+chmod 0600 "$secret_tmp"
+printf '%s' "$api_key" > "$secret_tmp"
+chown "$runtime_uid:$runtime_gid" "$secret_tmp"
+mv -f "$secret_tmp" "$monitoring_root/bookaudit_api_key"
+trap - EXIT
+echo "Certificate A bind mounts, monitoring secret, and exact Compose graphs are ready."

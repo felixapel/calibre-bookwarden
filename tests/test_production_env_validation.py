@@ -26,7 +26,7 @@ BOOKAUDIT_VERIFIER_POSTGRES_DSN=postgresql+psycopg://bookaudit_verifier:verifier
 BOOKAUDIT_WRITER_POSTGRES_DSN=postgresql+psycopg://bookaudit_writer:writer-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
 BOOKAUDIT_MIGRATOR_POSTGRES_DSN=postgresql+psycopg://bookaudit_migrator:migrator-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
 BOOKAUDIT_API_KEY=api-key-with-32-characters-and-entropy-9Z
-BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,books.example.test
+BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,app,books.example.test
 BOOKAUDIT_IMAGE=registry.example.test/bookaudit@sha256:{"a" * 64}
 BOOKAUDIT_RELEASE_DIGEST=sha256:{"a" * 64}
 """
@@ -91,7 +91,7 @@ def test_private_health_hosts_are_required(tmp_path: Path) -> None:
     env = tmp_path / ".env"
     env.write_text(
         _valid_env(library, backups).replace(
-            "localhost,127.0.0.1,books.example.test",
+            "localhost,127.0.0.1,app,books.example.test",
             "books.example.test",
         )
     )
@@ -99,7 +99,7 @@ def test_private_health_hosts_are_required(tmp_path: Path) -> None:
 
     errors = MODULE.validate(env)
 
-    assert errors == ["BOOKAUDIT_TRUSTED_HOSTS must include localhost and 127.0.0.1 for private health checks"]
+    assert errors == ["BOOKAUDIT_TRUSTED_HOSTS must include localhost, 127.0.0.1, and app for private health checks"]
 
 
 def test_root_runtime_identity_is_rejected(tmp_path: Path) -> None:

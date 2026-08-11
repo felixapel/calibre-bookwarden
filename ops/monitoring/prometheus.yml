@@ -8,8 +8,9 @@ rule_files:
 scrape_configs:
   - job_name: bookaudit-certificate-a
     metrics_path: /api/metrics
+    fallback_scrape_protocol: PrometheusText0.0.4
     static_configs:
-      - targets: ["127.0.0.1:8080"]
+      - targets: ["app:8080"]
     http_headers:
       X-API-Key:
-        files: ["/etc/prometheus/secrets/bookaudit_api_key"]
+        files: ["/run/secrets/bookaudit_api_key"]

@@ -58,6 +58,7 @@ services:
       - /tmp:size=128m,mode=1777
     ports:
       - "127.0.0.1:${BOOKAUDIT_PORT:-8080}:8080"
+    networks: ["default", "monitoring"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,6 +137,41 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  prometheus:
+    <<: *runtime-security
+    image: prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69
+    profiles: ["monitoring"]
+    user: "${UID:-1000}:${GID:-1000}"
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 64
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=2GB
+    ports:
+      - "127.0.0.1:${BOOKAUDIT_PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./.monitoring/data:/prometheus
+    secrets:
+      - bookaudit-api-key
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    networks: ["monitoring"]
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "promtool", "check", "ready", "--url=http://localhost:9090"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   provision-roles:
     <<: *runtime-security
@@ -247,3 +283,11 @@ services:
 volumes:
   postgres-data:
   valkey-data:
+
+networks:
+  monitoring:
+    internal: true
+
+secrets:
+  bookaudit-api-key:
+    file: ./.monitoring/bookaudit_api_key

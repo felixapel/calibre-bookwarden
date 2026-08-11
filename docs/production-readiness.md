@@ -68,7 +68,8 @@ not release evidence.
    the absence of Calibre and quarantined packages. Both images pass pinned
    high/critical vulnerability and secret scans.
 7. Compose renders exactly `app`, `verifier`, `postgres`, and `valkey` by
-   default; optional migration and writer profiles do not enter that graph.
+   default. The opt-in `monitoring` profile adds only Prometheus; optional
+   migration and writer profiles do not enter the default graph.
 8. The 50k metadata microbenchmark passes. It is a resolver/storage guard, not
    a promise of full-library wall-clock throughput.
 
@@ -90,8 +91,9 @@ Automation cannot prove these facts. Record them for the exact image digest:
 3. PostgreSQL backup and empty-environment restore are performed and verified.
 4. Caddy validates and serves a trusted TLS name; authentication covers the
    SPA, assets, API, health, and metrics paths; the backend port is loopback.
-5. Prometheus reads the API key from a protected file and all Certificate A
-   alerts load successfully.
+5. The dedicated `monitoring` profile is healthy, Prometheus reads the API key
+   from its generated protected secret, the Certificate A target is up, and all
+   Certificate A alerts load successfully.
 6. A small, then representative, read-only audit completes without unexplained
    `source_changed`, `blocked_recovery`, stale-heartbeat, or evidence-seal
    states.
