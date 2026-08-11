@@ -94,7 +94,7 @@ def test_prometheus_is_an_isolated_opt_in_certificate_a_service() -> None:
     assert "./ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" in prometheus["volumes"]
     assert "./ops/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro" in prometheus["volumes"]
     assert "./.monitoring/data:/prometheus" in prometheus["volumes"]
-    assert prometheus["secrets"] == ["bookaudit-api-key"]
+    assert prometheus["secrets"] == [{"source": "bookaudit-api-key", "target": "bookaudit_api_key"}]
     assert compose["secrets"]["bookaudit-api-key"]["file"] == "./.monitoring/bookaudit_api_key"
     assert prometheus["networks"] == ["monitoring"]
     assert compose["services"]["app"]["networks"] == ["default", "monitoring"]
