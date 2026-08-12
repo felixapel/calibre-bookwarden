@@ -191,7 +191,7 @@ services:
 
   caddy:
     <<: *runtime-security
-    image: caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    image: ${BOOKAUDIT_EDGE_IMAGE:-calibre-ai-auditor-edge:1.2.1}
     profiles: ["edge"]
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
@@ -208,7 +208,7 @@ services:
       BOOKAUDIT_DOMAIN: ${BOOKAUDIT_DOMAIN:-books.invalid}
       BOOKAUDIT_BASIC_AUTH_USER: ${BOOKAUDIT_BASIC_AUTH_USER:-auditor}
       BOOKAUDIT_BASIC_AUTH_HASH: ${BOOKAUDIT_BASIC_AUTH_HASH:-REPLACE_WITH_BCRYPT_HASH}
-    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    command: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     volumes:
       - ./deploy/caddy/Caddyfile.example:/etc/caddy/Caddyfile:ro
       - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock

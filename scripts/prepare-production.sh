@@ -28,15 +28,17 @@ from pathlib import Path
 
 values = runpy.run_path("scripts/validate-production-env.py")["load_env"](Path(".env"))
 print(values["BOOKAUDIT_IMAGE"])
+print(values["BOOKAUDIT_EDGE_IMAGE"])
 print(values["BOOKAUDIT_SOURCE_REVISION"])
 print(values["BOOKAUDIT_DOMAIN"])
 print(values["BOOKAUDIT_EDGE_BIND_IP"])
 PY
 )
 release_image="${release_identity[0]}"
-source_revision="${release_identity[1]}"
-edge_domain="${release_identity[2]}"
-edge_bind_ip="${release_identity[3]}"
+edge_image="${release_identity[1]}"
+source_revision="${release_identity[2]}"
+edge_domain="${release_identity[3]}"
+edge_bind_ip="${release_identity[4]}"
 reviewed_revision="$(git rev-parse HEAD)"
 if [[ "$source_revision" != "$reviewed_revision" ]]; then
   echo "BOOKAUDIT_SOURCE_REVISION does not match the reviewed checkout." >&2
@@ -49,6 +51,15 @@ if ! image_revision="$(docker image inspect "$release_image" \
 fi
 if [[ "$image_revision" != "$source_revision" ]]; then
   echo "Certificate A image provenance does not match BOOKAUDIT_SOURCE_REVISION." >&2
+  exit 1
+fi
+if ! edge_image_revision="$(docker image inspect "$edge_image" \
+  --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"; then
+  echo "The digest-pinned edge image is not available for provenance verification." >&2
+  exit 1
+fi
+if [[ "$edge_image_revision" != "$source_revision" ]]; then
+  echo "Edge image provenance does not match BOOKAUDIT_SOURCE_REVISION." >&2
   exit 1
 fi
 runtime_uid="$(sed -n 's/^UID=//p' .env | tail -n 1)"

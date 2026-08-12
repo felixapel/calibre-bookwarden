@@ -28,6 +28,7 @@ BOOKAUDIT_MIGRATOR_POSTGRES_DSN=postgresql+psycopg://bookaudit_migrator:migrator
 BOOKAUDIT_API_KEY=api-key-with-32-characters-and-entropy-9Z
 BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,app,books.example.test,felix-laptop.example-tailnet.ts.net
 BOOKAUDIT_IMAGE=registry.example.test/bookaudit@sha256:{"a" * 64}
+BOOKAUDIT_EDGE_IMAGE=registry.example.test/bookaudit-edge@sha256:{"c" * 64}
 BOOKAUDIT_RELEASE_DIGEST=sha256:{"a" * 64}
 BOOKAUDIT_SOURCE_REVISION={"b" * 40}
 BOOKAUDIT_DOMAIN=felix-laptop.example-tailnet.ts.net
@@ -117,6 +118,23 @@ def test_exact_source_revision_is_required(tmp_path: Path) -> None:
     env.chmod(0o600)
 
     assert MODULE.validate(env) == ["BOOKAUDIT_SOURCE_REVISION must be an exact 40-character Git commit"]
+
+
+def test_edge_image_must_be_digest_pinned(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    env.write_text(
+        _valid_env(library, backups).replace(
+            "registry.example.test/bookaudit-edge@sha256:" + "c" * 64,
+            "registry.example.test/bookaudit-edge:latest",
+        )
+    )
+    env.chmod(0o600)
+
+    assert MODULE.validate(env) == ["BOOKAUDIT_EDGE_IMAGE must use an immutable sha256 digest"]
 
 
 def test_tailscale_edge_contract_is_required(tmp_path: Path) -> None:

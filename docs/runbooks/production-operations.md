@@ -24,7 +24,10 @@ Create a mode-0600 environment file. Use five distinct PostgreSQL passwords, a
 strong internal API key, explicit trusted hosts, and a Certificate A image
 pinned by digest. `BOOKAUDIT_RELEASE_DIGEST` must be the same digest and
 `BOOKAUDIT_SOURCE_REVISION` must be the exact commit embedded in the image's
-`org.opencontainers.image.revision` label.
+`org.opencontainers.image.revision` label. `BOOKAUDIT_EDGE_IMAGE` is a separate
+digest-pinned image built by the reviewed `caddy-edge` target with the same
+revision label. Its committed Go module lock carries patched dependencies even
+when the latest upstream Caddy image has known fixed HIGH vulnerabilities.
 
 For the private HTTPS edge, enable Tailscale HTTPS for the tailnet, then grant
 only the numeric deployment UID certificate access. Add (or update) this line
@@ -34,9 +37,9 @@ Tailscale operator permission:
 ```bash
 TS_PERMIT_CERT_UID=1000
 sudo systemctl restart tailscaled
+edge_image="$(python -c 'import runpy; from pathlib import Path; print(runpy.run_path("scripts/validate-production-env.py")["load_env"](Path(".env"))["BOOKAUDIT_EDGE_IMAGE"])')"
 docker run --rm -it \
-  caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 \
-  caddy hash-password
+  "$edge_image" hash-password
 ```
 
 Set `BOOKAUDIT_DOMAIN` to this node's exact `*.ts.net` MagicDNS name,

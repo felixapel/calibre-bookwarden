@@ -135,6 +135,9 @@ def validate(path: Path, *, allow_local_image: bool = False) -> list[str]:
     local_allowed = allow_local_image or values.get("BOOKAUDIT_ALLOW_LOCAL_IMAGE", "").lower() == "true"
     if not local_allowed and image_digest_match is None:
         errors.append("BOOKAUDIT_IMAGE must use an immutable sha256 digest")
+    edge_image = values.get("BOOKAUDIT_EDGE_IMAGE", "")
+    if not local_allowed and SHA256_IMAGE_PATTERN.search(edge_image) is None:
+        errors.append("BOOKAUDIT_EDGE_IMAGE must use an immutable sha256 digest")
     release_digest = values.get("BOOKAUDIT_RELEASE_DIGEST", "")
     release_digest_match = SHA256_DIGEST_PATTERN.fullmatch(release_digest)
     if release_digest_match is None or (

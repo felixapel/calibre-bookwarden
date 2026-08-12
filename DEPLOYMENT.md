@@ -68,6 +68,8 @@ passes. Docker publishes its ports only on `BOOKAUDIT_EDGE_BIND_IP`, which must
 be this host's Tailscale IPv4 address; Caddy reaches the app only through the
 private Compose network and obtains the exact `*.ts.net` certificate from the
 local Tailscale daemon. Whole-site authentication has no path matcher.
+`BOOKAUDIT_EDGE_IMAGE` must be the digest-pinned output of the reviewed
+`caddy-edge` target and carry the same source-revision label as the app image.
 The Caddy process uses the deployment UID rather than root. Grant only that UID
 certificate access with `TS_PERMIT_CERT_UID` in `/etc/default/tailscaled`, then
 restart `tailscaled`; do not grant the broader Tailscale operator permission.

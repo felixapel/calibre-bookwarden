@@ -154,7 +154,7 @@ def test_caddy_is_an_isolated_tailscale_only_edge() -> None:
     caddy = compose["services"]["caddy"]
 
     assert caddy["profiles"] == ["edge"]
-    assert caddy["image"] == ("caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648")
+    assert caddy["image"] == "${BOOKAUDIT_EDGE_IMAGE:-calibre-ai-auditor-edge:1.2.1}"
     assert "network_mode" not in caddy
     assert caddy["ports"] == [
         "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:80:80",
@@ -628,14 +628,26 @@ def test_release_images_embed_the_exact_source_revision() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     workflow = WORKFLOW.read_text()
 
-    assert dockerfile.count("ARG BOOKAUDIT_BUILD_REVISION") == 2
-    assert dockerfile.count('LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"') == 2
-    assert workflow.count('--build-arg BOOKAUDIT_BUILD_REVISION="$reviewed_revision"') == 2
-    assert workflow.count("org.opencontainers.image.revision") >= 2
+    assert dockerfile.count("ARG BOOKAUDIT_BUILD_REVISION") == 3
+    assert dockerfile.count('LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"') == 3
+    assert workflow.count('--build-arg BOOKAUDIT_BUILD_REVISION="$reviewed_revision"') == 3
+    assert workflow.count("org.opencontainers.image.revision") >= 3
     assert 'reviewed_revision="$(git rev-parse HEAD)"' in workflow
     assert 'test "$GITHUB_SHA" = "$reviewed_revision"' in workflow
     assert "grep -Eq '^[0-9a-f]{40}$'" in workflow
     assert workflow.count('= "$reviewed_revision"') >= 3
+
+
+def test_edge_image_build_is_dependency_locked_and_patched() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    module = (ROOT / "deploy" / "caddy" / "module" / "go.mod").read_text()
+
+    assert "golang@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2" in dockerfile
+    assert "alpine@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40" in dockerfile
+    assert "go build -mod=readonly" in dockerfile
+    assert "github.com/caddyserver/caddy/v2 v2.11.4" in module
+    assert "golang.org/x/text v0.39.0" in module
+    assert "google.golang.org/grpc v1.82.1" in module
 
 
 def test_default_image_excludes_quarantined_packages_and_calibre() -> None:
@@ -707,6 +719,7 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
 
     assert "docker build --target certificate-a" in container
     assert "docker build --target writer" in container
+    assert "docker build --target caddy-edge" in container
     assert "test ! -e /opt/calibre/calibredb" in container
     assert r"u.find_spec(\"openai\") is None" in container
     assert r"u.find_spec(\"qdrant_client\") is None" in container
@@ -724,8 +737,8 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
     assert '"app caddy postgres valkey verifier "' in container
     assert "docker compose --profile edge up --no-deps --no-start caddy" in container
     assert "BOOKAUDIT_BASIC_AUTH_HASH=//p" in container
-    assert "caddy validate --config /tmp/Caddyfile" in container
-    assert "caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648" in container
+    assert "validate --config /tmp/Caddyfile" in container
+    assert "calibre-ai-auditor-edge:gitea-ci" in container
     assert "docker compose up -d --wait postgres valkey" in container
     assert "CREATE TABLE provenance_smoke" in container
     assert "valkey-cli set production-smoke persisted" in container

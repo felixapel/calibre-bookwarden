@@ -216,7 +216,7 @@ jobs:
           chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
           docker version
           docker compose version
-      - name: Build both explicitly separated images
+      - name: Build the explicitly separated application, writer, and edge images
         run: |
           reviewed_revision="$(git rev-parse HEAD)"
           printf '%s\n' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
@@ -227,6 +227,9 @@ jobs:
           docker build --target writer \
             --build-arg BOOKAUDIT_BUILD_REVISION="$reviewed_revision" \
             -t calibre-ai-auditor-writer:gitea-ci .
+          docker build --target caddy-edge \
+            --build-arg BOOKAUDIT_BUILD_REVISION="$reviewed_revision" \
+            -t calibre-ai-auditor-edge:gitea-ci .
       - name: Verify image dependency and privilege boundaries
         run: |
           reviewed_revision="$(git rev-parse HEAD)"
@@ -236,12 +239,16 @@ jobs:
             --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$reviewed_revision"
           test "$(docker image inspect calibre-ai-auditor-writer:gitea-ci \
             --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$reviewed_revision"
+          test "$(docker image inspect calibre-ai-auditor-edge:gitea-ci \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$reviewed_revision"
           docker run --rm --entrypoint sh calibre-ai-auditor:gitea-ci -c '
             bookaudit-certificate-a --help >/dev/null &&
             test ! -e /opt/calibre/calibredb &&
             python -c "import importlib.util as u; assert u.find_spec(\"openai\") is None; assert u.find_spec(\"qdrant_client\") is None; assert u.find_spec(\"fastmcp\") is None"
           '
           docker run --rm --entrypoint sh calibre-ai-auditor-writer:gitea-ci -c 'bookaudit --help >/dev/null && test -x /opt/calibre/calibredb'
+          docker run --rm calibre-ai-auditor-edge:gitea-ci version | grep -F 'v2.11.4-bookaudit-patched'
+          docker run --rm calibre-ai-auditor-edge:gitea-ci list-modules | grep -Fx 'tls.get_certificate.tailscale'
       - name: Verify the exact Compose graph and hardened state persistence
         env:
           BOOKAUDIT_LIBRARY_HOST_PATH: /tmp
@@ -251,6 +258,7 @@ jobs:
           BOOKAUDIT_MIGRATOR_POSTGRES_DSN: postgresql+psycopg://bookaudit_migrator:test@postgres/bookaudit
           BOOKAUDIT_API_KEY: ci-api-key-at-least-thirty-two-characters
           BOOKAUDIT_RELEASE_DIGEST: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          BOOKAUDIT_EDGE_IMAGE: calibre-ai-auditor-edge:gitea-ci
           BOOKAUDIT_DOMAIN: host.tailnet.ts.net
           BOOKAUDIT_EDGE_BIND_IP: 100.64.0.1
           BOOKAUDIT_BASIC_AUTH_USER: auditor
@@ -358,15 +366,15 @@ jobs:
             -e BOOKAUDIT_BASIC_AUTH_USER=auditor \
             -e 'BOOKAUDIT_BASIC_AUTH_HASH=$2a$14$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW' \
             -e BOOKAUDIT_PORT=8080 \
-            caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 \
-            caddy validate --config /tmp/Caddyfile --adapter caddyfile
+            calibre-ai-auditor-edge:gitea-ci \
+            validate --config /tmp/Caddyfile --adapter caddyfile
           docker cp deploy/caddy/Caddyfile.example bookaudit-caddy-config-smoke:/tmp/Caddyfile
           docker start --attach bookaudit-caddy-config-smoke
       - name: Scan release images for high vulnerabilities and secrets
         run: |
           trap 'docker rm -f bookaudit-prometheus-trivy >/dev/null 2>&1 || true' EXIT
           for image in calibre-ai-auditor:gitea-ci calibre-ai-auditor-writer:gitea-ci \
-            caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648; do
+            calibre-ai-auditor-edge:gitea-ci; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
               --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
