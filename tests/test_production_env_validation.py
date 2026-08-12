@@ -166,8 +166,7 @@ def test_preflight_caller_must_match_the_exact_runtime_uid() -> None:
 
     assert MODULE.validate_runtime_caller(values, 1000) is None
     assert MODULE.validate_runtime_caller(values, 1001) == (
-        "Run preflight as the configured runtime UID (1000) "
-        "so Tailscale certificate access is proven for Caddy."
+        "Run preflight as the configured runtime UID (1000) so Tailscale certificate access is proven for Caddy."
     )
 
 

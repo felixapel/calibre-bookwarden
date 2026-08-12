@@ -162,9 +162,7 @@ def test_caddy_is_an_isolated_tailscale_only_edge() -> None:
         "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:443:443/udp",
     ]
     assert caddy["networks"] == ["edge"]
-    assert compose["networks"]["edge"] == {
-        "driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}
-    }
+    assert compose["networks"]["edge"] == {"driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}}
     assert caddy["user"] == "${UID:-1000}:${GID:-1000}"
     assert caddy["read_only"] is True
     assert caddy["cap_drop"] == ["ALL"]
@@ -176,7 +174,7 @@ def test_caddy_is_an_isolated_tailscale_only_edge() -> None:
     assert caddy["depends_on"] == {"app": {"condition": "service_healthy"}}
     healthcheck = caddy["healthcheck"]["test"]
     assert healthcheck[0] == "CMD-SHELL"
-    assert 'https://$${BOOKAUDIT_DOMAIN}/' in healthcheck[1]
+    assert "https://$${BOOKAUDIT_DOMAIN}/" in healthcheck[1]
     assert "401" in healthcheck[1]
     assert "no-check-certificate" not in healthcheck[1]
     assert caddy["volumes"] == [
