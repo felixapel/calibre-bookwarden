@@ -93,6 +93,8 @@ Automation cannot prove these facts. Record them for the exact image digest:
 3. PostgreSQL backup and empty-environment restore are performed and verified.
 4. Caddy validates and serves a trusted TLS name; authentication covers the
    SPA, assets, API, health, and metrics paths; the backend port is loopback.
+   Docker publishes the edge only on the host's Tailscale IP from the pinned
+   opt-in `edge` profile; no host network, LAN, or wildcard publication is permitted.
 5. The dedicated `monitoring` profile is healthy, Prometheus reads the API key
    from its generated protected secret, the Certificate A target is up, and all
    Certificate A alerts load successfully.

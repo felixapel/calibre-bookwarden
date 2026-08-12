@@ -58,7 +58,7 @@ services:
       - /tmp:size=128m,mode=1777
     ports:
       - "127.0.0.1:${BOOKAUDIT_PORT:-8080}:8080"
-    networks: ["default", "monitoring"]
+    networks: ["default", "edge", "monitoring"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -189,6 +189,47 @@ services:
       retries: 3
       start_period: 10s
 
+  caddy:
+    <<: *runtime-security
+    image: caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    profiles: ["edge"]
+    user: "${UID:-1000}:${GID:-1000}"
+    restart: unless-stopped
+    ports:
+      - "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:80:80"
+      - "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:443:443/tcp"
+      - "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:443:443/udp"
+    networks: ["edge"]
+    cap_add: ["NET_BIND_SERVICE"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    environment:
+      BOOKAUDIT_DOMAIN: ${BOOKAUDIT_DOMAIN:-books.invalid}
+      BOOKAUDIT_BASIC_AUTH_USER: ${BOOKAUDIT_BASIC_AUTH_USER:-auditor}
+      BOOKAUDIT_BASIC_AUTH_HASH: ${BOOKAUDIT_BASIC_AUTH_HASH:-REPLACE_WITH_BCRYPT_HASH}
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    volumes:
+      - ./deploy/caddy/Caddyfile.example:/etc/caddy/Caddyfile:ro
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+      - ./.edge/data:/data
+      - ./.edge/config:/config
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -S --spider "https://$${BOOKAUDIT_DOMAIN}/" 2>&1
+          | grep -Eq 'HTTP/[0-9.]+ 401'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   provision-roles:
     <<: *runtime-security
     image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
@@ -301,6 +342,9 @@ volumes:
   valkey-data:
 
 networks:
+  edge:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
   monitoring:
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"

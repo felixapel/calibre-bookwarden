@@ -132,7 +132,7 @@ def test_prometheus_is_an_isolated_opt_in_certificate_a_service() -> None:
     assert prometheus["secrets"] == [{"source": "bookaudit-api-key", "target": "bookaudit_api_key"}]
     assert compose["secrets"]["bookaudit-api-key"]["file"] == "./.monitoring/bookaudit_api_key"
     assert prometheus["networks"] == ["monitoring"]
-    assert compose["services"]["app"]["networks"] == ["default", "monitoring"]
+    assert compose["services"]["app"]["networks"] == ["default", "edge", "monitoring"]
     assert compose["networks"]["monitoring"] == {
         "driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}
     }
@@ -147,6 +147,45 @@ def test_prometheus_is_an_isolated_opt_in_certificate_a_service() -> None:
     assert "--storage.tsdb.retention.size=2GB" in prometheus["command"]
     assert not any("/library" in volume for volume in prometheus["volumes"])
     assert not any(name in prometheus.get("environment", {}) for name in ("POSTGRES", "VALKEY", "API_KEY"))
+
+
+def test_caddy_is_an_isolated_tailscale_only_edge() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    caddy = compose["services"]["caddy"]
+
+    assert caddy["profiles"] == ["edge"]
+    assert caddy["image"] == ("caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648")
+    assert "network_mode" not in caddy
+    assert caddy["ports"] == [
+        "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:80:80",
+        "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:443:443/tcp",
+        "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:443:443/udp",
+    ]
+    assert caddy["networks"] == ["edge"]
+    assert compose["networks"]["edge"] == {
+        "driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}
+    }
+    assert caddy["user"] == "${UID:-1000}:${GID:-1000}"
+    assert caddy["read_only"] is True
+    assert caddy["cap_drop"] == ["ALL"]
+    assert caddy["cap_add"] == ["NET_BIND_SERVICE"]
+    assert caddy["security_opt"] == ["no-new-privileges:true"]
+    assert caddy["pids_limit"] == 64
+    assert caddy["mem_limit"] == "256m"
+    assert caddy["cpus"] == 0.5
+    assert caddy["depends_on"] == {"app": {"condition": "service_healthy"}}
+    healthcheck = caddy["healthcheck"]["test"]
+    assert healthcheck[0] == "CMD-SHELL"
+    assert 'https://$${BOOKAUDIT_DOMAIN}/' in healthcheck[1]
+    assert "401" in healthcheck[1]
+    assert "no-check-certificate" not in healthcheck[1]
+    assert caddy["volumes"] == [
+        "./deploy/caddy/Caddyfile.example:/etc/caddy/Caddyfile:ro",
+        "/var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock",
+        "./.edge/data:/data",
+        "./.edge/config:/config",
+    ]
+    assert not any("API_KEY" in name or "POSTGRES" in name for name in caddy["environment"])
 
 
 def test_compose_project_name_is_portable_to_legacy_compose() -> None:
@@ -418,7 +457,7 @@ def test_certificate_a_compose_wrapper_rejects_writer_and_identity_overrides(tmp
         assert result.returncode == 1
 
 
-def test_certificate_a_compose_wrapper_permits_only_monitoring_or_maintenance_profiles(
+def test_certificate_a_compose_wrapper_permits_only_reviewed_profiles(
     tmp_path: Path,
 ) -> None:
     _fake_docker(tmp_path, "exit 0")
@@ -429,6 +468,8 @@ def test_certificate_a_compose_wrapper_permits_only_monitoring_or_maintenance_pr
         ("--profile", "monitoring", "config"),
         ("--profile=monitoring", "config"),
         ("--profile", "maintenance", "config"),
+        ("--profile", "edge", "config"),
+        ("--profile=edge", "config"),
     ):
         result = subprocess.run(
             [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],
@@ -450,6 +491,22 @@ def test_certificate_a_compose_wrapper_requires_safe_monitoring_selection(tmp_pa
         ("up", "prometheus"),
         ("--profile", "monitoring", "down"),
         ("--profile=monitoring", "down"),
+        ("up", "caddy"),
+        ("--profile", "edge", "down"),
+        ("--profile=edge", "down"),
+        ("--profile", "edge", "up", "-d"),
+        ("--profile", "edge", "up", "-d", "caddy"),
+        ("--profile", "edge", "create", "caddy"),
+        ("--profile", "edge", "run", "--rm", "caddy"),
+        ("--profile", "edge", "run", "--rm", "--no-deps", "caddy"),
+        ("--profile", "edge", "run", "--privileged", "caddy"),
+        ("--profile", "edge", "run", "--entrypoint", "sh", "caddy"),
+        ("--profile", "edge", "run", "--user", "0", "caddy"),
+        ("--profile", "edge", "run", "--volume", "/:/host", "caddy"),
+        ("--profile", "edge", "run", "--service-ports", "caddy"),
+        ("--profile", "edge", "up", "-d", "--no-deps", "caddy", "postgres"),
+        ("--profile", "edge", "restart"),
+        ("--profile", "edge", "restart", "caddy", "app"),
     ):
         result = subprocess.run(
             [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],
@@ -460,6 +517,28 @@ def test_certificate_a_compose_wrapper_requires_safe_monitoring_selection(tmp_pa
         )
 
         assert result.returncode == 1
+
+
+def test_certificate_a_compose_wrapper_allows_isolated_edge_mutations(tmp_path: Path) -> None:
+    _fake_docker(tmp_path, "exit 0")
+    environment = os.environ.copy()
+    environment["PATH"] = f"{tmp_path}:{environment['PATH']}"
+
+    for arguments in (
+        ("--profile", "edge", "up", "-d", "--no-deps", "caddy"),
+        ("--profile", "edge", "restart", "caddy"),
+        ("--profile", "edge", "stop", "caddy"),
+        ("--profile", "edge", "rm", "--force", "caddy"),
+    ):
+        result = subprocess.run(
+            [str(ROOT / "scripts" / "certificate-a-compose.sh"), *arguments],
+            check=False,
+            capture_output=True,
+            env=environment,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
 
 
 def test_monitoring_runbook_uses_unambiguous_force_option_for_rollback() -> None:
@@ -515,10 +594,15 @@ def test_certificate_a_preflight_does_not_prepare_writer_or_legacy_state() -> No
     assert 'actual_services="$("${compose[@]}" config --services' in script
     assert '"app postgres valkey verifier "' in script
     assert '"app postgres prometheus valkey verifier "' in script
+    assert '"app caddy postgres valkey verifier "' in script
     assert 'monitoring_root=".monitoring"' in script
+    assert 'edge_root=".edge"' in script
     assert "bookaudit_api_key" in script
     assert "org.opencontainers.image.revision" in script
     assert "BOOKAUDIT_SOURCE_REVISION" in script
+    assert "tailscale cert" in script
+    assert "TS_PERMIT_CERT_UID" in script
+    assert "tailscale set --operator" not in script
     assert 'docker image inspect "$release_image"' in script
     assert 'git diff --quiet HEAD -- "$monitored_path"' in script
     assert script.index('git diff --quiet HEAD -- "$monitored_path"') < script.index(
@@ -634,6 +718,12 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
     assert f"docker compose {profile_command} config -q" in container
     assert "docker compose --profile monitoring config --services" in container
     assert '"app postgres prometheus valkey verifier "' in container
+    assert "docker compose --profile edge config --services" in container
+    assert '"app caddy postgres valkey verifier "' in container
+    assert "docker compose --profile edge up --no-deps --no-start caddy" in container
+    assert "BOOKAUDIT_BASIC_AUTH_HASH=//p" in container
+    assert "caddy validate --config /tmp/Caddyfile" in container
+    assert "caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648" in container
     assert "docker compose up -d --wait postgres valkey" in container
     assert "CREATE TABLE provenance_smoke" in container
     assert "valkey-cli set production-smoke persisted" in container
@@ -668,9 +758,11 @@ def test_same_host_tls_proxy_authenticates_every_path() -> None:
     caddyfile = (ROOT / "deploy" / "caddy" / "Caddyfile.example").read_text()
 
     assert "{$BOOKAUDIT_DOMAIN} {" in caddyfile
+    assert "admin off" in caddyfile
+    assert "get_certificate tailscale" in caddyfile
     assert "basic_auth {" in caddyfile
     assert "basic_auth /api" not in caddyfile
-    assert "reverse_proxy 127.0.0.1:{$BOOKAUDIT_PORT:8080}" in caddyfile
+    assert "reverse_proxy app:8080" in caddyfile
     assert "-Server" in caddyfile
     assert 'Strict-Transport-Security "max-age=31536000; includeSubDomains"' in caddyfile
 

@@ -251,6 +251,10 @@ jobs:
           BOOKAUDIT_MIGRATOR_POSTGRES_DSN: postgresql+psycopg://bookaudit_migrator:test@postgres/bookaudit
           BOOKAUDIT_API_KEY: ci-api-key-at-least-thirty-two-characters
           BOOKAUDIT_RELEASE_DIGEST: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          BOOKAUDIT_DOMAIN: host.tailnet.ts.net
+          BOOKAUDIT_EDGE_BIND_IP: 100.64.0.1
+          BOOKAUDIT_BASIC_AUTH_USER: auditor
+          BOOKAUDIT_BASIC_AUTH_HASH: '$2a$14$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW'
           POSTGRES_PASSWORD: ci-only-admin-password
           POSTGRES_APP_PASSWORD: ci-app-password
           POSTGRES_VERIFIER_PASSWORD: ci-verifier-password
@@ -262,7 +266,15 @@ jobs:
           docker compose config -q
           test "$(docker compose --profile maintenance --profile writer --profile writer-maintenance config --services | sort | tr '\n' ' ')" = "app migrate postgres provision-roles retention valkey verifier writer "
           test "$(docker compose --profile monitoring config --services | sort | tr '\n' ' ')" = "app postgres prometheus valkey verifier "
+          test "$(docker compose --profile edge config --services | sort | tr '\n' ' ')" = "app caddy postgres valkey verifier "
           docker compose --profile maintenance --profile writer --profile writer-maintenance config -q
+          docker compose --profile edge config -q
+          docker compose --profile edge up --no-deps --no-start caddy
+          caddy_container="$(docker compose --profile edge ps -aq caddy)"
+          test "$(docker inspect "$caddy_container" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | sed -n 's/^BOOKAUDIT_BASIC_AUTH_HASH=//p')" = \
+            '$2a$14$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW'
+          docker compose --profile edge rm --force caddy
           docker compose up -d --wait postgres valkey
           docker compose exec -T postgres psql -U bookaudit -d bookaudit -v ON_ERROR_STOP=1 \
             -c "CREATE TABLE provenance_smoke (value text NOT NULL)" \
@@ -337,10 +349,24 @@ jobs:
             echo "Prometheus unexpectedly reached an external address" >&2
             exit 1
           fi
+      - name: Validate the private Caddy edge
+        run: |
+          trap 'docker rm --force bookaudit-caddy-config-smoke >/dev/null 2>&1 || true' EXIT
+          docker create --name bookaudit-caddy-config-smoke \
+            -e BOOKAUDIT_DOMAIN=host.tailnet.ts.net \
+            -e BOOKAUDIT_EDGE_BIND_IP=100.64.0.1 \
+            -e BOOKAUDIT_BASIC_AUTH_USER=auditor \
+            -e 'BOOKAUDIT_BASIC_AUTH_HASH=$2a$14$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW' \
+            -e BOOKAUDIT_PORT=8080 \
+            caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 \
+            caddy validate --config /tmp/Caddyfile --adapter caddyfile
+          docker cp deploy/caddy/Caddyfile.example bookaudit-caddy-config-smoke:/tmp/Caddyfile
+          docker start --attach bookaudit-caddy-config-smoke
       - name: Scan release images for high vulnerabilities and secrets
         run: |
           trap 'docker rm -f bookaudit-prometheus-trivy >/dev/null 2>&1 || true' EXIT
-          for image in calibre-ai-auditor:gitea-ci calibre-ai-auditor-writer:gitea-ci; do
+          for image in calibre-ai-auditor:gitea-ci calibre-ai-auditor-writer:gitea-ci \
+            caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
               --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \

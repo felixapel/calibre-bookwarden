@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import os
 import re
 import stat
@@ -19,6 +20,20 @@ REQUIRED_ROLES = {
 SHA256_IMAGE_PATTERN = re.compile(r"@sha256:([0-9a-f]{64})$")
 SHA256_DIGEST_PATTERN = re.compile(r"sha256:([0-9a-f]{64})$")
 GIT_COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}$")
+TAILSCALE_DOMAIN_PATTERN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net$")
+BASIC_AUTH_USER_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}$")
+BCRYPT_PATTERN = re.compile(r"\$2[aby]\$(?:0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$")
+
+
+def validate_runtime_caller(values: dict[str, str], current_uid: int) -> str | None:
+    """Require preflight to prove Tailscale access as Caddy's exact UID."""
+    configured = values.get("UID", "")
+    if not configured.isdigit() or int(configured) != current_uid:
+        return (
+            f"Run preflight as the configured runtime UID ({configured or 'unset'}) "
+            "so Tailscale certificate access is proven for Caddy."
+        )
+    return None
 
 
 def _enabled(values: dict[str, str], key: str) -> bool:
@@ -98,6 +113,22 @@ def validate(path: Path, *, allow_local_image: bool = False) -> list[str]:
         errors.append("BOOKAUDIT_TRUSTED_HOSTS must contain explicit hosts and no wildcard")
     elif not {"localhost", "127.0.0.1", "app"}.issubset(set(trusted_hosts)):
         errors.append("BOOKAUDIT_TRUSTED_HOSTS must include localhost, 127.0.0.1, and app for private health checks")
+
+    domain = values.get("BOOKAUDIT_DOMAIN", "").lower()
+    if TAILSCALE_DOMAIN_PATTERN.fullmatch(domain) is None:
+        errors.append("BOOKAUDIT_DOMAIN must be an exact Tailscale HTTPS name")
+    elif domain not in trusted_hosts:
+        errors.append("BOOKAUDIT_TRUSTED_HOSTS must include BOOKAUDIT_DOMAIN")
+    try:
+        edge_ip = ipaddress.ip_address(values.get("BOOKAUDIT_EDGE_BIND_IP", ""))
+    except ValueError:
+        edge_ip = None
+    if edge_ip is None or edge_ip.version != 4 or edge_ip not in ipaddress.ip_network("100.64.0.0/10"):
+        errors.append("BOOKAUDIT_EDGE_BIND_IP must be an IPv4 address in 100.64.0.0/10")
+    if BASIC_AUTH_USER_PATTERN.fullmatch(values.get("BOOKAUDIT_BASIC_AUTH_USER", "")) is None:
+        errors.append("BOOKAUDIT_BASIC_AUTH_USER contains unsupported characters")
+    if BCRYPT_PATTERN.fullmatch(values.get("BOOKAUDIT_BASIC_AUTH_HASH", "")) is None:
+        errors.append("BOOKAUDIT_BASIC_AUTH_HASH must be a Caddy-supported bcrypt hash")
 
     image = values.get("BOOKAUDIT_IMAGE", "")
     image_digest_match = SHA256_IMAGE_PATTERN.search(image)

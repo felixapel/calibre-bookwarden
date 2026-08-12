@@ -150,6 +150,7 @@ cython_debug/
 .artifacts/
 .writer-artifacts/
 .monitoring/
+.edge/
 artifacts/
 reports/
 scratch/

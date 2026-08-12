@@ -37,7 +37,7 @@ service_is_allowed() {
   local service="$1"
   if [[ "$project_kind" == "primary" ]]; then
     case "$service" in
-      app|postgres|prometheus|valkey|verifier) return 0 ;;
+      app|caddy|postgres|prometheus|valkey|verifier) return 0 ;;
     esac
   elif [[ "$service" == "postgres" ]]; then
     return 0
