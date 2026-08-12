@@ -218,19 +218,31 @@ jobs:
           docker compose version
       - name: Build both explicitly separated images
         run: |
-          docker build --target certificate-a -t calibre-ai-auditor:gitea-ci .
-          docker build --target writer -t calibre-ai-auditor-writer:gitea-ci .
+          reviewed_revision="$(git rev-parse HEAD)"
+          printf '%s\n' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          test "$GITHUB_SHA" = "$reviewed_revision"
+          docker build --target certificate-a \
+            --build-arg BOOKAUDIT_BUILD_REVISION="$reviewed_revision" \
+            -t calibre-ai-auditor:gitea-ci .
+          docker build --target writer \
+            --build-arg BOOKAUDIT_BUILD_REVISION="$reviewed_revision" \
+            -t calibre-ai-auditor-writer:gitea-ci .
       - name: Verify image dependency and privilege boundaries
         run: |
+          reviewed_revision="$(git rev-parse HEAD)"
           test "$(docker image inspect calibre-ai-auditor:gitea-ci --format '{{.Config.User}}')" = "10001:10001"
           test "$(docker image inspect calibre-ai-auditor-writer:gitea-ci --format '{{.Config.User}}')" = "10001:10001"
+          test "$(docker image inspect calibre-ai-auditor:gitea-ci \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$reviewed_revision"
+          test "$(docker image inspect calibre-ai-auditor-writer:gitea-ci \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$reviewed_revision"
           docker run --rm --entrypoint sh calibre-ai-auditor:gitea-ci -c '
             bookaudit-certificate-a --help >/dev/null &&
             test ! -e /opt/calibre/calibredb &&
             python -c "import importlib.util as u; assert u.find_spec(\"openai\") is None; assert u.find_spec(\"qdrant_client\") is None; assert u.find_spec(\"fastmcp\") is None"
           '
           docker run --rm --entrypoint sh calibre-ai-auditor-writer:gitea-ci -c 'bookaudit --help >/dev/null && test -x /opt/calibre/calibredb'
-      - name: Verify the exact default Compose graph
+      - name: Verify the exact Compose graph and hardened state persistence
         env:
           BOOKAUDIT_LIBRARY_HOST_PATH: /tmp
           BOOKAUDIT_APP_POSTGRES_DSN: postgresql+psycopg://bookaudit_app:test@postgres/bookaudit
@@ -245,12 +257,30 @@ jobs:
           POSTGRES_WRITER_PASSWORD: ci-writer-password
           POSTGRES_MIGRATOR_PASSWORD: ci-migrator-password
         run: |
-          trap 'rm -f .env' EXIT
+          trap 'docker compose down --volumes >/dev/null 2>&1 || true; rm -f .env' EXIT
           install -m 0600 /dev/null .env
           docker compose config -q
           test "$(docker compose --profile maintenance --profile writer --profile writer-maintenance config --services | sort | tr '\n' ' ')" = "app migrate postgres provision-roles retention valkey verifier writer "
           test "$(docker compose --profile monitoring config --services | sort | tr '\n' ' ')" = "app postgres prometheus valkey verifier "
           docker compose --profile maintenance --profile writer --profile writer-maintenance config -q
+          docker compose up -d --wait postgres valkey
+          docker compose exec -T postgres psql -U bookaudit -d bookaudit -v ON_ERROR_STOP=1 \
+            -c "CREATE TABLE provenance_smoke (value text NOT NULL)" \
+            -c "INSERT INTO provenance_smoke VALUES ('persisted')"
+          test "$(docker compose exec -T valkey valkey-cli set production-smoke persisted)" = "OK"
+          docker compose restart postgres valkey
+          docker compose up -d --wait postgres valkey
+          test "$(docker compose exec -T postgres psql -U bookaudit -d bookaudit -Atqc \
+            'SELECT value FROM provenance_smoke')" = "persisted"
+          test "$(docker compose exec -T valkey valkey-cli get production-smoke)" = "persisted"
+          for service in postgres valkey; do
+            test "$(docker compose ps -q "$service" | xargs docker inspect \
+              --format '{{.HostConfig.ReadonlyRootfs}}')" = "true"
+            test "$(docker compose ps -q "$service" | xargs docker inspect \
+              --format '{{json .HostConfig.CapDrop}}')" = '["ALL"]'
+            test "$(docker compose ps -q "$service" | xargs docker inspect \
+              --format '{{json .HostConfig.SecurityOpt}}')" = '["no-new-privileges:true"]'
+          done
       - name: Validate Certificate A monitoring rules
         run: |
           trap 'docker rm -f bookaudit-prometheus-smoke bookaudit-metrics-smoke >/dev/null 2>&1 || true; docker network rm bookaudit-monitoring-smoke >/dev/null 2>&1 || true' EXIT

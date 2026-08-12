@@ -22,7 +22,9 @@ leave it for evidence review. Never force it back to `pending`.
 
 Create a mode-0600 environment file. Use five distinct PostgreSQL passwords, a
 strong internal API key, explicit trusted hosts, and a Certificate A image
-pinned by digest. `BOOKAUDIT_RELEASE_DIGEST` must be the same digest.
+pinned by digest. `BOOKAUDIT_RELEASE_DIGEST` must be the same digest and
+`BOOKAUDIT_SOURCE_REVISION` must be the exact commit embedded in the image's
+`org.opencontainers.image.revision` label.
 
 ```bash
 cp .env.example .env
@@ -32,8 +34,8 @@ chmod 600 .env
 ./scripts/prepare-production.sh
 ```
 
-Preflight validates the secret relationships, image/release binding, existing
-absolute library, dedicated Compose project, and exact default service graph.
+Preflight validates the secret relationships, image/release/commit binding,
+existing absolute library, dedicated Compose project, and exact default service graph.
 It rejects the legacy `calibre-ai-auditor` project name, any unexpected service
 already attached to the Certificate A project, auto-apply, and an enabled
 writer pilot.
@@ -193,7 +195,8 @@ recorded, remove only the explicitly named disposable project:
    commit. Verify the immutable Certificate A digest in the registry.
 2. Wait for terminal runs. Stop `app` and `verifier` and take the backup above.
 3. Retain the previous image digest. Update `.env`, keeping the image and
-   release digest identical, then rerun preflight.
+   release digest identical and setting the matching source revision, then
+   rerun preflight.
 4. Pull the image. Provision roles idempotently, then execute the migration
    profile exactly once:
 

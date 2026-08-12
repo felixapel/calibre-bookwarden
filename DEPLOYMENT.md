@@ -25,7 +25,11 @@ legacy extras. Its presence in the build file is not production approval.
 
 Production must set `BOOKAUDIT_IMAGE` to an immutable registry digest and set
 `BOOKAUDIT_RELEASE_DIGEST` to the identical `sha256:...` value. Mutable tags and
-`BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` are disposable validation only.
+`BOOKAUDIT_ALLOW_LOCAL_IMAGE=true` are disposable validation only. Build both
+release targets with `--build-arg BOOKAUDIT_BUILD_REVISION=$(git rev-parse
+HEAD)`, then set `BOOKAUDIT_SOURCE_REVISION` to that exact 40-character commit.
+Preflight requires the reviewed checkout and the image's
+`org.opencontainers.image.revision` label to match it.
 
 ## Deploy
 
