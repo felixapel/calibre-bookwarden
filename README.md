@@ -99,22 +99,17 @@ PostgreSQL volumes; initdb hooks do not rerun on an existing volume. Runtime
 services never provision roles or migrate the database. Run the migration
 profile exactly once per reviewed upgrade.
 
-Install the same-host edge only after the loopback readiness check passes:
+Start the reviewed private edge only after the loopback readiness check passes:
 
 ```bash
-sudo install -m 0644 deploy/caddy/Caddyfile.example /etc/caddy/Caddyfile
-caddy hash-password
-# Store BOOKAUDIT_DOMAIN, BOOKAUDIT_BASIC_AUTH_USER,
-# BOOKAUDIT_BASIC_AUTH_HASH, BOOKAUDIT_PORT, and BOOKAUDIT_ACME_EMAIL in the
-# root-readable environment used by the Caddy service.
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+./scripts/certificate-a-compose.sh --profile edge up -d --no-deps --wait caddy
 ```
 
 `BOOKAUDIT_BASIC_AUTH_HASH` must be a Caddy-supported password hash, not the
 plaintext password. After Caddy login, the WebUI asks for the separate internal
 API key and holds it only in page memory; a reload requires it again. The app
-port remains bound to `127.0.0.1`; do not publish it to the LAN. See the complete
+port remains bound to `127.0.0.1`; the edge is published only on the configured
+Tailscale IP. See the complete
 [production operations runbook](docs/runbooks/production-operations.md) before
 an upgrade, backup, restore, or incident.
 

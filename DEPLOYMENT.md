@@ -38,9 +38,10 @@ cp .env.example .env
 chmod 600 .env
 # Replace every placeholder and use distinct database role passwords.
 # Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a.
-./scripts/prepare-production.sh
-
 ./scripts/certificate-a-compose.sh pull app verifier postgres valkey
+./scripts/certificate-a-compose.sh --profile monitoring pull prometheus
+./scripts/certificate-a-compose.sh --profile edge pull caddy
+./scripts/prepare-production.sh
 ./scripts/certificate-a-compose.sh up -d --wait postgres valkey
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
@@ -62,8 +63,16 @@ of trusting ambient Compose variables.
 
 Only the app port is published, and only on
 `127.0.0.1:${BOOKAUDIT_PORT:-8080}`. PostgreSQL and Valkey have no host ports.
-Install the same-host Caddy edge from `deploy/caddy/Caddyfile.example` after
-loopback readiness passes. Whole-site authentication has no path matcher.
+The opt-in `edge` profile runs the pinned Caddy image after loopback readiness
+passes. Docker publishes its ports only on `BOOKAUDIT_EDGE_BIND_IP`, which must
+be this host's Tailscale IPv4 address; Caddy reaches the app only through the
+private Compose network and obtains the exact `*.ts.net` certificate from the
+local Tailscale daemon. Whole-site authentication has no path matcher.
+`BOOKAUDIT_EDGE_IMAGE` must be the digest-pinned output of the reviewed
+`caddy-edge` target and carry the same source-revision label as the app image.
+The Caddy process uses the deployment UID rather than root. Grant only that UID
+certificate access with `TS_PERMIT_CERT_UID` in `/etc/default/tailscaled`, then
+restart `tailscaled`; do not grant the broader Tailscale operator permission.
 
 ## Persistent state
 

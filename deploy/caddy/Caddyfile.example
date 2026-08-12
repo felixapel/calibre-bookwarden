@@ -1,9 +1,13 @@
 {
-	# Supply this through the root-readable Caddy service environment.
-	email {$BOOKAUDIT_ACME_EMAIL}
+	# Runtime changes are deployed by replacing this container. Do not expose a
+	# mutable administration API to other host processes.
+	admin off
 }
 
 {$BOOKAUDIT_DOMAIN} {
+	tls {
+		get_certificate tailscale
+	}
 	# This directive has no path matcher: authentication covers the SPA, assets,
 	# API, metrics, health endpoints, and every future route.
 	basic_auth {
@@ -20,9 +24,9 @@
 		Permissions-Policy "camera=(), geolocation=(), microphone=()"
 	}
 
-	# The application port remains loopback-only. Run Caddy on the same host;
-	# do not publish the backend container onto the LAN.
-	reverse_proxy 127.0.0.1:{$BOOKAUDIT_PORT:8080} {
+	# Reach the backend only through the private Compose network. Host exposure is
+	# independently limited to the app's existing loopback publication.
+	reverse_proxy app:8080 {
 		transport http {
 			dial_timeout 3s
 			response_header_timeout 30s

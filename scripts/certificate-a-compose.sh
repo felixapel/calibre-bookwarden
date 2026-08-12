@@ -10,14 +10,17 @@ fi
 
 expect_profile=false
 monitoring_profile=false
+edge_profile=false
 for argument in "$@"; do
   if [[ "$expect_profile" == true ]]; then
-    if [[ "$argument" != "maintenance" && "$argument" != "monitoring" ]]; then
-      echo "Certificate A permits only the maintenance or monitoring Compose profile." >&2
+    if [[ "$argument" != "edge" && "$argument" != "maintenance" && "$argument" != "monitoring" ]]; then
+      echo "Certificate A permits only the edge, maintenance, or monitoring Compose profile." >&2
       exit 1
     fi
     if [[ "$argument" == "monitoring" ]]; then
       monitoring_profile=true
+    elif [[ "$argument" == "edge" ]]; then
+      edge_profile=true
     fi
     expect_profile=false
     continue
@@ -26,8 +29,9 @@ for argument in "$@"; do
     --profile) expect_profile=true ;;
     --profile=maintenance) ;;
     --profile=monitoring) monitoring_profile=true ;;
+    --profile=edge) edge_profile=true ;;
     --profile=*)
-      echo "Certificate A permits only the maintenance or monitoring Compose profile." >&2
+      echo "Certificate A permits only the edge, maintenance, or monitoring Compose profile." >&2
       exit 1
       ;;
     -p|-p?*|--project-name|--project-name=*|-f|-f?*|--file|--file=*|--env-file|--env-file=*|--project-directory|--project-directory=*)
@@ -93,18 +97,60 @@ for index in "${!arguments[@]}"; do
   esac
 done
 prometheus_selected=false
+caddy_selected=false
+edge_other_service_selected=false
+no_deps=false
 for argument in "${arguments[@]}"; do
   if [[ "$argument" == "prometheus" ]]; then
     prometheus_selected=true
+  elif [[ "$argument" == "caddy" ]]; then
+    caddy_selected=true
+  elif [[ "$argument" == "app" || "$argument" == "postgres" || \
+          "$argument" == "valkey" || "$argument" == "verifier" ]]; then
+    edge_other_service_selected=true
+  elif [[ "$argument" == "--no-deps" ]]; then
+    no_deps=true
   fi
 done
 if [[ "$prometheus_selected" == true && "$monitoring_profile" != true ]]; then
   echo "Certificate A Prometheus operations require the explicit monitoring profile." >&2
   exit 1
 fi
+if [[ "$caddy_selected" == true && "$edge_profile" != true ]]; then
+  echo "Certificate A Caddy operations require the explicit edge profile." >&2
+  exit 1
+fi
 if [[ "$monitoring_profile" == true && "$compose_command" == "down" ]]; then
   echo "The monitoring profile cannot bring down the Certificate A application stack." >&2
   exit 1
+fi
+if [[ "$edge_profile" == true && "$compose_command" == "down" ]]; then
+  echo "The edge profile cannot bring down the Certificate A application stack." >&2
+  exit 1
+fi
+if [[ "$edge_profile" == true ]]; then
+  case "$compose_command" in
+    attach|build|commit|cp|exec|export|kill|pause|publish|push|run|start|unpause|watch)
+      echo "This Compose command is not permitted for the production edge." >&2
+      exit 1
+      ;;
+    create)
+      echo "Edge containers must be created with isolated up --no-deps, not create." >&2
+      exit 1
+      ;;
+    restart|rm|stop|up)
+      if [[ "$caddy_selected" != true || "$edge_other_service_selected" == true ]]; then
+        echo "Edge mutations must select only the Caddy service." >&2
+        exit 1
+      fi
+      ;;
+  esac
+  if [[ "$compose_command" == "up" ]]; then
+    if [[ "$no_deps" != true ]]; then
+      echo "Edge up operations require --no-deps." >&2
+      exit 1
+    fi
+  fi
 fi
 if [[ "$compose_command" == "exec" ]]; then
   index=$((compose_command_index + 1))

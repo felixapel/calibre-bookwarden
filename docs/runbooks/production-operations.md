@@ -24,13 +24,38 @@ Create a mode-0600 environment file. Use five distinct PostgreSQL passwords, a
 strong internal API key, explicit trusted hosts, and a Certificate A image
 pinned by digest. `BOOKAUDIT_RELEASE_DIGEST` must be the same digest and
 `BOOKAUDIT_SOURCE_REVISION` must be the exact commit embedded in the image's
-`org.opencontainers.image.revision` label.
+`org.opencontainers.image.revision` label. `BOOKAUDIT_EDGE_IMAGE` is a separate
+digest-pinned image built by the reviewed `caddy-edge` target with the same
+revision label. Its committed Go module lock carries patched dependencies even
+when the latest upstream Caddy image has known fixed HIGH vulnerabilities.
+
+For the private HTTPS edge, enable Tailscale HTTPS for the tailnet, then grant
+only the numeric deployment UID certificate access. Add (or update) this line
+in `/etc/default/tailscaled`, restart the daemon, and do not grant the broader
+Tailscale operator permission:
+
+```bash
+TS_PERMIT_CERT_UID=1000
+sudo systemctl restart tailscaled
+edge_image="$(python -c 'import runpy; from pathlib import Path; print(runpy.run_path("scripts/validate-production-env.py")["load_env"](Path(".env"))["BOOKAUDIT_EDGE_IMAGE"])')"
+docker run --rm -it \
+  "$edge_image" hash-password
+```
+
+Set `BOOKAUDIT_DOMAIN` to this node's exact `*.ts.net` MagicDNS name,
+`BOOKAUDIT_EDGE_BIND_IP` to its Tailscale IPv4 address, and put the generated
+bcrypt hash in single quotes in `BOOKAUDIT_BASIC_AUTH_HASH`. Include the domain
+in `BOOKAUDIT_TRUSTED_HOSTS`. The certificate name is published in Certificate
+Transparency, while service access remains restricted by the tailnet.
 
 ```bash
 cp .env.example .env
 chmod 600 .env
 # Edit .env and replace every placeholder.
 # Keep COMPOSE_PROJECT_NAME=bookaudit-certificate-a.
+./scripts/certificate-a-compose.sh pull app verifier postgres valkey
+./scripts/certificate-a-compose.sh --profile monitoring pull prometheus
+./scripts/certificate-a-compose.sh --profile edge pull caddy
 ./scripts/prepare-production.sh
 ```
 
@@ -40,19 +65,24 @@ It rejects the legacy `calibre-ai-auditor` project name, any unexpected service
 already attached to the Certificate A project, auto-apply, and an enabled
 writer pilot.
 
-Pull or build the reviewed image, then start infrastructure, provision roles,
-migrate once, and start the verifier before the app:
+Start infrastructure, provision roles, migrate once, and start the verifier
+before the app:
 
 ```bash
-./scripts/certificate-a-compose.sh pull app verifier postgres valkey
-./scripts/certificate-a-compose.sh --profile monitoring pull prometheus
 ./scripts/certificate-a-compose.sh up -d --wait postgres valkey
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm provision-roles
 ./scripts/certificate-a-compose.sh --profile maintenance run --rm migrate
 ./scripts/certificate-a-compose.sh up -d --wait verifier app
 ./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait app
 ./scripts/certificate-a-compose.sh --profile monitoring up -d --no-deps --wait prometheus
+./scripts/certificate-a-compose.sh --profile edge up -d --no-deps --wait caddy
 ```
+
+Docker publishes edge ports 80/443 solely on the configured Tailscale address,
+not LAN or all interfaces. Caddy reaches `app:8080` only on the private Compose
+network and has no host-network access. An unauthenticated request to every path
+must return 401 before promotion; authenticate in a browser and confirm the
+certificate is trusted.
 
 `provision-roles` is an idempotent maintenance task, not a runtime service. Run
 it before every reviewed migration so an existing PostgreSQL volume receives
@@ -86,27 +116,13 @@ sanitized code: `configuration_invalid`, `database_unavailable`, or
 
 ## Same-host TLS and whole-site authentication
 
-The backend publishes only `127.0.0.1:${BOOKAUDIT_PORT}`. Run Caddy on the same
-host; never change the binding to `0.0.0.0` or a LAN address.
-
-1. Generate a password hash with `caddy hash-password`. Do not put a plaintext
-   password in the Caddyfile or shell history.
-2. Install `deploy/caddy/Caddyfile.example` as the reviewed Caddyfile.
-3. Provide these variables to the Caddy system service through a root-readable
-   environment file: `BOOKAUDIT_DOMAIN`, `BOOKAUDIT_BASIC_AUTH_USER`,
-   `BOOKAUDIT_BASIC_AUTH_HASH`, `BOOKAUDIT_PORT`, and
-   `BOOKAUDIT_ACME_EMAIL`.
-4. Validate before reload:
-
-   ```bash
-   sudo caddy validate --config /etc/caddy/Caddyfile
-   sudo systemctl reload caddy
-   ```
-
-5. From another private/VPN host, verify an unauthenticated request is rejected,
-   authenticate in a browser, and confirm Overview, Verify, Evidence, and API
-   requests use trusted HTTPS. Enter the separate internal API key in the WebUI
-   prompt; it is held only in page memory and must be entered again after reload.
+The backend publishes only `127.0.0.1:${BOOKAUDIT_PORT}`. The canonical edge is
+the pinned Compose `edge` profile above; a host Caddy/systemd deployment is not
+supported. Never change the binding to `0.0.0.0` or a LAN address. From another
+tailnet host, verify an unauthenticated request is rejected, authenticate in a
+browser, and confirm Overview, Verify, Evidence, and API requests use trusted
+HTTPS. Enter the separate internal API key in the WebUI prompt; it is held only
+in page memory and must be entered again after reload.
 
 The `basic_auth` directive has no path matcher, so it covers health, metrics,
 assets, API routes, and future paths. The stored password must be a supported
@@ -206,7 +222,8 @@ recorded, remove only the explicitly named disposable project:
    ```
 
 5. Start `verifier`, then `app`; require authenticated readiness and the Caddy
-   HTTPS check.
+   HTTPS check. Reconcile Caddy separately with `--profile edge up -d --no-deps
+   --wait caddy` so an edge operation cannot recreate stateful dependencies.
 6. Run one small stopped-library audit before returning to normal limits.
 
 Runtime app and verifier processes never run Alembic.

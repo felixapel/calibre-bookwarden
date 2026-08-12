@@ -26,10 +26,15 @@ BOOKAUDIT_VERIFIER_POSTGRES_DSN=postgresql+psycopg://bookaudit_verifier:verifier
 BOOKAUDIT_WRITER_POSTGRES_DSN=postgresql+psycopg://bookaudit_writer:writer-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
 BOOKAUDIT_MIGRATOR_POSTGRES_DSN=postgresql+psycopg://bookaudit_migrator:migrator-password-abcdefghijklmnopqrstuvwxyz@postgres:5432/bookaudit
 BOOKAUDIT_API_KEY=api-key-with-32-characters-and-entropy-9Z
-BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,app,books.example.test
+BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,app,books.example.test,felix-laptop.example-tailnet.ts.net
 BOOKAUDIT_IMAGE=registry.example.test/bookaudit@sha256:{"a" * 64}
+BOOKAUDIT_EDGE_IMAGE=registry.example.test/bookaudit-edge@sha256:{"c" * 64}
 BOOKAUDIT_RELEASE_DIGEST=sha256:{"a" * 64}
 BOOKAUDIT_SOURCE_REVISION={"b" * 40}
+BOOKAUDIT_DOMAIN=felix-laptop.example-tailnet.ts.net
+BOOKAUDIT_EDGE_BIND_IP=100.100.100.101
+BOOKAUDIT_BASIC_AUTH_USER=auditor
+BOOKAUDIT_BASIC_AUTH_HASH=$2a$14$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW
 """
 
 
@@ -113,6 +118,74 @@ def test_exact_source_revision_is_required(tmp_path: Path) -> None:
     env.chmod(0o600)
 
     assert MODULE.validate(env) == ["BOOKAUDIT_SOURCE_REVISION must be an exact 40-character Git commit"]
+
+
+def test_edge_image_must_be_digest_pinned(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    env.write_text(
+        _valid_env(library, backups).replace(
+            "registry.example.test/bookaudit-edge@sha256:" + "c" * 64,
+            "registry.example.test/bookaudit-edge:latest",
+        )
+    )
+    env.chmod(0o600)
+
+    assert MODULE.validate(env) == ["BOOKAUDIT_EDGE_IMAGE must use an immutable sha256 digest"]
+
+
+def test_tailscale_edge_contract_is_required(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    content = _valid_env(library, backups)
+    content = content.replace("felix-laptop.example-tailnet.ts.net", "books.example.test")
+    content = content.replace("100.100.100.101", "192.168.1.10")
+    content = content.replace("BOOKAUDIT_BASIC_AUTH_USER=auditor", "BOOKAUDIT_BASIC_AUTH_USER=bad user")
+    content = content.replace("$2a$14$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW", "plaintext")
+    env.write_text(content)
+    env.chmod(0o600)
+
+    errors = MODULE.validate(env)
+
+    assert "BOOKAUDIT_DOMAIN must be an exact Tailscale HTTPS name" in errors
+    assert "BOOKAUDIT_EDGE_BIND_IP must be an IPv4 address in 100.64.0.0/10" in errors
+    assert "BOOKAUDIT_BASIC_AUTH_USER contains unsupported characters" in errors
+    assert "BOOKAUDIT_BASIC_AUTH_HASH must be a Caddy-supported bcrypt hash" in errors
+
+
+def test_bcrypt_cost_must_be_supported(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+
+    for cost, valid in (("03", False), ("04", True), ("31", True), ("32", False)):
+        env = tmp_path / f"cost-{cost}.env"
+        env.write_text(
+            _valid_env(library, backups).replace(
+                "$2a$14$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW",
+                f"$2a${cost}$IamTD8vwGMlzROKemTC/sOyPiEegh.7r9gjBLX01meH8BHVUfrOCW",
+            )
+        )
+        env.chmod(0o600)
+
+        errors = MODULE.validate(env)
+        assert (errors == []) is valid
+
+
+def test_preflight_caller_must_match_the_exact_runtime_uid() -> None:
+    values = {"UID": "1000"}
+
+    assert MODULE.validate_runtime_caller(values, 1000) is None
+    assert MODULE.validate_runtime_caller(values, 1001) == (
+        "Run preflight as the configured runtime UID (1000) so Tailscale certificate access is proven for Caddy."
+    )
 
 
 def test_root_runtime_identity_is_rejected(tmp_path: Path) -> None:

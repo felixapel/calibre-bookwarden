@@ -59,6 +59,25 @@ COPY migrations /app/migrations
 COPY config /app/config
 COPY LICENSE /app/LICENSE
 
+# Build the reviewed edge with patched Go and dependency versions while the
+# upstream Caddy image catches up. The runtime contains only Caddy, trust roots,
+# and media types; it has no third-party proxy plugins.
+FROM golang@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS caddy-edge-builder
+WORKDIR /build
+COPY deploy/caddy/module/go.mod deploy/caddy/module/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download \
+    && CGO_ENABLED=0 go build -mod=readonly -trimpath \
+      -ldflags='-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=v2.11.4-bookaudit-patched' \
+      -o /usr/local/bin/caddy github.com/caddyserver/caddy/v2/cmd/caddy
+
+FROM alpine@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS caddy-edge
+ARG BOOKAUDIT_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"
+RUN apk add --no-cache ca-certificates mailcap
+COPY --from=caddy-edge-builder /usr/local/bin/caddy /usr/bin/caddy
+ENTRYPOINT ["caddy"]
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+
 # Certificate B remains an explicit, separately built image. It retains the
 # compatibility CLI and Calibre binary but is never selected by default.
 FROM runtime-common AS writer
