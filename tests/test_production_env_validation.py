@@ -29,6 +29,7 @@ BOOKAUDIT_API_KEY=api-key-with-32-characters-and-entropy-9Z
 BOOKAUDIT_TRUSTED_HOSTS=localhost,127.0.0.1,app,books.example.test
 BOOKAUDIT_IMAGE=registry.example.test/bookaudit@sha256:{"a" * 64}
 BOOKAUDIT_RELEASE_DIGEST=sha256:{"a" * 64}
+BOOKAUDIT_SOURCE_REVISION={"b" * 40}
 """
 
 
@@ -100,6 +101,18 @@ def test_private_health_hosts_are_required(tmp_path: Path) -> None:
     errors = MODULE.validate(env)
 
     assert errors == ["BOOKAUDIT_TRUSTED_HOSTS must include localhost, 127.0.0.1, and app for private health checks"]
+
+
+def test_exact_source_revision_is_required(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    backups = tmp_path / "backups"
+    backups.mkdir()
+    env = tmp_path / ".env"
+    env.write_text(_valid_env(library, backups).replace("b" * 40, "main"))
+    env.chmod(0o600)
+
+    assert MODULE.validate(env) == ["BOOKAUDIT_SOURCE_REVISION must be an exact 40-character Git commit"]
 
 
 def test_root_runtime_identity_is_rejected(tmp_path: Path) -> None:

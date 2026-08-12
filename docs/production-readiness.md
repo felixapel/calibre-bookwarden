@@ -82,6 +82,8 @@ Automation cannot prove these facts. Record them for the exact image digest:
 
 1. The deployment `.env` is mode 0600, contains distinct strong secrets,
    explicit trusted hosts, a digest-pinned image, and a matching release digest.
+   `BOOKAUDIT_SOURCE_REVISION` is the exact reviewed commit and must equal the
+   image's `org.opencontainers.image.revision` OCI label.
    Compose interpolation must not become whole-file `env_file` injection into
    any runtime container. The project is the dedicated
    `bookaudit-certificate-a` project and contains no legacy or unexpected

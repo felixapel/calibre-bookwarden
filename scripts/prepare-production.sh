@@ -13,6 +13,33 @@ fi
 install -d -m 0750 backups
 python scripts/validate-production-env.py .env
 
+mapfile -t release_identity < <(
+  python - <<'PY'
+import runpy
+from pathlib import Path
+
+values = runpy.run_path("scripts/validate-production-env.py")["load_env"](Path(".env"))
+print(values["BOOKAUDIT_IMAGE"])
+print(values["BOOKAUDIT_SOURCE_REVISION"])
+PY
+)
+release_image="${release_identity[0]}"
+source_revision="${release_identity[1]}"
+reviewed_revision="$(git rev-parse HEAD)"
+if [[ "$source_revision" != "$reviewed_revision" ]]; then
+  echo "BOOKAUDIT_SOURCE_REVISION does not match the reviewed checkout." >&2
+  exit 1
+fi
+if ! image_revision="$(docker image inspect "$release_image" \
+  --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"; then
+  echo "The digest-pinned Certificate A image is not available for provenance verification." >&2
+  exit 1
+fi
+if [[ "$image_revision" != "$source_revision" ]]; then
+  echo "Certificate A image provenance does not match BOOKAUDIT_SOURCE_REVISION." >&2
+  exit 1
+fi
+
 runtime_uid="$(sed -n 's/^UID=//p' .env | tail -n 1)"
 runtime_gid="$(sed -n 's/^GID=//p' .env | tail -n 1)"
 runtime_uid="${runtime_uid:-$(id -u)}"

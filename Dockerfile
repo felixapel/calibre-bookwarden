@@ -62,6 +62,8 @@ COPY LICENSE /app/LICENSE
 # Certificate B remains an explicit, separately built image. It retains the
 # compatibility CLI and Calibre binary but is never selected by default.
 FROM runtime-common AS writer
+ARG BOOKAUDIT_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"
 ARG CALIBRE_VERSION=9.11.0
 ARG CALIBRE_X86_64_SHA512=4b2250124e73b907dc84f30d413e095193735ffe3f933793a7d021885efbb37b2a92254e36c17e0a52c555729a7cd67c5229a1b62b9968baf61764463aeea47e
 ENV PATH=/opt/calibre:$PATH
@@ -92,6 +94,8 @@ CMD ["writer"]
 # This is deliberately the final/default target: app and verifier contain no
 # Calibre binary, LLM SDK, vector client, MCP server, watcher, or legacy WebUI.
 FROM runtime-common AS certificate-a
+ARG BOOKAUDIT_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"
 COPY --from=python-builder /opt/venv /opt/venv
 USER 10001:10001
 ENTRYPOINT ["bookaudit-certificate-a"]

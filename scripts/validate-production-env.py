@@ -18,6 +18,7 @@ REQUIRED_ROLES = {
 }
 SHA256_IMAGE_PATTERN = re.compile(r"@sha256:([0-9a-f]{64})$")
 SHA256_DIGEST_PATTERN = re.compile(r"sha256:([0-9a-f]{64})$")
+GIT_COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}$")
 
 
 def _enabled(values: dict[str, str], key: str) -> bool:
@@ -110,6 +111,9 @@ def validate(path: Path, *, allow_local_image: bool = False) -> list[str]:
         and (image_digest_match is None or release_digest_match.group(1) != image_digest_match.group(1))
     ):
         errors.append("BOOKAUDIT_RELEASE_DIGEST must match BOOKAUDIT_IMAGE")
+
+    if GIT_COMMIT_PATTERN.fullmatch(values.get("BOOKAUDIT_SOURCE_REVISION", "")) is None:
+        errors.append("BOOKAUDIT_SOURCE_REVISION must be an exact 40-character Git commit")
 
     if _enabled(values, "BOOKAUDIT_MANIFESTATION_V2__AUTO_APPLY__ENABLED"):
         errors.append("Certificate A requires auto-apply to remain disabled")

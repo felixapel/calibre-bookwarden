@@ -77,6 +77,41 @@ def test_default_compose_is_the_exact_certificate_a_graph() -> None:
     assert any(volume.endswith(":/library:rw") for volume in services["writer"]["volumes"])
 
 
+def test_stateful_dependencies_are_least_privilege_and_resource_bounded() -> None:
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+
+    expected = {
+        "postgres": {
+            "user": "70:70",
+            "mem_limit": "1g",
+            "cpus": 1.0,
+            "pids_limit": 128,
+            "tmpfs": {
+                "/tmp:size=64m,mode=1777",
+                "/var/run/postgresql:size=16m,mode=0770,uid=70,gid=70",
+            },
+        },
+        "valkey": {
+            "user": "999:1000",
+            "mem_limit": "512m",
+            "cpus": 0.5,
+            "pids_limit": 128,
+            "tmpfs": {"/tmp:size=32m,mode=1777"},
+        },
+    }
+    for name, contract in expected.items():
+        service = compose["services"][name]
+        assert service["read_only"] is True
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert service["init"] is True
+        assert service["user"] == contract["user"]
+        assert service["mem_limit"] == contract["mem_limit"]
+        assert service["cpus"] == contract["cpus"]
+        assert service["pids_limit"] == contract["pids_limit"]
+        assert set(service["tmpfs"]) == contract["tmpfs"]
+
+
 def test_prometheus_is_an_isolated_opt_in_certificate_a_service() -> None:
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     prometheus = compose["services"]["prometheus"]
@@ -482,6 +517,9 @@ def test_certificate_a_preflight_does_not_prepare_writer_or_legacy_state() -> No
     assert '"app postgres prometheus valkey verifier "' in script
     assert 'monitoring_root=".monitoring"' in script
     assert "bookaudit_api_key" in script
+    assert "org.opencontainers.image.revision" in script
+    assert "BOOKAUDIT_SOURCE_REVISION" in script
+    assert 'docker image inspect "$release_image"' in script
     assert 'git diff --quiet HEAD -- "$monitored_path"' in script
     assert script.index('git diff --quiet HEAD -- "$monitored_path"') < script.index(
         'mv -f "$secret_tmp" "$monitoring_root/bookaudit_api_key"'
@@ -498,6 +536,20 @@ def test_runtime_images_are_non_root_with_a_writable_ephemeral_home() -> None:
     assert "HOME=/tmp/bookaudit-home" in dockerfile
     assert "XDG_CACHE_HOME=/tmp/bookaudit-home/.cache" in dockerfile
     assert "XDG_CONFIG_HOME=/tmp/bookaudit-home/.config" in dockerfile
+
+
+def test_release_images_embed_the_exact_source_revision() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    workflow = WORKFLOW.read_text()
+
+    assert dockerfile.count("ARG BOOKAUDIT_BUILD_REVISION") == 2
+    assert dockerfile.count('LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"') == 2
+    assert workflow.count('--build-arg BOOKAUDIT_BUILD_REVISION="$reviewed_revision"') == 2
+    assert workflow.count("org.opencontainers.image.revision") >= 2
+    assert 'reviewed_revision="$(git rev-parse HEAD)"' in workflow
+    assert 'test "$GITHUB_SHA" = "$reviewed_revision"' in workflow
+    assert "grep -Eq '^[0-9a-f]{40}$'" in workflow
+    assert workflow.count('= "$reviewed_revision"') >= 3
 
 
 def test_default_image_excludes_quarantined_packages_and_calibre() -> None:
@@ -582,6 +634,12 @@ def test_gitea_container_gate_builds_and_scans_both_separated_images() -> None:
     assert f"docker compose {profile_command} config -q" in container
     assert "docker compose --profile monitoring config --services" in container
     assert '"app postgres prometheus valkey verifier "' in container
+    assert "docker compose up -d --wait postgres valkey" in container
+    assert "CREATE TABLE provenance_smoke" in container
+    assert "valkey-cli set production-smoke persisted" in container
+    assert "docker compose restart postgres valkey" in container
+    assert "SELECT value FROM provenance_smoke" in container
+    assert "valkey-cli get production-smoke" in container
     assert "docker build --file ops/monitoring/Dockerfile.ci" in container
     assert "com.docker.network.bridge.enable_ip_masquerade=false" in container
     assert "-p 127.0.0.1::9090" in container

@@ -107,8 +107,13 @@ services:
       start_period: 15s
 
   postgres:
+    <<: *runtime-security
     image: postgres:15-alpine@sha256:3d0f7584ed7d04e27fa050d6683a74746608faf21f202be78460d679cc56461f
+    user: "70:70"
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
     environment:
       POSTGRES_USER: bookaudit
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
@@ -120,6 +125,9 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./scripts/postgres-init-roles.sh:/docker-entrypoint-initdb.d/10-bookaudit-roles.sh:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bookaudit -d bookaudit"]
       interval: 10s
@@ -127,11 +135,18 @@ services:
       retries: 5
 
   valkey:
+    <<: *runtime-security
     image: valkey/valkey:8.1.3-alpine@sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773
+    user: "999:1000"
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
     command: ["valkey-server", "--appendonly", "yes", "--save", "60", "1"]
     volumes:
       - valkey-data:/data
+    tmpfs:
+      - /tmp:size=32m,mode=1777
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
