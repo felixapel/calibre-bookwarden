@@ -130,15 +130,15 @@ if [[ "$edge_profile" == true && "$compose_command" == "down" ]]; then
 fi
 if [[ "$edge_profile" == true ]]; then
   case "$compose_command" in
-    run)
-      echo "One-off Compose run is not permitted for the production edge." >&2
+    attach|build|commit|cp|exec|export|kill|pause|publish|push|run|start|unpause|watch)
+      echo "This Compose command is not permitted for the production edge." >&2
       exit 1
       ;;
     create)
       echo "Edge containers must be created with isolated up --no-deps, not create." >&2
       exit 1
       ;;
-    kill|pause|restart|rm|start|stop|unpause|up)
+    restart|rm|stop|up)
       if [[ "$caddy_selected" != true || "$edge_other_service_selected" == true ]]; then
         echo "Edge mutations must select only the Caddy service." >&2
         exit 1
