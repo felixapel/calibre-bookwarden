@@ -42,6 +42,12 @@ docker run --rm -it \
   "$edge_image" hash-password
 ```
 
+Run `./scripts/prepare-production.sh` only after the restart. Its final
+Tailscale probe can issue or renew the certificate and therefore is the
+promotion gate, not a harmless dry-run. If it reports `cert access denied`, do
+not start Caddy; fix the UID grant and repeat the probe as the configured
+deployment user.
+
 Set `BOOKAUDIT_DOMAIN` to this node's exact `*.ts.net` MagicDNS name,
 `BOOKAUDIT_EDGE_BIND_IP` to its Tailscale IPv4 address, and put the generated
 bcrypt hash in single quotes in `BOOKAUDIT_BASIC_AUTH_HASH`. Include the domain
@@ -83,6 +89,11 @@ not LAN or all interfaces. Caddy reaches `app:8080` only on the private Compose
 network and has no host-network access. An unauthenticated request to every path
 must return 401 before promotion; authenticate in a browser and confirm the
 certificate is trusted.
+
+The application and edge image revisions must match the exact commit whose
+automatic Gitea run is green. A documentation-only commit changes that
+revision binding: rebuild and republish both images, update `.env` by digest,
+and wait for the new exact-commit run before promotion.
 
 `provision-roles` is an idempotent maintenance task, not a runtime service. Run
 it before every reviewed migration so an existing PostgreSQL volume receives

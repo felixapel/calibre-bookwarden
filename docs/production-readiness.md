@@ -9,7 +9,14 @@ permission to change Calibre metadata.
 The implementation is a **production candidate** until every gate below is
 green for the same Git commit and immutable Certificate A image digest. A prior
 run, local tag, mutable image, or Certificate B test cannot substitute for that
-evidence.
+evidence. As of 2026-08-13, the canonical Gitea run `4554` is green for
+`04d25e64aa7f8cceeff9277ca830f91c56d22daa` (all five jobs). The prepared local
+environment still points at that reviewed candidate's published application
+digest `sha256:bed1ff0e9515e8501ca6ac9e445d9b2bb947e5124333c88137accefbf3e3e919`
+and edge digest
+`sha256:08a8471ee8d74fd0577ab371fa51b58b256a92036eb0821582497d21755c9725`.
+Those values must be rebuilt and republished if this document changes the
+reviewed commit before promotion.
 
 Certificate B remains blocked. The production environment validator rejects
 both auto-apply and an enabled supervised writer pilot.
@@ -103,6 +110,35 @@ Automation cannot prove these facts. Record them for the exact image digest:
    states.
 7. The operator verifies that stopping an audit, restarting the verifier, and
    restoring PostgreSQL follow the runbook without touching the library.
+
+### Current promotion checkpoint
+
+The following facts were verified locally and are not a substitute for the
+remaining operator-owned gates:
+
+- The prepared `.env` is mode `0600`, uses the dedicated
+  `bookaudit-certificate-a` project, and validates with the exact Tailscale
+  name `felix-laptop.tail5f2d68.ts.net` and address `100.125.228.111`.
+- The candidate application and edge images are digest-pinned, carry OCI
+  revision `04d25e64aa7f8cceeff9277ca830f91c56d22daa`, and both passed the
+  local high/critical vulnerability and secret scan with zero findings.
+- The pre-upgrade PostgreSQL dump is
+  `backups/20260812T080050Z-certificate-a-pre-04d25e6/bookaudit.dump`; its
+  paired `SHA256SUMS` is mode `0600` and verifies successfully. A disposable
+  restore drill recovered Alembic revision `f4a2d6e8c013`, three runs, and four
+  evidence packages before cleanup.
+- The deployed application and verifier remain healthy on the prior digest;
+  the new edge has not been promoted, so HTTPS, certificate trust, and
+  whole-site authentication remain unproven.
+- Tailscale certificate access for UID `1000` is still denied. Promotion is
+  blocked until an operator adds `TS_PERMIT_CERT_UID=1000` to
+  `/etc/default/tailscaled` and restarts `tailscaled`; use the narrow UID grant,
+  not the broader Tailscale operator permission.
+
+This checkpoint intentionally records a **not-yet-promoted** state. Do not
+change the production image or start the `edge` profile until the certificate
+probe succeeds and the complete HTTPS/authentication checks in the runbook are
+recorded for the exact deployed digests.
 
 ## Release evidence record
 
