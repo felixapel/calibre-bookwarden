@@ -18,14 +18,20 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+_ARTICLE_RE = re.compile(r"^(?:(?:the|a|an|el|la|los|las|un|una|der|die|das)\s+)+", re.IGNORECASE)
+DUMMY_ISBNS = {
+    "1234567890", "0123456789", "9876543210", "0987654321",
+    "1234567890123", "9781234567890", "9780000000000",
+}
+
+
 def _normalize_str(s: str | None) -> str:
     if not s:
         return ""
-    # Keep alphanumeric characters, whitespace, plus, and hash (preserving C++, C#, etc.)
-    cleaned = re.sub(r"[^\w\s+#]", "", s.lower()).strip()
-    for art in ["the ", "a ", "an ", "el ", "la ", "los ", "las ", "un ", "una ", "der ", "die ", "das "]:
-        if cleaned.startswith(art):
-            cleaned = cleaned[len(art):].strip()
+    # Strip non-alphanumeric except spaces, +, # (preserving C++, C#, etc.), explicitly remove underscores
+    cleaned = re.sub(r"[^a-zA-Z0-9\s+#]", " ", s).lower().strip()
+    # Strip leading articles repeatedly
+    cleaned = _ARTICLE_RE.sub("", cleaned).strip()
     return re.sub(r"\s+", " ", cleaned)
 
 
@@ -52,13 +58,16 @@ def is_valid_isbn13(isbn: str) -> bool:
 def is_valid_isbn(isbn: str, strict_checksum: bool = False) -> bool:
     """Validates ISBN structure and optionally check digit.
 
-    Rejects malformed strings, misplaced 'X', and placeholder repeating sequences.
+    Rejects malformed strings, misplaced 'X', dummy test sequences, and repeating characters.
     """
     clean = re.sub(r"[^\dX]", "", isbn.upper())
     if len(clean) not in (10, 13):
         return False
     # Reject dummy repeating sequences like 0000000000 or 1111111111111
     if len(set(clean)) <= 1:
+        return False
+    # Reject common sequential test ladders
+    if clean in DUMMY_ISBNS:
         return False
     # 'X' is only valid as the 10th character in ISBN-10
     if "X" in clean:
@@ -97,14 +106,18 @@ class DuplicateConsolidator:
         """Detects books that share identical title + author or identical ISBN but have different formats."""
         c = self.conn.cursor()
 
-        # Query all books with author, isbn, and formats
+        # Query all books with author, isbn, and formats with deterministic author ordering
         query = """
             SELECT b.id as book_id, b.title,
                    (
-                       SELECT GROUP_CONCAT(a.name, ' & ')
-                       FROM books_authors_link bal
-                       JOIN authors a ON a.id = bal.author
-                       WHERE bal.book = b.id
+                       SELECT GROUP_CONCAT(auth_name, ' & ')
+                       FROM (
+                           SELECT a.name AS auth_name
+                           FROM books_authors_link bal
+                           JOIN authors a ON a.id = bal.author
+                           WHERE bal.book = b.id
+                           ORDER BY bal.id ASC
+                       )
                    ) as authors,
                    (
                        SELECT GROUP_CONCAT(d.format, ',')
@@ -203,16 +216,24 @@ class DuplicateConsolidator:
                 duplicates = entries[1:]
                 formats_map = {e["book_id"]: e["formats"] for e in entries}
 
+                # Check if formats are complementary
+                all_formats = [fmt for fmts in formats_map.values() for fmt in fmts]
+                unique_formats = set(all_formats)
+                is_complementary = bool(all_formats) and (len(all_formats) == len(unique_formats))
+
+                rec = "MERGE_FORMATS" if is_complementary else "INSPECT_MANUALLY"
+                confidence = 0.99 if is_complementary else 0.88
+
                 clusters.append(
                     DuplicateCluster(
                         cluster_type="isbn_collision",
-                        confidence=0.99,
+                        confidence=confidence,
                         primary_book_id=primary["book_id"],
                         duplicate_book_ids=[d["book_id"] for d in duplicates],
                         title=primary["title"],
                         author=primary["authors"],
                         formats_by_book=formats_map,
-                        recommendation="MERGE_FORMATS",
+                        recommendation=rec,
                         details={"isbn": isbn},
                     )
                 )

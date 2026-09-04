@@ -32,6 +32,8 @@ class LocalCoverAuditCache:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._local = threading.local()
+        self._conns_lock = threading.Lock()
+        self._all_conns: list[sqlite3.Connection] = []
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -44,17 +46,20 @@ class LocalCoverAuditCache:
             c.execute("PRAGMA synchronous = NORMAL;")
             c.execute("PRAGMA busy_timeout = 15000;")
             self._local.conn = conn
+            with self._conns_lock:
+                self._all_conns.append(conn)
         return conn
 
     def close(self) -> None:
-        """Closes the current thread's cached database connection."""
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            self._local.conn = None
+        """Closes all cached database connections across threads."""
+        with self._conns_lock:
+            for conn in self._all_conns:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._all_conns.clear()
+        self._local.conn = None
 
     def _init_db(self) -> None:
         conn = self._get_connection()

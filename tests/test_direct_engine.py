@@ -127,6 +127,13 @@ def _setup_mock_calibre_library(tmp_path: Path) -> Path:
             val TEXT NOT NULL
         )
     """)
+    c.execute("""
+        CREATE TABLE books_custom_column_1_link (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            book INTEGER NOT NULL,
+            value INTEGER NOT NULL
+        )
+    """)
 
     # Populate test records
     # Book 1: Normal book with valid file and cover
@@ -175,6 +182,7 @@ def _setup_mock_calibre_library(tmp_path: Path) -> Path:
     )
     c.execute("INSERT INTO authors (id, name, sort) VALUES (3, 'Unknown', 'Unknown')")
     c.execute("INSERT INTO books_authors_link (book, author) VALUES (3, 3)")
+    c.execute("INSERT INTO books_custom_column_1_link (book, value) VALUES (3, 42)")
 
     # Orphan row in books_ratings_link (book 999 does not exist)
     c.execute("INSERT INTO books_ratings_link (book, rating) VALUES (999, 1)")
@@ -231,6 +239,13 @@ def test_direct_engine_sync_and_cleanup(tmp_path: Path):
     # 4. Delete empty records
     deleted = engine.delete_empty_format_records(delete_folders=True)
     assert deleted == 1
+
+    # Verify custom column link was also purged
+    conn = engine.get_connection(read_only=True)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM books_custom_column_1_link WHERE book = 3")
+    assert c.fetchone()[0] == 0
+    conn.close()
 
     # Re-audit: empty format and foreign key issues should be zero!
     post_report = engine.audit_library()

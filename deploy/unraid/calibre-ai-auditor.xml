@@ -21,8 +21,9 @@
   <DonateText/>
   <DonateLink/>
   <Requires>Calibre Library directory (read-only or read-write)</Requires>
-  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="Port for WebUI and REST API" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="WebUI Port" Target="8080" Default="8000" Mode="tcp" Description="Port for WebUI and REST API (Host maps 8000 to container 8080)" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
   <Config Name="Calibre Library Path" Target="/calibre" Default="/mnt/user/data/media/books" Mode="rw" Description="Path to your Calibre Library root containing metadata.db" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/media/books</Config>
+  <Config Name="Library Environment Path" Target="BOOKAUDIT_LIBRARY_PATH" Default="/calibre" Description="Path where Calibre library is mounted inside container" Type="Variable" Display="advanced" Required="true" Mask="false">/calibre</Config>
   <Config Name="Config &amp; Artifacts Path" Target="/config" Default="/mnt/user/appdata/calibre-ai-auditor" Mode="rw" Description="Persistent storage for audit reports, restore points, and local cache" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/calibre-ai-auditor</Config>
   <Config Name="Read Only Mode" Target="BOOKAUDIT_READ_ONLY" Default="true" Description="When true, mutations are strictly blocked (safe for zero-risk inspection)" Type="Variable" Display="always" Required="true" Mask="false">true</Config>
   <Config Name="Gemini API Key" Target="GEMINI_API_KEY" Default="" Description="Google Gemini API Key for multimodal cover verification (Gemini 3.8 Flash)" Type="Variable" Display="always" Required="false" Mask="true"/>

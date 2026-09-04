@@ -37,7 +37,10 @@ class ExtractNativeRequest(BaseModel):
 
 
 @router.post("/score", response_model=APIResponse)
-async def score_cover(payload: CoverScoreRequest) -> Any:
+async def score_cover(
+    payload: CoverScoreRequest,
+    settings: Settings = Depends(get_settings),
+) -> Any:
     """Computes Cover Quality Score (CQS 0-100) and spurious cover detection for an on-disk image."""
     p = Path(payload.cover_path).resolve()
     if not p.is_file():
@@ -46,6 +49,13 @@ async def score_cover(payload: CoverScoreRequest) -> Any:
         raise HTTPException(
             status_code=400,
             detail="Target file must be a supported image format (.jpg, .jpeg, .png, .webp)",
+        )
+
+    lib_path = settings.library.path.resolve() if settings.library.path else None
+    if lib_path and not p.is_relative_to(lib_path):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: cover path must reside within the configured library path",
         )
 
     scorer = CoverQualityScorer()
@@ -84,42 +94,44 @@ async def score_cover(payload: CoverScoreRequest) -> Any:
 @router.post("/score-upload", response_model=APIResponse)
 async def score_uploaded_cover(file: UploadFile = File(...)) -> Any:
     """Scores an uploaded cover file in-memory or temporary storage."""
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
-        try:
-            content = await file.read()
-            tmp_path.write_bytes(content)
+    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    tmp_path = Path(tmp.name)
+    try:
+        content = await file.read()
+        tmp.write(content)
+        tmp.flush()
+        tmp.close()
 
-            scorer = CoverQualityScorer()
-            detector = SpuriousCoverDetector()
+        scorer = CoverQualityScorer()
+        detector = SpuriousCoverDetector()
 
-            score_res = scorer.score_image(tmp_path)
-            spurious_res = detector.inspect(tmp_path)
+        score_res = scorer.score_image(tmp_path)
+        spurious_res = detector.inspect(tmp_path)
 
-            return {
-                "status": "success",
-                "data": {
-                    "filename": file.filename,
-                    "cqs": {
-                        "score": score_res.cqs,
-                        "tier": score_res.tier,
-                        "width": score_res.width,
-                        "height": score_res.height,
-                        "aspect_ratio": score_res.aspect_ratio,
-                        "penalties": score_res.penalties,
-                        "fatal_defects": score_res.fatal_defects,
-                        "is_actionable": score_res.is_actionable,
-                    },
-                    "spurious": {
-                        "is_spurious": spurious_res.is_spurious,
-                        "defect_type": spurious_res.defect_type,
-                        "confidence": spurious_res.confidence,
-                    },
+        return {
+            "status": "success",
+            "data": {
+                "filename": file.filename,
+                "cqs": {
+                    "score": score_res.cqs,
+                    "tier": score_res.tier,
+                    "width": score_res.width,
+                    "height": score_res.height,
+                    "aspect_ratio": score_res.aspect_ratio,
+                    "penalties": score_res.penalties,
+                    "fatal_defects": score_res.fatal_defects,
+                    "is_actionable": score_res.is_actionable,
                 },
-            }
-        finally:
-            if tmp_path.exists():
-                tmp_path.unlink(missing_ok=True)
+                "spurious": {
+                    "is_spurious": spurious_res.is_spurious,
+                    "defect_type": spurious_res.defect_type,
+                    "confidence": spurious_res.confidence,
+                },
+            },
+        }
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
 
 
 @router.get("/deck", response_model=APIResponse)
@@ -192,7 +204,10 @@ async def get_cover_review_deck(
 
 
 @router.post("/extract-native", response_model=APIResponse)
-async def extract_native_cover(payload: ExtractNativeRequest) -> Any:
+async def extract_native_cover(
+    payload: ExtractNativeRequest,
+    settings: Settings = Depends(get_settings),
+) -> Any:
     """Extracts native cover from EPUB, PDF, or Comic archive into the target path."""
     book_file = Path(payload.book_file_path).resolve()
     if not book_file.is_file():
@@ -209,6 +224,19 @@ async def extract_native_cover(payload: ExtractNativeRequest) -> Any:
             status_code=400,
             detail="Target cover path must have an image extension (.jpg, .jpeg, .png, .webp)",
         )
+
+    lib_path = settings.library.path.resolve() if settings.library.path else None
+    if lib_path:
+        if not book_file.is_relative_to(lib_path):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: book file must reside within the configured library path",
+            )
+        if not target.is_relative_to(lib_path):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: target cover path must reside within the configured library path",
+            )
 
     success = UnifiedCoverExtractor.extract(book_file, target)
 

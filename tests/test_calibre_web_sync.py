@@ -54,3 +54,13 @@ def test_calibre_web_sync_rejects_malicious_book_ids():
     # Negative book ID
     with pytest.raises(ValueError, match="Invalid book ID"):
         mgr.invalidate_book_thumbnails([-5])
+
+
+def test_calibre_web_sync_rejects_malicious_ssh_key():
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid SSH key path"):
+        CalibreWebSyncManager(ssh_key="-oProxyCommand=malicious")
+
+    with pytest.raises(ValueError, match="Invalid SSH key path"):
+        CalibreWebSyncManager(ssh_key="id_rsa\nrm -rf /")

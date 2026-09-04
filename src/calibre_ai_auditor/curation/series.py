@@ -45,10 +45,14 @@ class SeriesGapHunter:
             SELECT s.id as series_id, s.name as series_name,
                    b.id as book_id, b.title, b.series_index,
                    (
-                       SELECT GROUP_CONCAT(a.name, ' & ')
-                       FROM books_authors_link bal
-                       JOIN authors a ON a.id = bal.author
-                       WHERE bal.book = b.id
+                       SELECT GROUP_CONCAT(auth_name, ' & ')
+                       FROM (
+                           SELECT a.name AS auth_name
+                           FROM books_authors_link bal
+                           JOIN authors a ON a.id = bal.author
+                           WHERE bal.book = b.id
+                           ORDER BY bal.id ASC
+                       )
                    ) as authors
             FROM series s
             JOIN books_series_link bsl ON bsl.series = s.id
@@ -66,7 +70,10 @@ class SeriesGapHunter:
             sid = r["series_id"]
             series_map[sid]["name"] = r["series_name"]
             if r["authors"]:
-                series_map[sid]["authors"].add(r["authors"])
+                for a_name in r["authors"].split(" & "):
+                    clean_a = a_name.strip()
+                    if clean_a:
+                        series_map[sid]["authors"].add(clean_a)
             series_map[sid]["books"].append(
                 {
                     "book_id": r["book_id"],
@@ -99,7 +106,7 @@ class SeriesGapHunter:
                 continue
 
             # Avoid memory explosion on corrupted/unreasonable index numbers (e.g. index 99999)
-            if (max_idx - min_idx) > MAX_GAP_SPAN or max_idx > 500:
+            if (max_idx - min_idx) > MAX_GAP_SPAN:
                 logger.warning(
                     f"Series '{sdata['name']}' has abnormal volume range [{min_idx}, {max_idx}], skipping gap search."
                 )

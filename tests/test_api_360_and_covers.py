@@ -155,3 +155,40 @@ def test_covers_deck_api(tmp_path: Path):
         data = response.json()
         assert data["status"] == "success"
         assert "deck" in data["data"]
+
+
+def test_covers_score_rejects_path_traversal(tmp_path: Path):
+    lib_dir = tmp_path / "lib"
+    lib_dir.mkdir()
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    outside_img = outside_dir / "secret.jpg"
+    Image.new("RGB", (200, 300), color="red").save(outside_img)
+
+    test_settings = Settings()
+    test_settings.library.path = lib_dir
+    test_settings.profile = "development"
+
+    with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=test_settings):
+        client = TestClient(app)
+        response = client.post("/api/covers/score", json={"cover_path": str(outside_img)})
+        assert response.status_code == 403
+        assert "Access denied" in response.json()["detail"]
+
+
+def test_covers_score_upload_windows_safety(tmp_path: Path):
+    import io
+    client = TestClient(app)
+    img_bytes = io.BytesIO()
+    Image.new("RGB", (300, 450), color="green").save(img_bytes, format="JPEG")
+    img_bytes.seek(0)
+
+    response = client.post(
+        "/api/covers/score-upload",
+        files={"file": ("test_cover.jpg", img_bytes, "image/jpeg")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "cqs" in data["data"]
+    assert data["data"]["cqs"]["width"] == 300

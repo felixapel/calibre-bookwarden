@@ -211,6 +211,14 @@ def _inspect_single_book(
                             "dimensions": f"{w}x{h}",
                             "size_bytes": size_bytes,
                         }
+        except Image.DecompressionBombError as e:
+            huge_cover = {
+                "book_id": bid,
+                "title": title,
+                "dimensions": "exceeds_max_pixels",
+                "size_bytes": size_bytes if "size_bytes" in locals() else 0,
+                "error": str(e),
+            }
         except Exception as e:
             broken_cover = {"book_id": bid, "title": title, "error": str(e)}
 
@@ -311,99 +319,118 @@ class DirectCalibreEngine:
     def audit_library(self, max_image_pixels: int = 30_000_000, max_workers: int = 32) -> dict[str, Any]:
         """Runs a comprehensive 360-degree audit across SQLite, physical files, and covers."""
         conn = self.get_connection(read_only=True)
-        c = conn.cursor()
+        try:
+            c = conn.cursor()
 
-        # 1. SQLite integrity
-        c.execute("PRAGMA integrity_check")
-        integrity = c.fetchone()[0]
+            # 1. SQLite integrity
+            c.execute("PRAGMA integrity_check")
+            integrity = c.fetchone()[0]
 
-        # 2. Foreign keys
-        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        existing_tables = {row[0] for row in c.fetchall()}
+            # 2. Foreign keys
+            c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing_tables = {row[0] for row in c.fetchall()}
 
-        fk_issues: list[dict[str, Any]] = []
-        for table, col in [
-            ("books_authors_link", "book"),
-            ("books_ratings_link", "book"),
-            ("books_tags_link", "book"),
-            ("books_series_link", "book"),
-            ("books_publishers_link", "book"),
-            ("books_languages_link", "book"),
-            ("comments", "book"),
-            ("identifiers", "book"),
-            ("data", "book"),
-        ]:
-            if table in existing_tables:
-                c.execute(f"SELECT id, {col} FROM {table} WHERE {col} NOT IN (SELECT id FROM books)")
-                for r in c.fetchall():
-                    fk_issues.append({"table": table, "id": r["id"], "orphan_book_id": r[col]})
+            fk_issues: list[dict[str, Any]] = []
+            for table, col in [
+                ("books_authors_link", "book"),
+                ("books_ratings_link", "book"),
+                ("books_tags_link", "book"),
+                ("books_series_link", "book"),
+                ("books_publishers_link", "book"),
+                ("books_languages_link", "book"),
+                ("comments", "book"),
+                ("identifiers", "book"),
+                ("data", "book"),
+            ]:
+                if table in existing_tables:
+                    c.execute(f"SELECT COUNT(*) FROM {table} WHERE {col} NOT IN (SELECT id FROM books)")
+                    count = c.fetchone()[0]
+                    if count > 0:
+                        fk_issues.append({"table": table, "orphan_count": count})
 
-        c.execute("PRAGMA foreign_key_check")
-        for r in c.fetchall():
-            fk_issues.append(dict(r) if isinstance(r, sqlite3.Row) else tuple(r))
+            # 3. Duplicate titles
+            c.execute("""
+                SELECT lower(title) as norm_title, COUNT(*) as count, GROUP_CONCAT(id) as ids
+                FROM books
+                WHERE title IS NOT NULL AND trim(title) != ''
+                GROUP BY lower(trim(title))
+                HAVING count > 1
+                ORDER BY count DESC
+            """)
+            duplicate_titles = [{"title": r["norm_title"], "count": r["count"], "ids": r["ids"]} for r in c.fetchall()]
 
-        # 3. Book count
-        c.execute("SELECT COUNT(*) FROM books")
-        total_books = c.fetchone()[0]
+            # 4. Unrated books & rating distribution
+            c.execute("""
+                SELECT COUNT(*) FROM books b
+                WHERE NOT EXISTS (SELECT 1 FROM books_ratings_link brl WHERE brl.book = b.id)
+            """)
+            unrated_count = c.fetchone()[0]
 
-        # 4. Ratings
-        c.execute("""
-            SELECT COUNT(*) FROM books b
-            WHERE NOT EXISTS (SELECT 1 FROM books_ratings_link brl WHERE brl.book = b.id)
-        """)
-        unrated_count = c.fetchone()[0]
+            c.execute("""
+                SELECT r.rating, COUNT(*) as count
+                FROM books_ratings_link brl
+                JOIN ratings r ON r.id = brl.rating
+                GROUP BY r.rating
+                ORDER BY r.rating DESC
+            """)
+            ratings_dist = {f"{r['rating'] / 2:.1f} Stars (Rating {r['rating']})": r["count"] for r in c.fetchall()}
 
-        c.execute("""
-            SELECT r.rating, COUNT(*) as count
-            FROM books_ratings_link brl
-            JOIN ratings r ON r.id = brl.rating
-            GROUP BY r.rating
-            ORDER BY r.rating DESC
-        """)
-        ratings_dist = {f"{r['rating'] / 2:.1f} Stars (Rating {r['rating']})": r["count"] for r in c.fetchall()}
+            # 5. Author sort desyncs
+            c.execute("""
+                SELECT b.id, b.title, b.author_sort,
+                       (
+                           SELECT GROUP_CONCAT(sort_val, ' & ')
+                           FROM (
+                               SELECT a.sort AS sort_val
+                               FROM books_authors_link bal
+                               JOIN authors a ON a.id = bal.author
+                               WHERE bal.book = b.id
+                               ORDER BY bal.id ASC
+                           )
+                       ) as canon_sort
+                FROM books b
+                WHERE b.author_sort != (
+                    SELECT GROUP_CONCAT(sort_val, ' & ')
+                    FROM (
+                        SELECT a.sort AS sort_val
+                        FROM books_authors_link bal
+                        JOIN authors a ON a.id = bal.author
+                        WHERE bal.book = b.id
+                        ORDER BY bal.id ASC
+                    )
+                )
+                   OR b.author_sort IS NULL
+            """)
+            author_desyncs = [
+                {"book_id": r["id"], "title": r["title"], "current": r["author_sort"], "canonical": r["canon_sort"]}
+                for r in c.fetchall()
+            ]
 
-        # 5. Author sort desyncs
-        c.execute("""
-            SELECT b.id, b.title, b.author_sort,
-                   (
-                       SELECT GROUP_CONCAT(a.sort, ' & ')
-                       FROM books_authors_link bal
-                       JOIN authors a ON a.id = bal.author
-                       WHERE bal.book = b.id
-                   ) as canon_sort
-            FROM books b
-            WHERE b.author_sort != (
-                SELECT GROUP_CONCAT(a.sort, ' & ')
-                FROM books_authors_link bal
-                JOIN authors a ON a.id = bal.author
-                WHERE bal.book = b.id
-            )
-               OR b.author_sort IS NULL
-        """)
-        author_desyncs = [
-            {"book_id": r["id"], "title": r["title"], "current": r["author_sort"], "canonical": r["canon_sort"]}
-            for r in c.fetchall()
-        ]
+            # 6. Physical files & cover audit
+            # Query all data files in a single atomic SQL query (eliminates N+1 queries)
+            c.execute("SELECT book, name, format, uncompressed_size FROM data")
+            data_by_book: dict[int, list[dict[str, Any]]] = defaultdict(list)
+            for r in c.fetchall():
+                data_by_book[r["book"]].append(dict(r))
 
-        # 6. Physical files & cover audit
-        # Query all data files in a single atomic SQL query (eliminates N+1 queries)
-        c.execute("SELECT book, name, format, uncompressed_size FROM data")
-        data_by_book: dict[int, list[dict[str, Any]]] = defaultdict(list)
-        for r in c.fetchall():
-            data_by_book[r["book"]].append(dict(r))
-
-        c.execute("""
-            SELECT b.id, b.title, b.path, b.has_cover,
-                   (
-                       SELECT GROUP_CONCAT(a.name, ' & ')
-                       FROM books_authors_link bal
-                       JOIN authors a ON a.id = bal.author
-                       WHERE bal.book = b.id
-                   ) as authors
-            FROM books b
-        """)
-        books = [dict(r) for r in c.fetchall()]
-        conn.close()
+            c.execute("""
+                SELECT b.id, b.title, b.path, b.has_cover,
+                       (
+                           SELECT GROUP_CONCAT(auth_name, ' & ')
+                           FROM (
+                               SELECT a.name AS auth_name
+                               FROM books_authors_link bal
+                               JOIN authors a ON a.id = bal.author
+                               WHERE bal.book = b.id
+                               ORDER BY bal.id ASC
+                           )
+                       ) as authors
+                FROM books b
+            """)
+            books = [dict(r) for r in c.fetchall()]
+            total_books = len(books)
+        finally:
+            conn.close()
 
         junk_patterns = [r"\[welib\.org\]", r"\(z-library\)", r"_print", r"untitled", r"microsoft word", r"v\d+\.\d+"]
 
@@ -476,128 +503,144 @@ class DirectCalibreEngine:
     def sync_all_author_sorts(self) -> int:
         """Synchronizes all authors.sort and books.author_sort across the library."""
         conn = self.get_connection()
-        c = conn.cursor()
+        try:
+            c = conn.cursor()
 
-        # 1. Update authors.sort where NULL or unformatted
-        c.execute("SELECT id, name, sort FROM authors")
-        authors = c.fetchall()
-        for a in authors:
-            aid = a["id"]
-            name = a["name"]
-            curr_sort = a["sort"]
-            canon_sort = calibre_author_sort(name)
-            if not curr_sort or curr_sort != canon_sort:
-                c.execute("UPDATE authors SET sort = ? WHERE id = ?", (canon_sort, aid))
+            # 1. Update authors.sort where NULL or unformatted
+            c.execute("SELECT id, name, sort FROM authors")
+            authors = c.fetchall()
+            for a in authors:
+                aid = a["id"]
+                name = a["name"]
+                curr_sort = a["sort"]
+                canon_sort = calibre_author_sort(name)
+                if not curr_sort or curr_sort != canon_sort:
+                    c.execute("UPDATE authors SET sort = ? WHERE id = ?", (canon_sort, aid))
 
-        # 2. Sync books.author_sort
-        c.execute("""
-            SELECT 
-                b.id,
-                (
-                    SELECT GROUP_CONCAT(a.sort, ' & ')
-                    FROM books_authors_link bal
-                    JOIN authors a ON a.id = bal.author
-                    WHERE bal.book = b.id
-                ) AS canonical_sort
-            FROM books b
-        """)
-        updated_count = 0
-        for bid, csort in c.fetchall():
-            if csort:
-                c.execute(
-                    "UPDATE books SET author_sort = ? WHERE id = ? AND (author_sort != ? OR author_sort IS NULL)",
-                    (csort, bid, csort),
-                )
-                if c.rowcount > 0:
-                    updated_count += 1
+            # 2. Sync books.author_sort with deterministic ordering
+            c.execute("""
+                SELECT 
+                    b.id,
+                    (
+                        SELECT GROUP_CONCAT(sort_val, ' & ')
+                        FROM (
+                            SELECT a.sort AS sort_val
+                            FROM books_authors_link bal
+                            JOIN authors a ON a.id = bal.author
+                            WHERE bal.book = b.id
+                            ORDER BY bal.id ASC
+                        )
+                    ) AS canonical_sort
+                FROM books b
+            """)
+            updated_count = 0
+            for bid, csort in c.fetchall():
+                if csort:
+                    c.execute(
+                        "UPDATE books SET author_sort = ? WHERE id = ? AND (author_sort != ? OR author_sort IS NULL)",
+                        (csort, bid, csort),
+                    )
+                    if c.rowcount > 0:
+                        updated_count += 1
 
-        conn.commit()
-        conn.close()
-        logger.info(f"Synchronized author_sort for {updated_count} books.")
-        return updated_count
+            conn.commit()
+            logger.info(f"Synchronized author_sort for {updated_count} books.")
+            return updated_count
+        finally:
+            conn.close()
 
     def purge_orphan_foreign_keys(self) -> dict[str, int]:
         """Cleans orphan rows in junction tables and unused entities."""
         conn = self.get_connection()
-        c = conn.cursor()
+        try:
+            c = conn.cursor()
 
-        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        existing_tables = {row[0] for row in c.fetchall()}
+            c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing_tables = {row[0] for row in c.fetchall()}
 
-        purged = {}
-        for table, col in [
-            ("books_authors_link", "book"),
-            ("books_ratings_link", "book"),
-            ("books_tags_link", "book"),
-            ("books_series_link", "book"),
-            ("books_publishers_link", "book"),
-            ("books_languages_link", "book"),
-            ("comments", "book"),
-            ("identifiers", "book"),
-            ("data", "book"),
-        ]:
-            if table in existing_tables:
-                c.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM books)")
-                purged[table] = c.rowcount
+            purged = {}
+            for table, col in [
+                ("books_authors_link", "book"),
+                ("books_ratings_link", "book"),
+                ("books_tags_link", "book"),
+                ("books_series_link", "book"),
+                ("books_publishers_link", "book"),
+                ("books_languages_link", "book"),
+                ("comments", "book"),
+                ("identifiers", "book"),
+                ("data", "book"),
+            ]:
+                if table in existing_tables:
+                    c.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM books)")
+                    purged[table] = c.rowcount
 
-        # Clean unused tags, series, publishers, authors
-        cleanup_entities = [
-            ("authors", "books_authors_link", "author"),
-            ("tags", "books_tags_link", "tag"),
-            ("series", "books_series_link", "series"),
-            ("publishers", "books_publishers_link", "publisher"),
-        ]
-        for entity_table, link_table, link_col in cleanup_entities:
-            if entity_table in existing_tables and link_table in existing_tables:
-                c.execute(f"DELETE FROM {entity_table} WHERE id NOT IN (SELECT DISTINCT {link_col} FROM {link_table})")
-                purged[f"unused_{entity_table}"] = c.rowcount
+            # Clean unused tags, series, publishers, authors
+            cleanup_entities = [
+                ("authors", "books_authors_link", "author"),
+                ("tags", "books_tags_link", "tag"),
+                ("series", "books_series_link", "series"),
+                ("publishers", "books_publishers_link", "publisher"),
+            ]
+            for entity_table, link_table, link_col in cleanup_entities:
+                if entity_table in existing_tables and link_table in existing_tables:
+                    c.execute(f"DELETE FROM {entity_table} WHERE id NOT IN (SELECT DISTINCT {link_col} FROM {link_table})")
+                    purged[f"unused_{entity_table}"] = c.rowcount
 
-        conn.commit()
-        conn.close()
-        return purged
+            conn.commit()
+            return purged
+        finally:
+            conn.close()
 
     def delete_empty_format_records(self, delete_folders: bool = True) -> int:
         """Removes book records that have no format files associated."""
         conn = self.get_connection()
-        c = conn.cursor()
+        try:
+            c = conn.cursor()
 
-        c.execute("""
-            SELECT b.id, b.title, b.path
-            FROM books b
-            WHERE NOT EXISTS (SELECT 1 FROM data d WHERE d.book = b.id)
-        """)
-        empty_books = c.fetchall()
-        count = len(empty_books)
+            c.execute("""
+                SELECT b.id, b.title, b.path
+                FROM books b
+                WHERE NOT EXISTS (SELECT 1 FROM data d WHERE d.book = b.id)
+            """)
+            empty_books = c.fetchall()
+            count = len(empty_books)
 
-        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        existing_tables = {row[0] for row in c.fetchall()}
+            c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing_tables = {row[0] for row in c.fetchall()}
 
-        link_tables = [
-            "books_authors_link",
-            "books_ratings_link",
-            "books_tags_link",
-            "books_series_link",
-            "books_publishers_link",
-            "books_languages_link",
-            "comments",
-            "identifiers",
-            "data",
-        ]
+            link_tables = [
+                "books_authors_link",
+                "books_ratings_link",
+                "books_tags_link",
+                "books_series_link",
+                "books_publishers_link",
+                "books_languages_link",
+                "comments",
+                "identifiers",
+                "data",
+            ]
+            # Identify any custom column link tables (e.g. books_custom_column_1_link)
+            custom_link_tables = [
+                tbl for tbl in existing_tables
+                if tbl.startswith("books_custom_column_") and tbl.endswith("_link")
+            ]
+            all_link_tables = link_tables + custom_link_tables
 
-        for b in empty_books:
-            bid = b["id"]
-            path = b["path"]
-            if delete_folders and path:
-                folder = self.library_path / path
-                if folder.exists():
-                    shutil.rmtree(folder, ignore_errors=True)
+            for b in empty_books:
+                bid = b["id"]
+                path = b["path"]
+                if delete_folders and path:
+                    folder = self.library_path / path
+                    if folder.exists():
+                        shutil.rmtree(folder, ignore_errors=True)
 
-            for tbl in link_tables:
-                if tbl in existing_tables:
-                    c.execute(f"DELETE FROM {tbl} WHERE book = ?", (bid,))
-            c.execute("DELETE FROM books WHERE id = ?", (bid,))
+                for tbl in all_link_tables:
+                    if tbl in existing_tables:
+                        c.execute(f"DELETE FROM {tbl} WHERE book = ?", (bid,))
+                c.execute("DELETE FROM books WHERE id = ?", (bid,))
 
-        conn.commit()
-        conn.close()
-        logger.info(f"Deleted {count} empty book records.")
-        return count
+            conn.commit()
+            logger.info(f"Deleted {count} empty book records.")
+            return count
+        finally:
+            conn.close()

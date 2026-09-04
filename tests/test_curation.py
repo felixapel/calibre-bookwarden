@@ -131,6 +131,8 @@ def test_isbn_validation_and_technical_titles():
     # 4. Dummy sequence and invalid character placement rejection
     assert is_valid_isbn("0000000000") is False
     assert is_valid_isbn("9999999999999") is False
+    assert is_valid_isbn("1234567890") is False  # Dummy ascending ladder
+    assert is_valid_isbn("9876543210") is False  # Dummy descending ladder
     assert is_valid_isbn("123X567890") is False  # X in middle
 
 
@@ -156,4 +158,31 @@ def test_series_gap_hunter_safety_span(tmp_path: Path):
     gaps = hunter.find_all_gaps()
     # Should be skipped safely without hanging or allocating huge range
     assert len(gaps) == 0
+    conn.close()
+
+
+def test_series_gap_hunter_supports_long_series_over_500(tmp_path: Path):
+    import sqlite3
+    db_path = tmp_path / "long_series.db"
+    conn = sqlite3.connect(str(db_path))
+    c = conn.cursor()
+    c.execute("CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT);")
+    c.execute("CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, series_index REAL);")
+    c.execute("CREATE TABLE books_series_link (id INTEGER PRIMARY KEY, book INTEGER, series INTEGER);")
+    c.execute("CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT, sort TEXT);")
+    c.execute("CREATE TABLE books_authors_link (id INTEGER PRIMARY KEY, book INTEGER, author INTEGER);")
+
+    # Series like One Piece with volumes around 600
+    c.execute("INSERT INTO series (id, name) VALUES (1, 'One Piece');")
+    c.execute("INSERT INTO books (id, title, series_index) VALUES (1, 'Vol 600', 600.0);")
+    c.execute("INSERT INTO books (id, title, series_index) VALUES (2, 'Vol 601', 601.0);")
+    c.execute("INSERT INTO books (id, title, series_index) VALUES (3, 'Vol 603', 603.0);")
+    c.execute("INSERT INTO books_series_link (book, series) VALUES (1, 1), (2, 1), (3, 1);")
+    conn.commit()
+
+    hunter = SeriesGapHunter(conn)
+    gaps = hunter.find_all_gaps()
+    assert len(gaps) == 1
+    assert gaps[0].series_name == "One Piece"
+    assert 602 in gaps[0].missing_indices
     conn.close()

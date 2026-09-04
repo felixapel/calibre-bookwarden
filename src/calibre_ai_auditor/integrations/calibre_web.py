@@ -35,6 +35,10 @@ class CalibreWebIntegration:
             raise ValueError(f"Invalid container name: {container_name}")
         if ssh_host and not _HOST_RE.fullmatch(ssh_host):
             raise ValueError(f"Invalid SSH host format: {ssh_host}")
+        if ssh_key:
+            ssh_key_clean = str(ssh_key).strip()
+            if ssh_key_clean.startswith("-") or "\n" in ssh_key_clean or "\r" in ssh_key_clean:
+                raise ValueError(f"Invalid SSH key path: {ssh_key}")
 
         self.thumbnails_dir = Path(thumbnails_dir) if thumbnails_dir else None
         self.container_name = container_name

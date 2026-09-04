@@ -4,9 +4,10 @@ services:
     container_name: calibre-ai-auditor
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8000:8080"
     environment:
       - BOOKAUDIT_READ_ONLY=false
+      - BOOKAUDIT_LIBRARY_PATH=/calibre
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - CALIBRE_WEB_CONTAINER=calibre-web-automated
       - CALIBRE_WEB_URL=http://calibre-web-automated:8083
