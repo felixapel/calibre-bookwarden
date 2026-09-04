@@ -127,8 +127,11 @@ class InventoryReport(BaseModel):
 
 
 def _set_file_limit(max_bytes: int) -> None:
-    if resource is not None and hasattr(resource, "RLIMIT_FSIZE"):
-        resource.setrlimit(resource.RLIMIT_FSIZE, (max_bytes, max_bytes))
+    if resource is not None:
+        setrlimit = getattr(resource, "setrlimit", None)
+        rlimit_fsize = getattr(resource, "RLIMIT_FSIZE", None)
+        if callable(setrlimit) and rlimit_fsize is not None:
+            setrlimit(rlimit_fsize, (max_bytes, max_bytes))
 
 
 def _subprocess_runner(command: list[str], password: str, timeout: float) -> subprocess.CompletedProcess[str]:

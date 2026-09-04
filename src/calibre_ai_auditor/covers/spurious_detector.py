@@ -122,7 +122,10 @@ class SpuriousCoverDetector:
         most_freq_count, most_freq_rgb = max(colors, key=lambda item: item[0])
         ratio = most_freq_count / 2500.0
         if ratio > 0.98:
-            return True, 0.99, most_freq_rgb
+            dom_rgb: tuple[int, int, int] | None = None
+            if isinstance(most_freq_rgb, (tuple, list)) and len(most_freq_rgb) >= 3:
+                dom_rgb = (int(most_freq_rgb[0]), int(most_freq_rgb[1]), int(most_freq_rgb[2]))
+            return True, 0.99, dom_rgb
         return False, 0.0, None
 
     def _check_calibre_default_template(

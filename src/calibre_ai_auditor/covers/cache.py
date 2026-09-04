@@ -7,6 +7,7 @@ spurious status) are retrieved instantly without re-reading image files or compu
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -54,10 +55,8 @@ class LocalCoverAuditCache:
         """Closes all cached database connections across threads."""
         with self._conns_lock:
             for conn in self._all_conns:
-                try:
+                with contextlib.suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass
             self._all_conns.clear()
         self._local.conn = None
 
@@ -186,4 +185,4 @@ class LocalCoverAuditCache:
         conn = self._get_connection()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM cover_cache")
-        return c.fetchone()[0]
+        return int(c.fetchone()[0])

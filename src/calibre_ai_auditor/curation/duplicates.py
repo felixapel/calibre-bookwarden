@@ -20,8 +20,13 @@ logger = logging.getLogger(__name__)
 
 _ARTICLE_RE = re.compile(r"^(?:(?:the|a|an|el|la|los|las|un|una|der|die|das)\s+)+", re.IGNORECASE)
 DUMMY_ISBNS = {
-    "1234567890", "0123456789", "9876543210", "0987654321",
-    "1234567890123", "9781234567890", "9780000000000",
+    "1234567890",
+    "0123456789",
+    "9876543210",
+    "0987654321",
+    "1234567890123",
+    "9781234567890",
+    "9780000000000",
 }
 
 
@@ -70,9 +75,8 @@ def is_valid_isbn(isbn: str, strict_checksum: bool = False) -> bool:
     if clean in DUMMY_ISBNS:
         return False
     # 'X' is only valid as the 10th character in ISBN-10
-    if "X" in clean:
-        if len(clean) != 10 or clean[9] != "X":
-            return False
+    if "X" in clean and (len(clean) != 10 or clean[9] != "X"):
+        return False
     if strict_checksum:
         if len(clean) == 10:
             return is_valid_isbn10(clean)

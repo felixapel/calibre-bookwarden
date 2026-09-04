@@ -115,7 +115,7 @@ class UnifiedCoverExtractor:
             return False
 
         try:
-            import fitz  # PyMuPDF
+            import fitz  # type: ignore[import-untyped]  # PyMuPDF
 
             doc = fitz.open(p)
             try:

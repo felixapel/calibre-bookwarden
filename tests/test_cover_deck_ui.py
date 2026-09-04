@@ -29,7 +29,9 @@ def _setup_deck_test_library(tmp_path: Path) -> Path:
     c.execute("CREATE TABLE books_authors_link (id INTEGER PRIMARY KEY, book INTEGER, author INTEGER);")
     c.execute("CREATE TABLE ratings (id INTEGER PRIMARY KEY, rating INTEGER);")
     c.execute("CREATE TABLE books_ratings_link (id INTEGER PRIMARY KEY, book INTEGER, rating INTEGER);")
-    c.execute("CREATE TABLE data (id INTEGER PRIMARY KEY, book INTEGER, format TEXT, name TEXT, uncompressed_size INTEGER);")
+    c.execute(
+        "CREATE TABLE data (id INTEGER PRIMARY KEY, book INTEGER, format TEXT, name TEXT, uncompressed_size INTEGER);"
+    )
 
     # Low quality cover book (tiny)
     c.execute("INSERT INTO books (id, title, path, has_cover) VALUES (1, 'Tiny Book', 'Author/Tiny (1)', 1);")

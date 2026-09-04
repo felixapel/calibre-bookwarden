@@ -158,11 +158,11 @@ def open_file_beneath(
         size = absolute_candidate.stat().st_size
         if max_bytes is not None and size > max_bytes:
             raise SecurePathError(f"file exceeds the permitted size: {absolute_candidate}")
-        descriptor = os.open(str(absolute_candidate), os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        win_descriptor = os.open(str(absolute_candidate), os.O_RDONLY | getattr(os, "O_BINARY", 0))
         try:
-            yield descriptor
+            yield win_descriptor
         finally:
-            os.close(descriptor)
+            os.close(win_descriptor)
         return
 
     directory = _open_directory_from_root(absolute_root)
@@ -212,11 +212,11 @@ def create_file_beneath(
         parent = absolute_candidate.parent
         os.makedirs(parent, exist_ok=True)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-        descriptor = os.open(str(absolute_candidate), flags, mode)
+        win_descriptor = os.open(str(absolute_candidate), flags, mode)
         try:
-            yield descriptor
+            yield win_descriptor
         finally:
-            os.close(descriptor)
+            os.close(win_descriptor)
         return
 
     directory = _open_directory_from_root(absolute_root)
@@ -356,16 +356,16 @@ def replace_bytes_beneath(root: Path, candidate: Path, payload: bytes, *, mode: 
         absolute_root, absolute_candidate, relative = _relative_candidate(root, candidate)
         temporary = absolute_candidate.parent / f".{absolute_candidate.name}.tmp-{uuid4().hex}"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-        descriptor = os.open(str(temporary), flags, mode)
+        win_descriptor = os.open(str(temporary), flags, mode)
         try:
-            _write_all(descriptor, payload)
-            os.fsync(descriptor)
-            os.close(descriptor)
-            descriptor = -1
+            _write_all(win_descriptor, payload)
+            os.fsync(win_descriptor)
+            os.close(win_descriptor)
+            win_descriptor = -1
             os.replace(str(temporary), str(absolute_candidate))
         finally:
-            if descriptor != -1:
-                os.close(descriptor)
+            if win_descriptor != -1:
+                os.close(win_descriptor)
             temporary.unlink(missing_ok=True)
         return
 
@@ -404,7 +404,7 @@ def copy_file_replacing_beneath(
         _, absolute_target, _ = _relative_candidate(target_root, target_path)
         temporary = absolute_target.parent / f".{absolute_target.name}.tmp-{uuid4().hex}"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-        output = os.open(str(temporary), flags, 0o600)
+        win_output = os.open(str(temporary), flags, 0o600)
         try:
             with open_file_beneath(source_root, source_path, max_bytes=max_bytes) as source:
                 before = _identity(source)
@@ -415,17 +415,17 @@ def copy_file_replacing_beneath(
                     if max_bytes is not None and copied > max_bytes:
                         raise SecurePathError("source grew beyond the permitted size")
                     digest.update(chunk)
-                    _write_all(output, chunk)
+                    _write_all(win_output, chunk)
                 if _identity(source) != before:
                     raise SecurePathError("source changed while it was being copied")
-            os.fsync(output)
-            os.close(output)
-            output = -1
+            os.fsync(win_output)
+            os.close(win_output)
+            win_output = -1
             os.replace(str(temporary), str(absolute_target))
             return digest.hexdigest()
         finally:
-            if output != -1:
-                os.close(output)
+            if win_output != -1:
+                os.close(win_output)
             temporary.unlink(missing_ok=True)
 
     directory, absolute_target, name = _open_parent_beneath(target_root, target_path)

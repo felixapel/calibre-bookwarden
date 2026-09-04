@@ -138,6 +138,7 @@ def test_isbn_validation_and_technical_titles():
 
 def test_series_gap_hunter_safety_span(tmp_path: Path):
     import sqlite3
+
     db_path = tmp_path / "corrupt_series.db"
     conn = sqlite3.connect(str(db_path))
     c = conn.cursor()
@@ -163,6 +164,7 @@ def test_series_gap_hunter_safety_span(tmp_path: Path):
 
 def test_series_gap_hunter_supports_long_series_over_500(tmp_path: Path):
     import sqlite3
+
     db_path = tmp_path / "long_series.db"
     conn = sqlite3.connect(str(db_path))
     c = conn.cursor()

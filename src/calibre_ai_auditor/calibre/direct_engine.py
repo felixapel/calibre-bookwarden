@@ -93,7 +93,7 @@ def calibre_title_sort(title: str | None) -> str:
 
 def calibre_author_sort(author: str | None) -> str:
     """Emulates canonical author_sort algorithm delegating to authority rules."""
-    return compute_author_sort(author)
+    return compute_author_sort(author or "")
 
 
 def _inspect_single_book(
@@ -140,15 +140,13 @@ def _inspect_single_book(
 
     folder = _safe_path(library_path / path)
     try:
-        entries: dict[str, os.DirEntry] = {}
+        entries: dict[str, os.DirEntry[str]] = {}
         with os.scandir(folder) as it:
-            for entry in it:
-                entries[entry.name.lower()] = entry
+            for d_entry in it:
+                entries[d_entry.name.lower()] = d_entry
     except (FileNotFoundError, NotADirectoryError):
         if dfiles:
-            missing_data.append(
-                {"book_id": bid, "title": title, "reason": "FOLDER_NOT_FOUND", "path": str(path)}
-            )
+            missing_data.append({"book_id": bid, "title": title, "reason": "FOLDER_NOT_FOUND", "path": str(path)})
         return {
             "bad_title": bad_title,
             "empty_format": empty_format,
@@ -160,9 +158,7 @@ def _inspect_single_book(
         }
     except OSError as e:
         if dfiles:
-            missing_data.append(
-                {"book_id": bid, "title": title, "reason": f"OS_ERROR: {e}", "path": str(path)}
-            )
+            missing_data.append({"book_id": bid, "title": title, "reason": f"OS_ERROR: {e}", "path": str(path)})
         return {
             "bad_title": bad_title,
             "empty_format": empty_format,
@@ -176,11 +172,9 @@ def _inspect_single_book(
     # Format files on disk check
     for df in dfiles:
         fname = f"{df['name']}.{df['format'].lower()}"
-        entry = entries.get(fname.lower())
-        if entry is None or not entry.is_file():
-            missing_data.append(
-                {"book_id": bid, "title": title, "file": fname, "reason": "FILE_MISSING_ON_DISK"}
-            )
+        file_entry = entries.get(fname.lower())
+        if file_entry is None or not file_entry.is_file():
+            missing_data.append({"book_id": bid, "title": title, "file": fname, "reason": "FILE_MISSING_ON_DISK"})
 
     # Cover checks
     cov_entry = entries.get("cover.jpg")
@@ -485,6 +479,8 @@ class DirectCalibreEngine:
             "ratings_distribution": ratings_dist,
             "author_desyncs_count": len(author_desyncs),
             "author_desyncs_sample": author_desyncs[:10],
+            "duplicate_titles_count": len(duplicate_titles),
+            "duplicate_titles": duplicate_titles[:15],
             "missing_data_files_count": len(missing_data_files),
             "missing_data_files": missing_data_files,
             "empty_format_records_count": len(empty_format_records),
@@ -583,7 +579,9 @@ class DirectCalibreEngine:
             ]
             for entity_table, link_table, link_col in cleanup_entities:
                 if entity_table in existing_tables and link_table in existing_tables:
-                    c.execute(f"DELETE FROM {entity_table} WHERE id NOT IN (SELECT DISTINCT {link_col} FROM {link_table})")
+                    c.execute(
+                        f"DELETE FROM {entity_table} WHERE id NOT IN (SELECT DISTINCT {link_col} FROM {link_table})"
+                    )
                     purged[f"unused_{entity_table}"] = c.rowcount
 
             conn.commit()
@@ -621,8 +619,7 @@ class DirectCalibreEngine:
             ]
             # Identify any custom column link tables (e.g. books_custom_column_1_link)
             custom_link_tables = [
-                tbl for tbl in existing_tables
-                if tbl.startswith("books_custom_column_") and tbl.endswith("_link")
+                tbl for tbl in existing_tables if tbl.startswith("books_custom_column_") and tbl.endswith("_link")
             ]
             all_link_tables = link_tables + custom_link_tables
 

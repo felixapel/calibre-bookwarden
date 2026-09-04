@@ -3,9 +3,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import jinja2
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-import jinja2
 from pydantic import BaseModel
 
 from calibre_ai_auditor.calibre.direct_engine import DirectCalibreEngine, _safe_path
@@ -94,7 +94,8 @@ async def score_cover(
 @router.post("/score-upload", response_model=APIResponse)
 async def score_uploaded_cover(file: UploadFile = File(...)) -> Any:
     """Scores an uploaded cover file in-memory or temporary storage."""
-    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    # Must close handle before reading with PIL on Windows to prevent WinError 32
+    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)  # noqa: SIM115
     tmp_path = Path(tmp.name)
     try:
         content = await file.read()

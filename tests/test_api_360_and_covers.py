@@ -178,6 +178,7 @@ def test_covers_score_rejects_path_traversal(tmp_path: Path):
 
 def test_covers_score_upload_windows_safety(tmp_path: Path):
     import io
+
     client = TestClient(app)
     img_bytes = io.BytesIO()
     Image.new("RGB", (300, 450), color="green").save(img_bytes, format="JPEG")

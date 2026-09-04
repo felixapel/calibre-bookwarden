@@ -72,10 +72,7 @@ class CalibreWebIntegration:
                 ssh_args = ["ssh"]
                 if self.ssh_key:
                     ssh_args.extend(["-i", self.ssh_key])
-                remote_cmd = (
-                    f"docker exec {safe_cname} rm -rf /config/thumbnails/* && "
-                    f"docker restart {safe_cname}"
-                )
+                remote_cmd = f"docker exec {safe_cname} rm -rf /config/thumbnails/* && docker restart {safe_cname}"
                 ssh_args.extend([self.ssh_host, remote_cmd])
                 res = subprocess.run(ssh_args, capture_output=True, text=True, timeout=30)
                 return res.returncode == 0

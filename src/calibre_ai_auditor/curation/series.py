@@ -10,7 +10,7 @@ from __future__ import annotations
 import collections
 import logging
 import sqlite3
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ class SeriesGapHunter:
             if len(books) < min_owned_threshold:
                 continue
 
-            indices = sorted(list({b["series_index"] for b in books}))
+            indices = sorted({b["series_index"] for b in books})
             if not indices:
                 continue
 
@@ -114,7 +114,7 @@ class SeriesGapHunter:
 
             # Expected full sequence from 1 to max_idx
             expected_range = set(range(1, max_idx + 1))
-            missing = sorted(list(expected_range - int_indices))
+            missing = sorted(expected_range - int_indices)
 
             if missing:
                 authors_str = " & ".join(sorted(sdata["authors"])) if sdata["authors"] else "Unknown"

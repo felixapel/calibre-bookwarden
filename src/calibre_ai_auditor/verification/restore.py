@@ -53,7 +53,10 @@ QUARANTINE_STATES = {"prepared", "quarantining", "quarantined", "deleting", "del
 
 
 def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    o_directory = getattr(os, "O_DIRECTORY", None)
+    if o_directory is None:
+        return
+    descriptor = os.open(path, os.O_RDONLY | o_directory)
     try:
         os.fsync(descriptor)
     finally:
