@@ -14,6 +14,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
@@ -21,6 +22,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
+
+try:
+    import resource
+except ImportError:
+    resource = None  # type: ignore[assignment]
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -121,23 +127,35 @@ class InventoryReport(BaseModel):
 
 
 def _set_file_limit(max_bytes: int) -> None:
-    resource.setrlimit(resource.RLIMIT_FSIZE, (max_bytes, max_bytes))
+    if resource is not None and hasattr(resource, "RLIMIT_FSIZE"):
+        resource.setrlimit(resource.RLIMIT_FSIZE, (max_bytes, max_bytes))
 
 
 def _subprocess_runner(command: list[str], password: str, timeout: float) -> subprocess.CompletedProcess[str]:
     try:
         is_machine_read = len(command) > 1 and command[1] == "list"
         max_file_bytes = MAX_MACHINE_OUTPUT_BYTES if is_machine_read else MAX_EXPORTED_FORMAT_BYTES
+        preexec = (lambda: _set_file_limit(max_file_bytes)) if (os.name != "nt" and resource is not None) else None
+        kwargs: dict[str, Any] = {}
+        if preexec is not None:
+            kwargs["preexec_fn"] = preexec
+
+        cmd = list(command)
+        if sys.platform == "win32" and cmd:
+            target_bin = Path(cmd[0])
+            if target_bin.is_file() and not target_bin.suffix:
+                cmd = [sys.executable, str(target_bin)] + cmd[1:]
+
         with tempfile.TemporaryFile(mode="w+b") as output:
             result = subprocess.run(
-                command,
+                cmd,
                 input=(password + "\n").encode(),
                 stdout=output if is_machine_read else subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 text=False,
                 check=False,
                 timeout=timeout,
-                preexec_fn=lambda: _set_file_limit(max_file_bytes),
+                **kwargs,
             )
             if not is_machine_read:
                 return subprocess.CompletedProcess(command, result.returncode, stdout="", stderr="")

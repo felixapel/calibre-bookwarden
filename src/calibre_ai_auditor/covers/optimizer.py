@@ -31,7 +31,7 @@ class CoverOptimizer:
 
     def is_decompression_bomb(self, image_path: Path) -> tuple[bool, dict[str, Any]]:
         """Checks if an image is oversized or could cause a decompression bomb."""
-        Image.MAX_IMAGE_PIXELS = None
+        Image.MAX_IMAGE_PIXELS = 60_000_000
         if not image_path.exists():
             return False, {}
         size_bytes = image_path.stat().st_size
@@ -47,6 +47,8 @@ class CoverOptimizer:
                     "size_bytes": size_bytes,
                     "format": img.format,
                 }
+        except Image.DecompressionBombError as exc:
+            return True, {"error": "decompression_bomb_detected", "detail": str(exc), "size_bytes": size_bytes}
         except Exception as exc:
             return False, {"error": str(exc)}
 
@@ -59,7 +61,7 @@ class CoverOptimizer:
         Downscales and optimizes a cover image to standard HD JPEG.
         Returns: (success, bytes_before, bytes_after)
         """
-        Image.MAX_IMAGE_PIXELS = None
+        Image.MAX_IMAGE_PIXELS = 60_000_000
         if not cover_path.exists():
             return False, 0, 0
 

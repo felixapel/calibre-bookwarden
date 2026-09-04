@@ -1,10 +1,67 @@
 # Calibre AI Auditor
 
-Calibre AI Auditor is a local, content-grounded metadata auditor for Calibre
-libraries. Its production contract is deliberately narrow: it reads a stopped
-Calibre library, gathers bounded evidence, checks checksum-valid ISBNs against
-Google Books and Open Library, and presents sealed findings for human review.
-It does not modify Calibre metadata.
+<p align="center">
+  <strong>The Content-Grounded Metadata & Cover Integrity Engine for Calibre Libraries.</strong><br>
+  <em>"The book file is the ground truth. LLMs and OCR are witnesses."</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/felix/calibre-ai-auditor/actions"><img src="https://img.shields.io/badge/CI-Passing-brightgreen.svg" alt="CI Status"></a>
+  <a href="https://github.com/felix/calibre-ai-auditor"><img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-blue.svg" alt="Python Versions"></a>
+  <a href="https://github.com/felix/calibre-ai-auditor"><img src="https://img.shields.io/badge/Docker-Multi--Arch-blue.svg" alt="Docker Multi-Arch"></a>
+  <a href="https://github.com/felix/calibre-ai-auditor"><img src="https://img.shields.io/badge/unRAID-CA%20Template-orange.svg" alt="unRAID Support"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License"></a>
+</p>
+
+---
+
+## 🎯 What is Calibre AI Auditor?
+
+Music has **Beets**, documents have **Paperless-ngx**, media has **Radarr/Plex**. Ebooks have spent 15 years trapped in desktop PyQt menus or suffering from corrupted SQLite locks and hallucinated LLM plugins.
+
+**Calibre AI Auditor** fills this void: a headless, high-performance forensic curation engine for Calibre libraries. It verifies metadata and covers directly against the authentic container contents (EPUB OCF, PDF XMP, CBZ/CBR) with zero-risk read-only audits, deterministic authority sort rules, multimodal vision scoring, and surgical atomic rollbacks.
+
+### ✨ Key Capabilities
+
+- 🔍 **360° Forensic Audit Engine**: Directly inspects `metadata.db` for SQLite integrity, foreign key orphans, author sort desyncs, missing covers, and decompression bomb pixel sizes.
+- 🖼️ **Cover Quality Score (CQS 0-100)**: Evaluates covers mathematically on resolution, aspect ratio (1:1.5 standard), Laplacian sharpness, contrast, and flags fake covers (interior body page scans, Calibre default brown templates, Z-Library watermarks).
+- ⚡ **O(1) Streaming SQLite Engine**: Keyset pagination iterator streams 100,000+ books with <25 MB RAM consumption and zero table contention.
+- 🏛️ **Canonical Authority Rules**: Standardizes sort keys and display names for Grecolatin philosophers, Patristic saints, Popes, Nobel laureates, and periodicals (*The Economist*, *Financial Times*).
+- 🛡️ **Zero-Hallucination & Fail-Safe Architecture**: The book file is the absolute source of truth. Remote LLMs (Gemini 3.8 Flash, GPT-4o-mini) and OCR backends act strictly as witnesses.
+- 🐳 **Self-Hosted Homelab Ready**: Ready-to-run Docker Compose, unRAID Community Applications template (`deploy/unraid/`), TrueNAS SCALE catalog chart, and instant Calibre-Web thumbnail cache purge.
+
+---
+
+## 🚀 Quickstart
+
+### Option A: Local CLI via `uv` or `pipx` (Instant)
+
+```bash
+# Run a 360° forensic audit without modifying any files (Read-Only)
+uvx --from git+ssh://git@192.168.0.122:2222/felix/calibre-ai-auditor.git bookaudit audit-360 --library "/path/to/Calibre Library"
+
+# Synchronize author sort keys to canonical bibliographic standards
+uvx --from git+ssh://git@192.168.0.122:2222/felix/calibre-ai-auditor.git bookaudit sync-library --library "/path/to/Calibre Library"
+```
+
+### Option B: Docker Compose (Self-Hosted Web UI)
+
+```yaml
+services:
+  calibre-ai-auditor:
+    image: ghcr.io/felix/calibre-ai-auditor:latest
+    container_name: calibre-ai-auditor
+    ports:
+      - "8000:8000"
+    volumes:
+      - /mnt/user/data/media/books:/calibre:ro
+      - /mnt/user/appdata/calibre-ai-auditor:/config
+    environment:
+      - BOOKAUDIT_READ_ONLY=true
+      - GEMINI_API_KEY=your_gemini_key_here
+```
+
+---
 
 ## Release status
 

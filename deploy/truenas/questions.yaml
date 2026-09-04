@@ -1,0 +1,31 @@
+questions:
+  - variable: PORT
+    label: "WebUI Port"
+    schema:
+      type: int
+      default: 8000
+      required: true
+  - variable: CALIBRE_LIBRARY_PATH
+    label: "Host Path to Calibre Library"
+    description: "Directory path where Calibre metadata.db is located"
+    schema:
+      type: path
+      required: true
+  - variable: CONFIG_PATH
+    label: "Host Path for Config & Artifacts"
+    description: "Directory for persistent cache, audit snapshots and logs"
+    schema:
+      type: path
+      required: true
+  - variable: READ_ONLY
+    label: "Read Only Mode"
+    description: "Enforce zero-risk read-only audits (recommended for initial deployment)"
+    schema:
+      type: boolean
+      default: true
+  - variable: GEMINI_API_KEY
+    label: "Gemini API Key"
+    description: "Google Gemini 3.8 Flash key for AI vision cover and metadata cross-checking"
+    schema:
+      type: string
+      private: true

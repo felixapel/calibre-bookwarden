@@ -228,8 +228,10 @@ class VisionVerifier:
             f"Expected Author(s): {authors_str}\n\n"
             "Evaluate:\n"
             "1. matches_book (boolean): True if this is an authentic, legitimate cover for this book. "
-            "False if it depicts an entirely different book, author, religious mismatch (e.g. Jesus on Prometheus Bound), or unrelated subject.\n"
-            "2. visual_quality (string: 'high', 'medium', 'low', 'unusable'): High if crisp official publisher cover, low if ugly flat plain text or heavily pixelated thumbnail.\n"
+            "False if it depicts an entirely different book, author, religious mismatch "
+            "(e.g. Jesus on Prometheus Bound), or unrelated subject.\n"
+            "2. visual_quality (string: 'high', 'medium', 'low', 'unusable'): High if crisp official publisher "
+            "cover, low if ugly flat plain text or heavily pixelated thumbnail.\n"
             "3. detected_title (string): Exact title visible on cover.\n"
             "4. detected_author (string): Exact author visible on cover.\n"
             "5. confidence (number: 0.0 to 1.0).\n"
@@ -246,7 +248,14 @@ class VisionVerifier:
                 "confidence": {"type": "number"},
                 "reason": {"type": "string"},
             },
-            "required": ["matches_book", "visual_quality", "detected_title", "detected_author", "confidence", "reason"],
+            "required": [
+                "matches_book",
+                "visual_quality",
+                "detected_title",
+                "detected_author",
+                "confidence",
+                "reason",
+            ],
             "additionalProperties": False,
         }
 
@@ -257,7 +266,10 @@ class VisionVerifier:
 
         req = LLMRequest(
             model=self.settings.vision_model,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": cast(Any, user_content)}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": cast(Any, user_content)},
+            ],
             temperature=0.0,
             json_schema=True,
         )
@@ -267,11 +279,11 @@ class VisionVerifier:
             if isinstance(resp.content, dict):
                 return resp.content
             import json
+
             return cast(dict[str, Any], json.loads(resp.content))
         except Exception as exc:
             logger.error(f"Cross check cover alignment failed: {exc}")
             return None
-
 
 
 async def verify_comic_cover(vision_verifier: VisionVerifier, cover_path: Path) -> dict[str, Any] | None:

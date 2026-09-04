@@ -9,15 +9,17 @@ author-sort synchronization, and foreign key saneamiento.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
 import sqlite3
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
+
+from calibre_ai_auditor.rules.authority import compute_author_sort
 
 logger = logging.getLogger(__name__)
 
@@ -74,50 +76,8 @@ def calibre_title_sort(title: str | None) -> str:
 
 
 def calibre_author_sort(author: str | None) -> str:
-    """Emulates canonical author_sort algorithm (Inverted Order: Last, First)."""
-    if not author:
-        return ""
-    a = author.strip()
-    if not a:
-        return ""
-
-    # Handle institutional / periodicals
-    a_lower = a.lower()
-    if a_lower in ("the economist", "the new yorker", "the wall street journal", "the guardian"):
-        parts = a.split(" ", 1)
-        return f"{parts[1]}, {parts[0]}"
-    if a_lower in ("financial times", "der spiegel", "spiegel online", "nature", "lonely planet"):
-        return a
-
-    # Already inverted
-    if "," in a:
-        return a
-
-    # Classical & ecclesiastical prefixes
-    if a.startswith("Saint ") or a.startswith("St. ") or a.startswith("San "):
-        clean = re.sub(r"^(Saint|St\.|San)\s+", "", a)
-        return f"{clean}, Saint"
-    if a.startswith("Pope ") or a.startswith("Papa "):
-        clean = re.sub(r"^(Pope|Papa)\s+", "", a)
-        return f"{clean}, Pope"
-
-    words = a.split()
-    if len(words) == 1:
-        return words[0]
-
-    # Check for particles in second-to-last word
-    if len(words) >= 3 and words[-2].lower() in NOBLE_PARTICLES:
-        surname = f"{words[-2]} {words[-1]}"
-        given = " ".join(words[:-2])
-        return f"{surname}, {given}"
-    if len(words) >= 4 and f"{words[-3].lower()} {words[-2].lower()}" in NOBLE_PARTICLES:
-        surname = f"{words[-3]} {words[-2]} {words[-1]}"
-        given = " ".join(words[:-3])
-        return f"{surname}, {given}"
-
-    surname = words[-1]
-    given = " ".join(words[:-1])
-    return f"{surname}, {given}"
+    """Emulates canonical author_sort algorithm delegating to authority rules."""
+    return compute_author_sort(author)
 
 
 class DirectCalibreEngine:
@@ -127,28 +87,81 @@ class DirectCalibreEngine:
         if not self.db_path.exists():
             raise FileNotFoundError(f"Calibre metadata.db not found at: {self.db_path}")
 
-    def get_connection(self) -> sqlite3.Connection:
-        """Returns a connection with custom functions registered for Calibre triggers."""
-        conn = sqlite3.connect(str(self.db_path))
+    def get_connection(self, read_only: bool = False) -> sqlite3.Connection:
+        """Returns an optimized connection with custom functions registered for Calibre triggers."""
+        uri = f"file:{self.db_path.as_posix()}?mode=ro" if read_only else str(self.db_path)
+        conn = sqlite3.connect(uri, uri=read_only, timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.create_function("title_sort", 1, calibre_title_sort)
         conn.create_function("author_sort", 1, calibre_author_sort)
+        c = conn.cursor()
+        c.execute("PRAGMA busy_timeout = 30000;")
+        if read_only:
+            c.execute("PRAGMA query_only = ON;")
+        else:
+            c.execute("PRAGMA synchronous = NORMAL;")
+        c.execute("PRAGMA cache_size = -64000;")
+        c.execute("PRAGMA temp_store = MEMORY;")
         return conn
 
     def create_snapshot(self, backup_dir: Path | None = None) -> Path:
-        """Creates an atomic timestamped snapshot of metadata.db."""
+        """Creates an atomic timestamped snapshot of metadata.db via VACUUM INTO."""
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target_dir = backup_dir or self.library_path
-        os.makedirs(target_dir, exist_ok=True)
+        target_dir = Path(backup_dir) if backup_dir else self.library_path
+        target_dir.mkdir(parents=True, exist_ok=True)
         backup_path = target_dir / f"metadata.db.bak_{ts}"
-        shutil.copyfile(self.db_path, backup_path)
+        try:
+            conn = self.get_connection(read_only=True)
+            try:
+                escaped = str(backup_path).replace("'", "''")
+                conn.execute(f"VACUUM INTO '{escaped}'")
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.warning(f"VACUUM INTO snapshot failed ({exc}), falling back to file copy.")
+            shutil.copyfile(self.db_path, backup_path)
+
         logger.info(f"Created metadata.db snapshot at: {backup_path}")
         return backup_path
 
+    def stream_books(self, batch_size: int = 500) -> Iterator[dict[str, Any]]:
+        """Keyset-based streaming iterator over books. O(1) memory consumption for 100k+ libraries."""
+        conn = self.get_connection(read_only=True)
+        try:
+            c = conn.cursor()
+            last_id = 0
+            while True:
+                c.execute(
+                    """
+                    SELECT b.id, b.title, b.author_sort, b.path, b.has_cover,
+                           (SELECT GROUP_CONCAT(a.name, ' & ')
+                            FROM books_authors_link bal
+                            JOIN authors a ON a.id = bal.author
+                            WHERE bal.book = b.id) as authors,
+                           (SELECT r.rating
+                            FROM books_ratings_link brl
+                            JOIN ratings r ON r.id = brl.rating
+                            WHERE brl.book = b.id LIMIT 1) as rating
+                    FROM books b
+                    WHERE b.id > ?
+                    ORDER BY b.id ASC
+                    LIMIT ?
+                """,
+                    (last_id, batch_size),
+                )
+                rows = c.fetchall()
+                if not rows:
+                    break
+                for row in rows:
+                    last_id = row["id"]
+                    yield dict(row)
+        finally:
+            conn.close()
+
     def audit_library(self, max_image_pixels: int = 30_000_000) -> dict[str, Any]:
         """Runs a comprehensive 360-degree audit across SQLite, physical files, and covers."""
-        Image.MAX_IMAGE_PIXELS = None
-        conn = self.get_connection()
+        Image.MAX_IMAGE_PIXELS = 60_000_000
+        conn = self.get_connection(read_only=True)
         c = conn.cursor()
 
         # 1. SQLite integrity

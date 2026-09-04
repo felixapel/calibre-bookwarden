@@ -326,6 +326,13 @@ def test_export_format_rejects_symlinks_and_cleans_scratch(tmp_path: Path) -> No
     outside = tmp_path.parent / "outside.epub"
     outside.write_bytes(b"outside")
 
+    test_link = tmp_path / "probe_symlink"
+    try:
+        test_link.symlink_to(outside)
+        test_link.unlink()
+    except OSError:
+        pytest.skip("Symlink creation requires elevated privileges on this OS")
+
     def symlink_runner(command: list[str], password: str, timeout: float) -> subprocess.CompletedProcess[str]:
         target = Path(command[command.index("--to-dir") + 1])
         (target / "book.epub").symlink_to(outside)

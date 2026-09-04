@@ -112,7 +112,10 @@ class PaperlessBridge:
                 if "filename=" in disp:
                     parts = disp.split("filename=")
                     if len(parts) > 1:
-                        filename = parts[1].strip("\"'")
+                        raw_filename = parts[1].split(";")[0].strip("\"' ")
+                        safe_base = Path(raw_filename).name
+                        if safe_base and safe_base not in (".", ".."):
+                            filename = safe_base
 
                 file_path = output_dir / filename
                 with open(file_path, "wb") as f:

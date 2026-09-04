@@ -1408,7 +1408,6 @@ def writer(
             writer_guard.close()
 
 
-
 @app.command("audit-360")
 def audit_360(
     ctx: typer.Context,
@@ -1450,7 +1449,9 @@ def audit_360(
     if report["huge_covers"]:
         typer.secho("\nOversized Covers (Decompression Bombs):", fg=typer.colors.RED, bold=True)
         for h in report["huge_covers"]:
-            typer.echo(f"  [ID {h['book_id']}] {h['title']} - {h['dimensions']} ({h['size_bytes']/1024/1024:.2f} MB)")
+            typer.echo(
+                f"  [ID {h['book_id']}] {h['title']} - {h['dimensions']} ({h['size_bytes'] / 1024 / 1024:.2f} MB)"
+            )
 
 
 @app.command("optimize-covers")
@@ -1469,7 +1470,7 @@ def optimize_covers_cmd(
     typer.echo(f"Scanning for oversized covers in: {lib_path}")
     res = optimizer.scan_and_optimize_all()
 
-    typer.secho(f"\nOptimization complete!", fg=typer.colors.GREEN, bold=True)
+    typer.secho("\nOptimization complete!", fg=typer.colors.GREEN, bold=True)
     typer.echo(f"Oversized covers found: {len(res['bombs_detected'])}")
     typer.echo(f"Covers optimized:       {res['optimized_count']}")
     typer.echo(f"Total disk space saved: {res['saved_mb']} MB")
@@ -1479,7 +1480,9 @@ def optimize_covers_cmd(
 def sync_library_cmd(
     ctx: typer.Context,
     library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
-    purge_empty: Annotated[bool, typer.Option("--purge-empty", help="Purge empty book records without formats")] = False,
+    purge_empty: Annotated[
+        bool, typer.Option("--purge-empty", help="Purge empty book records without formats")
+    ] = False,
 ) -> None:
     """Synchronize author sort keys, purge orphaned foreign keys, and clean empty records."""
     settings: Settings = ctx.obj
@@ -1523,7 +1526,10 @@ def curate_periodicals_cmd(
 
     c.execute("""
         SELECT b.id, b.title,
-               (SELECT GROUP_CONCAT(a.name, ' & ') FROM books_authors_link bal JOIN authors a ON a.id = bal.author WHERE bal.book = b.id) as authors
+               (SELECT GROUP_CONCAT(a.name, ' & ')
+                FROM books_authors_link bal
+                JOIN authors a ON a.id = bal.author
+                WHERE bal.book = b.id) as authors
         FROM books b
     """)
     all_books = c.fetchall()
@@ -1541,7 +1547,10 @@ def curate_periodicals_cmd(
             if a_row:
                 aid = a_row[0]
             else:
-                c.execute("INSERT INTO authors (name, sort, link) VALUES (?, ?, '')", (rule.canonical_author, rule.canonical_sort))
+                c.execute(
+                    "INSERT INTO authors (name, sort, link) VALUES (?, ?, '')",
+                    (rule.canonical_author, rule.canonical_sort),
+                )
                 aid = c.lastrowid
             c.execute("DELETE FROM books_authors_link WHERE book = ?", (bid,))
             c.execute("INSERT INTO books_authors_link (book, author) VALUES (?, ?)", (bid, aid))
@@ -1570,7 +1579,10 @@ def curate_periodicals_cmd(
                     c.execute("INSERT INTO books_tags_link (book, tag) VALUES (?, ?)", (bid, tid))
 
             curated_count += 1
-            typer.echo(f"  [ID {bid}] '{title[:35]}' -> Author: '{rule.canonical_author}', Rating: {rule.default_rating/2:.1f}")
+            typer.echo(
+                f"  [ID {bid}] '{title[:30]}' -> Author: '{rule.canonical_author}', "
+                f"Rating: {rule.default_rating / 2:.1f}"
+            )
 
     conn.commit()
     conn.close()
@@ -1601,17 +1613,29 @@ def full_audit_run_cmd(
 
     # 2. 360 Audit
     report = engine.audit_library()
-    typer.secho(f"2. Audit completed: {report['total_books']} books, {report['huge_covers_count']} oversized covers, {report['author_desyncs_count']} sort desyncs.", fg=typer.colors.CYAN)
+    typer.secho(
+        f"2. Audit completed: {report['total_books']} books, "
+        f"{report['huge_covers_count']} oversized covers, "
+        f"{report['author_desyncs_count']} sort desyncs.",
+        fg=typer.colors.CYAN,
+    )
 
     # 3. Optimize covers
     optimizer = CoverOptimizer(lib_path)
     opt_res = optimizer.scan_and_optimize_all()
-    typer.secho(f"3. Cover optimization: {opt_res['optimized_count']} oversized covers normalized ({opt_res['saved_mb']} MB saved).", fg=typer.colors.GREEN)
+    typer.secho(
+        f"3. Cover optimization: {opt_res['optimized_count']} oversized covers normalized "
+        f"({opt_res['saved_mb']} MB saved).",
+        fg=typer.colors.GREEN,
+    )
 
     # 4. Synchronize author sort and purge orphan FKs
     updated = engine.sync_all_author_sorts()
     purged_fk = engine.purge_orphan_foreign_keys()
-    typer.secho(f"4. Authorities synchronized: {updated} author_sorts updated, orphan FKs cleaned.", fg=typer.colors.GREEN)
+    typer.secho(
+        f"4. Authorities synchronized: {updated} author_sorts updated, {purged_fk} orphan FKs cleaned.",
+        fg=typer.colors.GREEN,
+    )
 
     # 5. Purge Calibre-Web thumbnail cache if requested
     if purge_calibre_web:
@@ -1624,4 +1648,3 @@ def full_audit_run_cmd(
 
 if __name__ == "__main__":
     app()
-

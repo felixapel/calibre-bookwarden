@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>calibre-ai-auditor</Name>
+  <Repository>ghcr.io/felix/calibre-ai-auditor:latest</Repository>
+  <Registry>https://github.com/felix/calibre-ai-auditor/pkgs/container/calibre-ai-auditor</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/felix/calibre-ai-auditor/issues</Support>
+  <Project>https://github.com/felix/calibre-ai-auditor</Project>
+  <Overview>Content-Grounded Metadata and Cover Verification Engine for Calibre libraries. The book file is the ground truth, LLMs are witnesses. Zero hallucinations, read-only 360-degree forensic audits, Cover Tinder UI, and surgical rollbacks.</Overview>
+  <Category>Productivity: MediaApp:Books Status:Stable</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/felix/calibre-ai-auditor/main/deploy/unraid/calibre-ai-auditor.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/felix/calibre-ai-auditor/main/docs/assets/logo.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Calibre Library directory (read-only or read-write)</Requires>
+  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="Port for WebUI and REST API" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="Calibre Library Path" Target="/calibre" Default="/mnt/user/data/media/books" Mode="rw" Description="Path to your Calibre Library root containing metadata.db" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/media/books</Config>
+  <Config Name="Config &amp; Artifacts Path" Target="/config" Default="/mnt/user/appdata/calibre-ai-auditor" Mode="rw" Description="Persistent storage for audit reports, restore points, and local cache" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/calibre-ai-auditor</Config>
+  <Config Name="Read Only Mode" Target="BOOKAUDIT_READ_ONLY" Default="true" Description="When true, mutations are strictly blocked (safe for zero-risk inspection)" Type="Variable" Display="always" Required="true" Mask="false">true</Config>
+  <Config Name="Gemini API Key" Target="GEMINI_API_KEY" Default="" Description="Google Gemini API Key for multimodal cover verification (Gemini 3.8 Flash)" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="OpenAI API Key" Target="OPENAI_API_KEY" Default="" Description="Optional OpenAI API Key for fallback LLM witness" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Calibre-Web Container Name" Target="CALIBRE_WEB_CONTAINER" Default="calibre-web-automated" Description="Docker container name for Calibre-Web thumbnail cache purge" Type="Variable" Display="advanced" Required="false" Mask="false">calibre-web-automated</Config>
+</Container>

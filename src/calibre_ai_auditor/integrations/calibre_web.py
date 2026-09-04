@@ -8,12 +8,15 @@ caching or visual glitches.
 from __future__ import annotations
 
 import logging
-import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_CONTAINER_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$")
+_HOST_RE = re.compile(r"^[a-zA-Z0-9._-]+(@[a-zA-Z0-9._-]+)?$")
 
 
 class CalibreWebIntegration:
@@ -24,6 +27,11 @@ class CalibreWebIntegration:
         ssh_host: str | None = None,
         ssh_key: str | None = None,
     ):
+        if not _CONTAINER_RE.fullmatch(container_name):
+            raise ValueError(f"Invalid container name: {container_name}")
+        if ssh_host and not _HOST_RE.fullmatch(ssh_host):
+            raise ValueError(f"Invalid SSH host format: {ssh_host}")
+
         self.thumbnails_dir = Path(thumbnails_dir) if thumbnails_dir else None
         self.container_name = container_name
         self.ssh_host = ssh_host
@@ -48,26 +56,47 @@ class CalibreWebIntegration:
         return count
 
     def purge_and_reload_remote(self) -> bool:
-        """Purges thumbnails inside container and restarts Calibre-Web via Docker or SSH."""
-        cmd_str = (
-            f"docker exec -i {self.container_name} sh -c 'rm -rf /config/thumbnails/*' "
-            f"&& docker restart {self.container_name}"
-        )
-        if self.ssh_host:
-            full_cmd = ["ssh"]
-            if self.ssh_key:
-                full_cmd.extend(["-i", self.ssh_key])
-            full_cmd.extend([self.ssh_host, cmd_str])
-        else:
-            full_cmd = ["sh", "-c", cmd_str] if os.name != "nt" else ["cmd", "/c", cmd_str]
-
+        """Purges thumbnails inside container and restarts Calibre-Web safely."""
         try:
-            logger.info(f"Triggering Calibre-Web cache purge and reload on {self.container_name}...")
-            res = subprocess.run(full_cmd, capture_output=True, text=True, timeout=30)
-            if res.returncode == 0:
+            logger.info(f"Triggering Calibre-Web cache purge on {self.container_name}...")
+            if self.ssh_host:
+                ssh_args = ["ssh"]
+                if self.ssh_key:
+                    ssh_args.extend(["-i", self.ssh_key])
+                ssh_args.extend(
+                    [
+                        self.ssh_host,
+                        (
+                            f"docker exec {self.container_name} rm -rf /config/thumbnails/* && "
+                            f"docker restart {self.container_name}"
+                        ),
+                    ]
+                )
+                res = subprocess.run(ssh_args, capture_output=True, text=True, timeout=30)
+                return res.returncode == 0
+
+            # Safe local execution without host shell invocation
+            purge_cmd = [
+                "docker",
+                "exec",
+                self.container_name,
+                "sh",
+                "-c",
+                "rm -rf /config/thumbnails/*",
+            ]
+            restart_cmd = ["docker", "restart", self.container_name]
+
+            res_purge = subprocess.run(purge_cmd, capture_output=True, text=True, timeout=15)
+            if res_purge.returncode != 0:
+                logger.warning(
+                    f"Purge thumbnails command returned non-zero code {res_purge.returncode}: {res_purge.stderr}"
+                )
+
+            res_restart = subprocess.run(restart_cmd, capture_output=True, text=True, timeout=15)
+            if res_restart.returncode == 0:
                 logger.info("Calibre-Web thumbnail cache purged and service restarted successfully.")
                 return True
-            logger.warning(f"Calibre-Web reload returned non-zero code {res.returncode}: {res.stderr}")
+            logger.warning(f"Calibre-Web restart returned non-zero code {res_restart.returncode}: {res_restart.stderr}")
             return False
         except Exception as exc:
             logger.warning(f"Could not reload Calibre-Web: {exc}")

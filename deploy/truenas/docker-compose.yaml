@@ -1,0 +1,17 @@
+services:
+  calibre-ai-auditor:
+    image: ghcr.io/felix/calibre-ai-auditor:latest
+    container_name: calibre-ai-auditor
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - BOOKAUDIT_LIBRARY_PATH=/calibre
+      - BOOKAUDIT_STORAGE_ARTIFACTS_DIR=/config
+      - BOOKAUDIT_READ_ONLY=${READ_ONLY:-true}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - CALIBRE_WEB_CONTAINER=${CALIBRE_WEB_CONTAINER:-calibre-web-automated}
+    volumes:
+      - ${CALIBRE_LIBRARY_PATH}:/calibre:ro
+      - ${CONFIG_PATH}:/config

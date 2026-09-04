@@ -56,8 +56,8 @@ def _create_sealable_memfd() -> int:
         except Exception:
             pass
     # Windows or non-Linux fallback: anonymous temp file descriptor
-    tmp = tempfile.TemporaryFile()
-    return os.dup(tmp.fileno())
+    with tempfile.TemporaryFile() as tmp:
+        return os.dup(tmp.fileno())
 
 
 def _absolute_lexical(path: Path) -> Path:
@@ -98,6 +98,11 @@ def _open_directory_from_root(path: Path, *, create: bool = False, mode: int = 0
 def ensure_secure_directory(path: Path, *, mode: int = 0o700) -> Path:
     """Create/open a directory without following a symlink in any component."""
     absolute = _absolute_lexical(path)
+    if sys.platform == "win32":
+        os.makedirs(absolute, exist_ok=True)
+        if absolute.is_symlink():
+            raise SecurePathError(f"unsafe or symlinked directory component in {absolute}")
+        return absolute
     descriptor = _open_directory_from_root(absolute, create=True, mode=mode)
     os.close(descriptor)
     return absolute
