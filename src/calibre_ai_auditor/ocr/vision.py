@@ -199,6 +199,80 @@ class VisionVerifier:
             logger.error(f"Vision cover verification failed: {e}")
             return None
 
+    async def cross_check_cover_alignment(
+        self,
+        cover_path: Path,
+        expected_title: str,
+        expected_authors: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Multimodal cross-check with Gemini 3.8 Flash:
+        Verifies if cover art and text legitimately match the declared book title and authors.
+        Detects mismatched covers (e.g. Jesus on Prometheus Bound, unrelated textbooks, or broken art).
+        """
+        if not cover_path.exists():
+            return None
+
+        try:
+            with open(cover_path, "rb") as f:
+                img_data = base64.b64encode(f.read()).decode("utf-8")
+        except Exception as e:
+            logger.error(f"Failed to encode cover: {e}")
+            return None
+
+        authors_str = ", ".join(expected_authors) if expected_authors else "Unknown"
+        system_prompt = (
+            "You are an expert bibliophile and book cover forensic auditor. "
+            "Examine this book cover image and determine if it legitimately belongs to the declared book:\n"
+            f"Expected Title: {expected_title}\n"
+            f"Expected Author(s): {authors_str}\n\n"
+            "Evaluate:\n"
+            "1. matches_book (boolean): True if this is an authentic, legitimate cover for this book. "
+            "False if it depicts an entirely different book, author, religious mismatch (e.g. Jesus on Prometheus Bound), or unrelated subject.\n"
+            "2. visual_quality (string: 'high', 'medium', 'low', 'unusable'): High if crisp official publisher cover, low if ugly flat plain text or heavily pixelated thumbnail.\n"
+            "3. detected_title (string): Exact title visible on cover.\n"
+            "4. detected_author (string): Exact author visible on cover.\n"
+            "5. confidence (number: 0.0 to 1.0).\n"
+            "6. reason (string): Concise explanation of your judgment."
+        )
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "matches_book": {"type": "boolean"},
+                "visual_quality": {"type": "string", "enum": ["high", "medium", "low", "unusable"]},
+                "detected_title": {"type": "string"},
+                "detected_author": {"type": "string"},
+                "confidence": {"type": "number"},
+                "reason": {"type": "string"},
+            },
+            "required": ["matches_book", "visual_quality", "detected_title", "detected_author", "confidence", "reason"],
+            "additionalProperties": False,
+        }
+
+        user_content = [
+            {"type": "text", "text": "Analyze whether this cover matches the declared book title and authors."},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_data}"}},
+        ]
+
+        req = LLMRequest(
+            model=self.settings.vision_model,
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": cast(Any, user_content)}],
+            temperature=0.0,
+            json_schema=True,
+        )
+
+        try:
+            resp = await self.router.execute_structured("vision", req, schema)
+            if isinstance(resp.content, dict):
+                return resp.content
+            import json
+            return cast(dict[str, Any], json.loads(resp.content))
+        except Exception as exc:
+            logger.error(f"Cross check cover alignment failed: {exc}")
+            return None
+
+
 
 async def verify_comic_cover(vision_verifier: VisionVerifier, cover_path: Path) -> dict[str, Any] | None:
     """

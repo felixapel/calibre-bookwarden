@@ -92,7 +92,7 @@ class GoogleProvider(LLMProvider):
         if request.max_tokens:
             config.max_output_tokens = request.max_tokens
 
-        model = request.model or "gemini-2.5-flash"
+        model = request.model or "gemini-3.8-flash"
         try:
             response = await self.client.aio.models.generate_content(  # type: ignore[attr-defined]
                 model=model,
@@ -116,7 +116,7 @@ class GoogleProvider(LLMProvider):
         if request.max_tokens:
             config.max_output_tokens = request.max_tokens
 
-        model = request.model or "gemini-2.5-flash"
+        model = request.model or "gemini-3.8-flash"
         try:
             response = await self.client.aio.models.generate_content(
                 model=model,

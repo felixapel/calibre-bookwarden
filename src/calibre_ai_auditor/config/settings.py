@@ -229,8 +229,8 @@ class Settings(BaseSettings):
         "http://localhost:1234/v1",
         validation_alias=AliasChoices("BOOKAUDIT_LMSTUDIO_BASE_URL", "LMSTUDIO_BASE_URL"),
     )
-    judge_model: str = "gemma4:e4b-it-q4_K_M"
-    vision_model: str = "gemma4:e4b-it-q4_K_M"
+    judge_model: str = "gemini-3.8-flash"
+    vision_model: str = "gemini-3.8-flash"
     log_level: str = "INFO"
     log_json: bool = False
     api_key: SecretStr | None = Field(

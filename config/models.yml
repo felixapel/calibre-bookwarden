@@ -1,16 +1,22 @@
 # Model Routing Configuration for Calibre AI Auditor
 
 default_providers:
-  deep_reasoning: ollama
+  deep_reasoning: google
+  vision: google
   embeddings: ollama
 
 models:
   deep_reasoning:
+    google: "gemini-3.8-flash"
     openai: "gpt-4o-mini"
     ollama: "gemma4:e4b-it-q4_K_M"
-    google: "gemini-2.5-flash"
     lmstudio: "meta-llama-3-8b-instruct"
   
+  vision:
+    google: "gemini-3.8-flash"
+    openai: "gpt-4o-mini"
+    ollama: "llava"
+
   embeddings:
     openai: "text-embedding-3-small"
     ollama: "nomic-embed-text"

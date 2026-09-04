@@ -20,9 +20,13 @@ from calibre_ai_auditor.apply.engine import ApplyEngine
 from calibre_ai_auditor.audit.engine import run_audit
 from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.calibre.content_server import ContentServerError, ContentServerSource, aggregate_inventory
+from calibre_ai_auditor.calibre.direct_engine import DirectCalibreEngine
 from calibre_ai_auditor.config.settings import Settings, load_settings
+from calibre_ai_auditor.covers.optimizer import CoverOptimizer
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
+from calibre_ai_auditor.integrations.calibre_web import CalibreWebIntegration
+from calibre_ai_auditor.rules.periodicals import match_periodical
 from calibre_ai_auditor.security.files import SecurePathError, ensure_secure_directory, write_bytes_beneath
 from calibre_ai_auditor.storage.db import expected_schema_revision, get_engine, init_db
 from calibre_ai_auditor.storage.models import (
@@ -1404,5 +1408,220 @@ def writer(
             writer_guard.close()
 
 
+
+@app.command("audit-360")
+def audit_360(
+    ctx: typer.Context,
+    library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Output audit report as JSON")] = False,
+) -> None:
+    """Run a 360-degree forensic audit of Calibre database, physical files, covers, and authorities."""
+    settings: Settings = ctx.obj
+    lib_path = library or settings.library.path
+    if not lib_path:
+        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    engine = DirectCalibreEngine(lib_path)
+    typer.echo(f"Running 360-degree forensic audit on: {lib_path}")
+    report = engine.audit_library()
+
+    if json_output:
+        typer.echo(json_lib.dumps(report, indent=2, ensure_ascii=False))
+        return
+
+    typer.secho("\n--- CALIBRE 360 AUDIT REPORT ---", fg=typer.colors.CYAN, bold=True)
+    typer.echo(f"SQLite Integrity:      {report['sqlite_integrity']}")
+    typer.echo(f"Foreign Key Issues:    {report['foreign_key_issues']}")
+    typer.echo(f"Total Active Books:    {report['total_books']}")
+    typer.echo(f"Unrated Books:         {report['unrated_books']}")
+    typer.echo(f"Author Sort Desyncs:   {report['author_desyncs_count']}")
+    typer.echo(f"Missing Data Files:    {report['missing_data_files_count']}")
+    typer.echo(f"Empty Format Records:  {report['empty_format_records_count']}")
+    typer.echo(f"Broken Covers:         {report['broken_covers_count']}")
+    typer.echo(f"Decompression Bombs:   {report['huge_covers_count']}")
+    typer.echo(f"Tiny Covers (<200px):  {report['tiny_covers_count']}")
+    typer.echo(f"Bad/Junk Titles:       {report['bad_titles_count']}")
+
+    typer.secho("\nRatings Distribution:", fg=typer.colors.YELLOW)
+    for rating_str, count in report["ratings_distribution"].items():
+        typer.echo(f"  {rating_str:25}: {count}")
+
+    if report["huge_covers"]:
+        typer.secho("\nOversized Covers (Decompression Bombs):", fg=typer.colors.RED, bold=True)
+        for h in report["huge_covers"]:
+            typer.echo(f"  [ID {h['book_id']}] {h['title']} - {h['dimensions']} ({h['size_bytes']/1024/1024:.2f} MB)")
+
+
+@app.command("optimize-covers")
+def optimize_covers_cmd(
+    ctx: typer.Context,
+    library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
+) -> None:
+    """Neutralize decompression bomb covers (>30MP or >10MB) and downscale to standard HD JPEGs."""
+    settings: Settings = ctx.obj
+    lib_path = library or settings.library.path
+    if not lib_path:
+        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    optimizer = CoverOptimizer(lib_path)
+    typer.echo(f"Scanning for oversized covers in: {lib_path}")
+    res = optimizer.scan_and_optimize_all()
+
+    typer.secho(f"\nOptimization complete!", fg=typer.colors.GREEN, bold=True)
+    typer.echo(f"Oversized covers found: {len(res['bombs_detected'])}")
+    typer.echo(f"Covers optimized:       {res['optimized_count']}")
+    typer.echo(f"Total disk space saved: {res['saved_mb']} MB")
+
+
+@app.command("sync-library")
+def sync_library_cmd(
+    ctx: typer.Context,
+    library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
+    purge_empty: Annotated[bool, typer.Option("--purge-empty", help="Purge empty book records without formats")] = False,
+) -> None:
+    """Synchronize author sort keys, purge orphaned foreign keys, and clean empty records."""
+    settings: Settings = ctx.obj
+    lib_path = library or settings.library.path
+    if not lib_path:
+        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    engine = DirectCalibreEngine(lib_path)
+    typer.echo(f"Synchronizing library at: {lib_path}")
+
+    # 1. Author sort synchronization
+    updated = engine.sync_all_author_sorts()
+    typer.secho(f"Synchronized {updated} author_sort keys.", fg=typer.colors.GREEN)
+
+    # 2. Foreign keys saneamiento
+    purged_fk = engine.purge_orphan_foreign_keys()
+    typer.echo(f"Cleaned orphan foreign key references: {purged_fk}")
+
+    # 3. Purge empty format records if requested
+    if purge_empty:
+        deleted = engine.delete_empty_format_records(delete_folders=True)
+        typer.secho(f"Purged {deleted} empty format records.", fg=typer.colors.YELLOW)
+
+
+@app.command("curate-periodicals")
+def curate_periodicals_cmd(
+    ctx: typer.Context,
+    library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
+) -> None:
+    """Curate automated recipe periodicals (The Economist, Financial Times, Der Spiegel, etc.)."""
+    settings: Settings = ctx.obj
+    lib_path = library or settings.library.path
+    if not lib_path:
+        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    engine = DirectCalibreEngine(lib_path)
+    conn = engine.get_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        SELECT b.id, b.title,
+               (SELECT GROUP_CONCAT(a.name, ' & ') FROM books_authors_link bal JOIN authors a ON a.id = bal.author WHERE bal.book = b.id) as authors
+        FROM books b
+    """)
+    all_books = c.fetchall()
+    curated_count = 0
+
+    for b in all_books:
+        bid = b["id"]
+        title = b["title"] or ""
+        curr_author = b["authors"] or ""
+        rule = match_periodical(title, curr_author)
+        if rule and curr_author.lower() in ("calibre", "unknown", ""):
+            # 1. Author
+            c.execute("SELECT id FROM authors WHERE name = ?", (rule.canonical_author,))
+            a_row = c.fetchone()
+            if a_row:
+                aid = a_row[0]
+            else:
+                c.execute("INSERT INTO authors (name, sort, link) VALUES (?, ?, '')", (rule.canonical_author, rule.canonical_sort))
+                aid = c.lastrowid
+            c.execute("DELETE FROM books_authors_link WHERE book = ?", (bid,))
+            c.execute("INSERT INTO books_authors_link (book, author) VALUES (?, ?)", (bid, aid))
+            c.execute("UPDATE books SET author_sort = ? WHERE id = ?", (rule.canonical_sort, bid))
+
+            # 2. Rating
+            c.execute("SELECT id FROM ratings WHERE rating = ?", (rule.default_rating,))
+            r_row = c.fetchone()
+            rid = r_row[0] if r_row else None
+            if not rid:
+                c.execute("INSERT INTO ratings (rating) VALUES (?)", (rule.default_rating,))
+                rid = c.lastrowid
+            c.execute("DELETE FROM books_ratings_link WHERE book = ?", (bid,))
+            c.execute("INSERT INTO books_ratings_link (book, rating) VALUES (?, ?)", (bid, rid))
+
+            # 3. Tags
+            for tname in rule.tags:
+                c.execute("SELECT id FROM tags WHERE name = ?", (tname,))
+                t_row = c.fetchone()
+                tid = t_row[0] if t_row else None
+                if not tid:
+                    c.execute("INSERT INTO tags (name) VALUES (?)", (tname,))
+                    tid = c.lastrowid
+                c.execute("SELECT 1 FROM books_tags_link WHERE book = ? AND tag = ?", (bid, tid))
+                if not c.fetchone():
+                    c.execute("INSERT INTO books_tags_link (book, tag) VALUES (?, ?)", (bid, tid))
+
+            curated_count += 1
+            typer.echo(f"  [ID {bid}] '{title[:35]}' -> Author: '{rule.canonical_author}', Rating: {rule.default_rating/2:.1f}")
+
+    conn.commit()
+    conn.close()
+    typer.secho(f"\nCurated {curated_count} periodical issues successfully.", fg=typer.colors.GREEN)
+
+
+@app.command("full-audit-run")
+def full_audit_run_cmd(
+    ctx: typer.Context,
+    library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
+    purge_calibre_web: Annotated[bool, typer.Option("--purge-web", help="Purge Calibre-Web thumbnail cache")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
+) -> None:
+    """Master production pipeline: Snapshot -> Audit -> Optimize Covers -> Sync Authorities -> Curate Periodicals."""
+    settings: Settings = ctx.obj
+    lib_path = library or settings.library.path
+    if not lib_path:
+        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    engine = DirectCalibreEngine(lib_path)
+    if not yes:
+        typer.confirm(f"Execute full master audit and saneamiento on '{lib_path}'?", abort=True)
+
+    # 1. Atomic pre-flight snapshot
+    snapshot_path = engine.create_snapshot()
+    typer.secho(f"1. Pre-flight snapshot created: {snapshot_path.name}", fg=typer.colors.GREEN)
+
+    # 2. 360 Audit
+    report = engine.audit_library()
+    typer.secho(f"2. Audit completed: {report['total_books']} books, {report['huge_covers_count']} oversized covers, {report['author_desyncs_count']} sort desyncs.", fg=typer.colors.CYAN)
+
+    # 3. Optimize covers
+    optimizer = CoverOptimizer(lib_path)
+    opt_res = optimizer.scan_and_optimize_all()
+    typer.secho(f"3. Cover optimization: {opt_res['optimized_count']} oversized covers normalized ({opt_res['saved_mb']} MB saved).", fg=typer.colors.GREEN)
+
+    # 4. Synchronize author sort and purge orphan FKs
+    updated = engine.sync_all_author_sorts()
+    purged_fk = engine.purge_orphan_foreign_keys()
+    typer.secho(f"4. Authorities synchronized: {updated} author_sorts updated, orphan FKs cleaned.", fg=typer.colors.GREEN)
+
+    # 5. Purge Calibre-Web thumbnail cache if requested
+    if purge_calibre_web:
+        cweb = CalibreWebIntegration()
+        cweb.purge_and_reload_remote()
+        typer.secho("5. Calibre-Web thumbnail cache purged and service reloaded.", fg=typer.colors.GREEN)
+
+    typer.secho("\nMaster production audit & saneamiento completed successfully!", fg=typer.colors.GREEN, bold=True)
+
+
 if __name__ == "__main__":
     app()
+

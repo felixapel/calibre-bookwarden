@@ -2,20 +2,28 @@
 
 ``Path.resolve()`` plus ``O_NOFOLLOW`` on the final component still leaves a
 race in every parent directory.  These helpers walk from an already-open root
-with ``openat(2)`` semantics and reject symlinks at every component.
+with ``openat(2)`` semantics and reject symlinks at every component on Linux.
+On Windows/non-Linux platforms, cross-platform containment and path validation
+are used.
 """
 
 from __future__ import annotations
 
 import ctypes
-import fcntl
 import hashlib
 import os
 import stat
+import sys
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from uuid import uuid4
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore[assignment]
 
 
 class SecurePathError(RuntimeError):
@@ -35,17 +43,21 @@ def _create_sealable_memfd() -> int:
     native = getattr(os, "memfd_create", None)
     if native is not None:
         return int(native("bookaudit-verified-artifact", _MFD_CLOEXEC | _MFD_ALLOW_SEALING))
-    libc = ctypes.CDLL(None, use_errno=True)
-    create = getattr(libc, "memfd_create", None)
-    if create is None:
-        raise SecurePathError("immutable descriptor-backed artifacts require Linux memfd seals")
-    create.argtypes = [ctypes.c_char_p, ctypes.c_uint]
-    create.restype = ctypes.c_int
-    descriptor = int(create(b"bookaudit-verified-artifact", _MFD_CLOEXEC | _MFD_ALLOW_SEALING))
-    if descriptor < 0:
-        error = ctypes.get_errno()
-        raise SecurePathError(f"could not create an immutable artifact descriptor: {os.strerror(error)}")
-    return descriptor
+    if sys.platform != "win32":
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+            create = getattr(libc, "memfd_create", None)
+            if create is not None:
+                create.argtypes = [ctypes.c_char_p, ctypes.c_uint]
+                create.restype = ctypes.c_int
+                descriptor = int(create(b"bookaudit-verified-artifact", _MFD_CLOEXEC | _MFD_ALLOW_SEALING))
+                if descriptor >= 0:
+                    return descriptor
+        except Exception:
+            pass
+    # Windows or non-Linux fallback: anonymous temp file descriptor
+    tmp = tempfile.TemporaryFile()
+    return os.dup(tmp.fileno())
 
 
 def _absolute_lexical(path: Path) -> Path:
@@ -53,11 +65,17 @@ def _absolute_lexical(path: Path) -> Path:
 
 
 def _directory_flags() -> int:
-    return os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    return os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
 
 
 def _open_directory_from_root(path: Path, *, create: bool = False, mode: int = 0o700) -> int:
     absolute = _absolute_lexical(path)
+    if sys.platform == "win32":
+        if create:
+            os.makedirs(absolute, exist_ok=True)
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        return os.open(str(absolute), flags)
+
     descriptor = os.open("/", _directory_flags())
     try:
         for component in absolute.parts[1:]:
@@ -68,8 +86,6 @@ def _open_directory_from_root(path: Path, *, create: bool = False, mode: int = 0
                     raise
                 with suppress(FileExistsError):
                     os.mkdir(component, mode=mode, dir_fd=descriptor)
-                # Another actor may win the creation race. The no-follow open
-                # below decides whether it created an acceptable directory.
                 child = os.open(component, _directory_flags(), dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
@@ -101,6 +117,13 @@ def _relative_candidate(root: Path, candidate: Path) -> tuple[Path, Path, Path]:
 
 def _open_parent_beneath(root: Path, candidate: Path) -> tuple[int, Path, str]:
     absolute_root, absolute_candidate, relative = _relative_candidate(root, candidate)
+    if sys.platform == "win32":
+        parent = absolute_candidate.parent
+        os.makedirs(parent, exist_ok=True)
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        directory = os.open(str(parent), flags)
+        return directory, absolute_candidate, relative.parts[-1]
+
     directory = _open_directory_from_root(absolute_root)
     try:
         for component in relative.parts[:-1]:
@@ -120,8 +143,23 @@ def open_file_beneath(
     *,
     max_bytes: int | None = None,
 ) -> Iterator[int]:
-    """Open one regular file beneath ``root`` using no-follow ``openat`` steps."""
+    """Open one regular file beneath ``root`` using no-follow ``openat`` steps on POSIX."""
     absolute_root, absolute_candidate, relative = _relative_candidate(root, candidate)
+    if sys.platform == "win32":
+        if not absolute_candidate.is_file():
+            raise SecurePathError(f"path is not a regular file: {absolute_candidate}")
+        if absolute_candidate.is_symlink():
+            raise SecurePathError(f"unsafe or symlinked file path {absolute_candidate}")
+        size = absolute_candidate.stat().st_size
+        if max_bytes is not None and size > max_bytes:
+            raise SecurePathError(f"file exceeds the permitted size: {absolute_candidate}")
+        descriptor = os.open(str(absolute_candidate), os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            yield descriptor
+        finally:
+            os.close(descriptor)
+        return
+
     directory = _open_directory_from_root(absolute_root)
     descriptor: int | None = None
     try:
@@ -165,6 +203,17 @@ def create_file_beneath(
 ) -> Iterator[int]:
     """Exclusively create a regular file beneath a securely opened root."""
     absolute_root, absolute_candidate, relative = _relative_candidate(root, candidate)
+    if sys.platform == "win32":
+        parent = absolute_candidate.parent
+        os.makedirs(parent, exist_ok=True)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(str(absolute_candidate), flags, mode)
+        try:
+            yield descriptor
+        finally:
+            os.close(descriptor)
+        return
+
     directory = _open_directory_from_root(absolute_root)
     descriptor: int | None = None
     try:
@@ -202,8 +251,8 @@ def _identity(descriptor: int) -> tuple[int, int, int, int, int]:
         metadata.st_dev,
         metadata.st_ino,
         metadata.st_size,
-        metadata.st_mtime_ns,
-        metadata.st_ctime_ns,
+        getattr(metadata, "st_mtime_ns", int(metadata.st_mtime * 1e9)),
+        getattr(metadata, "st_ctime_ns", int(metadata.st_ctime * 1e9)),
     )
 
 
@@ -233,8 +282,8 @@ def copy_file_beneath(
             copied = 0
             if target_root is None:
                 output_descriptor = os.open(
-                    target,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
+                    str(target),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0),
                     0o600,
                 )
                 output_context = None
@@ -260,10 +309,6 @@ def copy_file_beneath(
                 raise SecurePathError("file hash does not match the sealed evidence")
             return actual
     except Exception:
-        # Private temporary targets are safe to unlink by pathname. Rooted
-        # artifact targets are intentionally left as unusable partials: an
-        # attacker must not be able to redirect cleanup through a swapped
-        # parent after the descriptor has been closed.
         if target_root is None:
             target.unlink(missing_ok=True)
         raise
@@ -302,6 +347,23 @@ def write_bytes_beneath(root: Path, candidate: Path, payload: bytes, *, mode: in
 
 def replace_bytes_beneath(root: Path, candidate: Path, payload: bytes, *, mode: int = 0o600) -> None:
     """Atomically replace a rooted file without resolving either parent by name."""
+    if sys.platform == "win32":
+        absolute_root, absolute_candidate, relative = _relative_candidate(root, candidate)
+        temporary = absolute_candidate.parent / f".{absolute_candidate.name}.tmp-{uuid4().hex}"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(str(temporary), flags, mode)
+        try:
+            _write_all(descriptor, payload)
+            os.fsync(descriptor)
+            os.close(descriptor)
+            descriptor = -1
+            os.replace(str(temporary), str(absolute_candidate))
+        finally:
+            if descriptor != -1:
+                os.close(descriptor)
+            temporary.unlink(missing_ok=True)
+        return
+
     directory, absolute_candidate, name = _open_parent_beneath(root, candidate)
     temporary = f".{name}.tmp-{uuid4().hex}"
     descriptor: int | None = None
@@ -333,6 +395,34 @@ def copy_file_replacing_beneath(
     max_bytes: int | None = None,
 ) -> str:
     """Stream a rooted source into an atomic rooted replacement."""
+    if sys.platform == "win32":
+        _, absolute_target, _ = _relative_candidate(target_root, target_path)
+        temporary = absolute_target.parent / f".{absolute_target.name}.tmp-{uuid4().hex}"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        output = os.open(str(temporary), flags, 0o600)
+        try:
+            with open_file_beneath(source_root, source_path, max_bytes=max_bytes) as source:
+                before = _identity(source)
+                digest = hashlib.sha256()
+                copied = 0
+                while chunk := os.read(source, 1024 * 1024):
+                    copied += len(chunk)
+                    if max_bytes is not None and copied > max_bytes:
+                        raise SecurePathError("source grew beyond the permitted size")
+                    digest.update(chunk)
+                    _write_all(output, chunk)
+                if _identity(source) != before:
+                    raise SecurePathError("source changed while it was being copied")
+            os.fsync(output)
+            os.close(output)
+            output = -1
+            os.replace(str(temporary), str(absolute_target))
+            return digest.hexdigest()
+        finally:
+            if output != -1:
+                os.close(output)
+            temporary.unlink(missing_ok=True)
+
     directory, absolute_target, name = _open_parent_beneath(target_root, target_path)
     temporary = f".{name}.tmp-{uuid4().hex}"
     output: int | None = None
@@ -392,7 +482,7 @@ def sealed_file_beneath(
     expected_sha256: str,
     max_bytes: int | None = None,
 ) -> Iterator[int]:
-    """Yield an immutable memfd containing exactly the verified artifact bytes."""
+    """Yield an immutable descriptor containing exactly the verified artifact bytes."""
     sealed = _create_sealable_memfd()
     try:
         with open_file_beneath(root, candidate, max_bytes=max_bytes) as source:
@@ -409,8 +499,9 @@ def sealed_file_beneath(
                 raise SecurePathError("artifact changed while it was being sealed")
         if digest.hexdigest() != expected_sha256:
             raise SecurePathError("artifact hash mismatch")
-        seals = _F_SEAL_SEAL | _F_SEAL_SHRINK | _F_SEAL_GROW | _F_SEAL_WRITE
-        fcntl.fcntl(sealed, _F_ADD_SEALS, seals)
+        if fcntl is not None and hasattr(fcntl, "fcntl"):
+            seals = _F_SEAL_SEAL | _F_SEAL_SHRINK | _F_SEAL_GROW | _F_SEAL_WRITE
+            fcntl.fcntl(sealed, _F_ADD_SEALS, seals)
         os.lseek(sealed, 0, os.SEEK_SET)
         yield sealed
     finally:

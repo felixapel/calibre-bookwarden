@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 import re
-import resource
 import shutil
 import stat
 import subprocess
