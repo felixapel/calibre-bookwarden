@@ -1,5 +1,6 @@
 """Cover optimization, forensic extraction, and multimodal vision validation."""
 
+from calibre_ai_auditor.covers.cache import LocalCoverAuditCache
 from calibre_ai_auditor.covers.extractor import (
     UnifiedCoverExtractor,
     extract_cover_from_epub,
@@ -13,6 +14,7 @@ __all__ = [
     "CoverOptimizer",
     "CoverQualityScorer",
     "CoverScoreResult",
+    "LocalCoverAuditCache",
     "SpuriousCoverDetector",
     "SpuriousCoverResult",
     "UnifiedCoverExtractor",

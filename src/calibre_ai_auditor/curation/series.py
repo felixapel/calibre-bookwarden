@@ -8,13 +8,15 @@ actionable acquisition wishlists.
 from __future__ import annotations
 
 import collections
-import json
 import logging
 import sqlite3
 from dataclasses import asdict, dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Maximum plausible gap span to prevent runaway memory allocation on corrupted index metadata
+MAX_GAP_SPAN = 200
 
 
 @dataclass
@@ -94,6 +96,13 @@ class SeriesGapHunter:
 
             # If user has only 1 book and it's volume 1, no gap known yet
             if len(int_indices) == 1 and min_idx == 1:
+                continue
+
+            # Avoid memory explosion on corrupted/unreasonable index numbers (e.g. index 99999)
+            if (max_idx - min_idx) > MAX_GAP_SPAN or max_idx > 500:
+                logger.warning(
+                    f"Series '{sdata['name']}' has abnormal volume range [{min_idx}, {max_idx}], skipping gap search."
+                )
                 continue
 
             # Expected full sequence from 1 to max_idx

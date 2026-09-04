@@ -21,12 +21,55 @@ logger = logging.getLogger(__name__)
 def _normalize_str(s: str | None) -> str:
     if not s:
         return ""
-    # Remove leading articles and punctuation
-    cleaned = re.sub(r"[^\w\s]", "", s.lower()).strip()
+    # Keep alphanumeric characters, whitespace, plus, and hash (preserving C++, C#, etc.)
+    cleaned = re.sub(r"[^\w\s+#]", "", s.lower()).strip()
     for art in ["the ", "a ", "an ", "el ", "la ", "los ", "las ", "un ", "una ", "der ", "die ", "das "]:
         if cleaned.startswith(art):
             cleaned = cleaned[len(art):].strip()
     return re.sub(r"\s+", " ", cleaned)
+
+
+def is_valid_isbn10(isbn: str) -> bool:
+    """Validates ISBN-10 with standard modulo-11 check digit."""
+    if len(isbn) != 10:
+        return False
+    if not isbn[:9].isdigit():
+        return False
+    if not (isbn[9].isdigit() or isbn[9] == "X"):
+        return False
+    total = sum((10 - i) * (10 if c == "X" else int(c)) for i, c in enumerate(isbn))
+    return total % 11 == 0
+
+
+def is_valid_isbn13(isbn: str) -> bool:
+    """Validates ISBN-13 with standard modulo-10 check digit."""
+    if len(isbn) != 13 or not isbn.isdigit():
+        return False
+    total = sum(int(c) * (1 if i % 2 == 0 else 3) for i, c in enumerate(isbn))
+    return total % 10 == 0
+
+
+def is_valid_isbn(isbn: str, strict_checksum: bool = False) -> bool:
+    """Validates ISBN structure and optionally check digit.
+
+    Rejects malformed strings, misplaced 'X', and placeholder repeating sequences.
+    """
+    clean = re.sub(r"[^\dX]", "", isbn.upper())
+    if len(clean) not in (10, 13):
+        return False
+    # Reject dummy repeating sequences like 0000000000 or 1111111111111
+    if len(set(clean)) <= 1:
+        return False
+    # 'X' is only valid as the 10th character in ISBN-10
+    if "X" in clean:
+        if len(clean) != 10 or clean[9] != "X":
+            return False
+    if strict_checksum:
+        if len(clean) == 10:
+            return is_valid_isbn10(clean)
+        elif len(clean) == 13:
+            return is_valid_isbn13(clean)
+    return True
 
 
 @dataclass
@@ -108,7 +151,7 @@ class DuplicateConsolidator:
 
             if isbn:
                 clean_isbn = re.sub(r"[^\dX]", "", isbn.upper())
-                if len(clean_isbn) in (10, 13):
+                if is_valid_isbn(clean_isbn):
                     isbn_groups[clean_isbn].append(entry)
 
         clusters: list[DuplicateCluster] = []
@@ -129,7 +172,7 @@ class DuplicateConsolidator:
                 # Check if formats are complementary (e.g. EPUB in one, PDF in another)
                 all_formats = [fmt for fmts in formats_map.values() for fmt in fmts]
                 unique_formats = set(all_formats)
-                is_complementary = len(all_formats) == len(unique_formats)
+                is_complementary = bool(all_formats) and (len(all_formats) == len(unique_formats))
 
                 rec = "MERGE_FORMATS" if is_complementary else "INSPECT_MANUALLY"
                 confidence = 0.98 if is_complementary else 0.85

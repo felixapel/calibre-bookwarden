@@ -26,6 +26,9 @@ from calibre_ai_auditor.rules.authority import compute_author_sort
 
 logger = logging.getLogger(__name__)
 
+# Configure maximum pixels for cover processing once at module load
+Image.MAX_IMAGE_PIXELS = 60_000_000
+
 
 def _safe_path(p: Path) -> Path:
     """Normalize path on Windows with extended path prefix to support paths > 260 chars."""
@@ -37,11 +40,14 @@ def _safe_path(p: Path) -> Path:
             return Path("\\\\?\\" + s)
     return p
 
-# Leading articles to invert for sorting
+
+# Canonical leading articles to invert for sorting (English, Spanish, German, French, Italian)
 LEADING_ARTICLES = [
+    # English
     "the ",
     "a ",
     "an ",
+    # Spanish
     "el ",
     "la ",
     "los ",
@@ -50,28 +56,24 @@ LEADING_ARTICLES = [
     "una ",
     "unos ",
     "unas ",
+    # German
     "der ",
     "die ",
     "das ",
     "ein ",
     "eine ",
+    # French
     "le ",
-    "la ",
     "les ",
     "l'",
-    "un ",
     "une ",
     "des ",
+    # Italian
     "il ",
     "lo ",
-    "la ",
     "i ",
     "gli ",
-    "le ",
 ]
-
-# Particles that remain with surname
-NOBLE_PARTICLES = {"von", "van", "de", "del", "della", "de la", "de los", "da", "di", "du", "des"}
 
 
 def calibre_title_sort(title: str | None) -> str:
@@ -308,7 +310,6 @@ class DirectCalibreEngine:
 
     def audit_library(self, max_image_pixels: int = 30_000_000, max_workers: int = 32) -> dict[str, Any]:
         """Runs a comprehensive 360-degree audit across SQLite, physical files, and covers."""
-        Image.MAX_IMAGE_PIXELS = 60_000_000
         conn = self.get_connection(read_only=True)
         c = conn.cursor()
 
@@ -428,7 +429,11 @@ class DirectCalibreEngine:
                 for b in books
             ]
             for future in futures:
-                res = future.result()
+                try:
+                    res = future.result()
+                except Exception as exc:
+                    logger.error(f"Failed inspecting book during parallel audit: {exc}")
+                    continue
                 if res["bad_title"]:
                     bad_titles.append(res["bad_title"])
                 if res["empty_format"]:
@@ -564,6 +569,21 @@ class DirectCalibreEngine:
         empty_books = c.fetchall()
         count = len(empty_books)
 
+        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        existing_tables = {row[0] for row in c.fetchall()}
+
+        link_tables = [
+            "books_authors_link",
+            "books_ratings_link",
+            "books_tags_link",
+            "books_series_link",
+            "books_publishers_link",
+            "books_languages_link",
+            "comments",
+            "identifiers",
+            "data",
+        ]
+
         for b in empty_books:
             bid = b["id"]
             path = b["path"]
@@ -572,14 +592,9 @@ class DirectCalibreEngine:
                 if folder.exists():
                     shutil.rmtree(folder, ignore_errors=True)
 
-            c.execute("DELETE FROM books_authors_link WHERE book = ?", (bid,))
-            c.execute("DELETE FROM books_ratings_link WHERE book = ?", (bid,))
-            c.execute("DELETE FROM books_tags_link WHERE book = ?", (bid,))
-            c.execute("DELETE FROM books_series_link WHERE book = ?", (bid,))
-            c.execute("DELETE FROM books_publishers_link WHERE book = ?", (bid,))
-            c.execute("DELETE FROM comments WHERE book = ?", (bid,))
-            c.execute("DELETE FROM identifiers WHERE book = ?", (bid,))
-            c.execute("DELETE FROM data WHERE book = ?", (bid,))
+            for tbl in link_tables:
+                if tbl in existing_tables:
+                    c.execute(f"DELETE FROM {tbl} WHERE book = ?", (bid,))
             c.execute("DELETE FROM books WHERE id = ?", (bid,))
 
         conn.commit()

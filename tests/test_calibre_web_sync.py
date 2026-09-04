@@ -41,3 +41,16 @@ def test_calibre_web_sighup_reload(mock_run):
     assert mgr.reload_workers_sighup() is True
     mock_run.assert_called_once()
     assert "pkill -HUP" in mock_run.call_args[0][0][-1]
+
+
+def test_calibre_web_sync_rejects_malicious_book_ids():
+    mgr = CalibreWebSyncManager()
+    import pytest
+
+    # Injection string attempt
+    with pytest.raises(ValueError, match="Invalid book ID"):
+        mgr.invalidate_book_thumbnails(["1; rm -rf /; echo "])  # type: ignore
+
+    # Negative book ID
+    with pytest.raises(ValueError, match="Invalid book ID"):
+        mgr.invalidate_book_thumbnails([-5])

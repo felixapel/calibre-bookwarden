@@ -105,3 +105,55 @@ def test_duplicate_consolidator(tmp_path: Path):
     assert isbn_cluster.primary_book_id == 20
     assert isbn_cluster.duplicate_book_ids == [21]
     assert isbn_cluster.recommendation == "MERGE_FORMATS"
+
+
+def test_isbn_validation_and_technical_titles():
+    from calibre_ai_auditor.curation.duplicates import (
+        _normalize_str,
+        is_valid_isbn,
+        is_valid_isbn10,
+        is_valid_isbn13,
+    )
+
+    # 1. Technical symbols preservation
+    assert _normalize_str("C++ Primer") == "c++ primer"
+    assert _normalize_str("C# in Depth") == "c# in depth"
+    assert _normalize_str("C++ Primer") != _normalize_str("C# in Depth")
+
+    # 2. ISBN-10 Checksum verification
+    assert is_valid_isbn10("0471958697") is True
+    assert is_valid_isbn10("0471958698") is False
+
+    # 3. ISBN-13 Checksum verification
+    assert is_valid_isbn13("9780306406157") is True
+    assert is_valid_isbn13("9780306406158") is False
+
+    # 4. Dummy sequence and invalid character placement rejection
+    assert is_valid_isbn("0000000000") is False
+    assert is_valid_isbn("9999999999999") is False
+    assert is_valid_isbn("123X567890") is False  # X in middle
+
+
+def test_series_gap_hunter_safety_span(tmp_path: Path):
+    import sqlite3
+    db_path = tmp_path / "corrupt_series.db"
+    conn = sqlite3.connect(str(db_path))
+    c = conn.cursor()
+    c.execute("CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT);")
+    c.execute("CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, series_index REAL);")
+    c.execute("CREATE TABLE books_series_link (id INTEGER PRIMARY KEY, book INTEGER, series INTEGER);")
+    c.execute("CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT, sort TEXT);")
+    c.execute("CREATE TABLE books_authors_link (id INTEGER PRIMARY KEY, book INTEGER, author INTEGER);")
+
+    # Series with crazy index 99999
+    c.execute("INSERT INTO series (id, name) VALUES (1, 'Corrupted Index Series');")
+    c.execute("INSERT INTO books (id, title, series_index) VALUES (1, 'Vol 1', 1.0);")
+    c.execute("INSERT INTO books (id, title, series_index) VALUES (2, 'Vol 99999', 99999.0);")
+    c.execute("INSERT INTO books_series_link (book, series) VALUES (1, 1), (2, 1);")
+    conn.commit()
+
+    hunter = SeriesGapHunter(conn)
+    gaps = hunter.find_all_gaps()
+    # Should be skipped safely without hanging or allocating huge range
+    assert len(gaps) == 0
+    conn.close()

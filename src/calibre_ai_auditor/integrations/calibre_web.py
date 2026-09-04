@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 import shutil
 import subprocess
 import urllib.error
@@ -62,19 +63,16 @@ class CalibreWebIntegration:
         """Purges thumbnails inside container and restarts Calibre-Web safely."""
         try:
             logger.info(f"Triggering Calibre-Web cache purge on {self.container_name}...")
+            safe_cname = shlex.quote(self.container_name)
             if self.ssh_host:
                 ssh_args = ["ssh"]
                 if self.ssh_key:
                     ssh_args.extend(["-i", self.ssh_key])
-                ssh_args.extend(
-                    [
-                        self.ssh_host,
-                        (
-                            f"docker exec {self.container_name} rm -rf /config/thumbnails/* && "
-                            f"docker restart {self.container_name}"
-                        ),
-                    ]
+                remote_cmd = (
+                    f"docker exec {safe_cname} rm -rf /config/thumbnails/* && "
+                    f"docker restart {safe_cname}"
                 )
+                ssh_args.extend([self.ssh_host, remote_cmd])
                 res = subprocess.run(ssh_args, capture_output=True, text=True, timeout=30)
                 return res.returncode == 0
 
@@ -142,11 +140,13 @@ class CalibreWebSyncManager(CalibreWebIntegration):
         """Sends SIGHUP to Gunicorn/Tornado workers for zero-downtime hot-reload."""
         try:
             hup_cmd = "pkill -HUP -f 'cps.py' || kill -HUP 1"
+            safe_cname = shlex.quote(self.container_name)
             if self.ssh_host:
                 ssh_args = ["ssh"]
                 if self.ssh_key:
                     ssh_args.extend(["-i", self.ssh_key])
-                ssh_args.extend([self.ssh_host, f"docker exec {self.container_name} sh -c \"{hup_cmd}\""])
+                remote_cmd = f"docker exec {safe_cname} sh -c {shlex.quote(hup_cmd)}"
+                ssh_args.extend([self.ssh_host, remote_cmd])
                 res = subprocess.run(ssh_args, capture_output=True, text=True, timeout=15)
                 return res.returncode == 0
 
@@ -161,9 +161,23 @@ class CalibreWebSyncManager(CalibreWebIntegration):
         """Selectively removes thumbnail cache for given book IDs without wiping all cache."""
         if not book_ids:
             return 0
+
+        # Strict validation: prevent any shell or path injection by verifying elements are positive integers
+        valid_bids: list[int] = []
+        for bid in book_ids:
+            if isinstance(bid, int) and bid > 0:
+                valid_bids.append(bid)
+            elif isinstance(bid, str) and bid.isdigit() and int(bid) > 0:
+                valid_bids.append(int(bid))
+            else:
+                raise ValueError(f"Invalid book ID for thumbnail invalidation: {bid!r}")
+
+        if not valid_bids:
+            return 0
+
         count = 0
         if self.thumbnails_dir and self.thumbnails_dir.exists():
-            for bid in book_ids:
+            for bid in valid_bids:
                 for pattern in [f"{bid}.*", f"book_{bid}.*"]:
                     for f in self.thumbnails_dir.glob(pattern):
                         try:
@@ -174,20 +188,22 @@ class CalibreWebSyncManager(CalibreWebIntegration):
             return count
 
         # Inside container
-        patterns = " ".join([f"/config/thumbnails/{bid}.* /config/cache/{bid}.*" for bid in book_ids])
+        patterns = " ".join([f"/config/thumbnails/{bid}.* /config/cache/{bid}.*" for bid in valid_bids])
         rm_cmd = f"rm -f {patterns}"
+        safe_cname = shlex.quote(self.container_name)
         try:
             if self.ssh_host:
                 ssh_args = ["ssh"]
                 if self.ssh_key:
                     ssh_args.extend(["-i", self.ssh_key])
-                ssh_args.extend([self.ssh_host, f"docker exec {self.container_name} sh -c \"{rm_cmd}\""])
+                remote_cmd = f"docker exec {safe_cname} sh -c {shlex.quote(rm_cmd)}"
+                ssh_args.extend([self.ssh_host, remote_cmd])
                 res = subprocess.run(ssh_args, capture_output=True, text=True, timeout=15)
-                return len(book_ids) if res.returncode == 0 else 0
+                return len(valid_bids) if res.returncode == 0 else 0
 
             cmd = ["docker", "exec", self.container_name, "sh", "-c", rm_cmd]
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            return len(book_ids) if res.returncode == 0 else 0
+            return len(valid_bids) if res.returncode == 0 else 0
         except Exception as exc:
             logger.warning(f"Failed to invalidate book thumbnails inside container: {exc}")
             return 0

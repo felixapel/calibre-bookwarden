@@ -39,9 +39,14 @@ class ExtractNativeRequest(BaseModel):
 @router.post("/score", response_model=APIResponse)
 async def score_cover(payload: CoverScoreRequest) -> Any:
     """Computes Cover Quality Score (CQS 0-100) and spurious cover detection for an on-disk image."""
-    p = Path(payload.cover_path)
+    p = Path(payload.cover_path).resolve()
     if not p.is_file():
         raise HTTPException(status_code=404, detail=f"Cover file not found: {p}")
+    if p.suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp"):
+        raise HTTPException(
+            status_code=400,
+            detail="Target file must be a supported image format (.jpg, .jpeg, .png, .webp)",
+        )
 
     scorer = CoverQualityScorer()
     detector = SpuriousCoverDetector()
@@ -189,11 +194,22 @@ async def get_cover_review_deck(
 @router.post("/extract-native", response_model=APIResponse)
 async def extract_native_cover(payload: ExtractNativeRequest) -> Any:
     """Extracts native cover from EPUB, PDF, or Comic archive into the target path."""
-    book_file = Path(payload.book_file_path)
+    book_file = Path(payload.book_file_path).resolve()
     if not book_file.is_file():
         raise HTTPException(status_code=404, detail=f"Book file not found: {book_file}")
+    if book_file.suffix.lower() not in (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3"):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported book file format for cover extraction",
+        )
 
-    target = Path(payload.target_cover_path)
+    target = Path(payload.target_cover_path).resolve()
+    if target.suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp"):
+        raise HTTPException(
+            status_code=400,
+            detail="Target cover path must have an image extension (.jpg, .jpeg, .png, .webp)",
+        )
+
     success = UnifiedCoverExtractor.extract(book_file, target)
 
     if not success:
