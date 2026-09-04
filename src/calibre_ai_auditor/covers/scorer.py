@@ -231,3 +231,5 @@ class CoverQualityScorer:
                 score = max(0.0, score - 8.0)
 
         return score
+
+    score_image = evaluate

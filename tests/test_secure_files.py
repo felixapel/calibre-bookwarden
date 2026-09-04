@@ -16,6 +16,11 @@ from calibre_ai_auditor.security.files import (
     sealed_file_beneath,
 )
 
+pytestmark = pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX-specific /proc/self/fd file sealing and unprivileged symlinks not available on Windows",
+)
+
 
 def test_open_file_beneath_rejects_symlinked_parent(tmp_path: Path) -> None:
     root = tmp_path / "library"

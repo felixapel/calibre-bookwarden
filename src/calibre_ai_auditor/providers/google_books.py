@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -7,6 +8,43 @@ from calibre_ai_auditor.providers.base import BaseProvider
 from calibre_ai_auditor.storage.models import Candidate, Metadata
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_hd_cover_url(thumbnail_url: str | None, volume_id: str | None = None) -> str | None:
+    """Transforms a Google Books thumbnail URL into a crisp HD frontcover URL.
+
+    Bypasses standard low-res thumbnails (zoom=1 or zoom=5) by:
+    1. Upgrading http:// to https://
+    2. Replacing zoom=1 / zoom=5 with zoom=0 (raw full resolution)
+    3. Stripping curled page edge artifacts (&edge=curl)
+    4. Supporting the publisher content CDN URL:
+       https://books.google.com/books/publisher/content/images/frontcover/{volume_id}?fife=w1000-h1500
+    """
+    if not thumbnail_url and not volume_id:
+        return None
+
+    if thumbnail_url:
+        # Upgrade scheme
+        url = thumbnail_url.replace("http://", "https://")
+        # Remove curled page edge noise
+        url = url.replace("&edge=curl", "").replace("edge=curl&", "").replace("edge=curl", "")
+        # Zoom bypass: zoom=0 requests the unscaled original scan
+        if "zoom=1" in url:
+            url = url.replace("zoom=1", "zoom=0")
+        elif "zoom=5" in url:
+            url = url.replace("zoom=5", "zoom=0")
+        elif "zoom=" not in url and "?" in url:
+            url += "&zoom=0"
+
+        # If fife parameter is already present, boost to w1000-h1500
+        if "fife=" in url:
+            url = re.sub(r"fife=w\d+-h\d+", "fife=w1000-h1500", url)
+        return url
+
+    if volume_id:
+        return f"https://books.google.com/books/publisher/content/images/frontcover/{volume_id}?fife=w1000-h1500"
+
+    return None
 
 
 class GoogleBooksProvider(BaseProvider):
@@ -66,13 +104,18 @@ class GoogleBooksProvider(BaseProvider):
                 identifiers=identifiers,
             )
 
+            volume_id = item.get("id")
+            images = volume_info.get("imageLinks", {})
+            raw_cover = images.get("thumbnail") or images.get("smallThumbnail")
+            hd_cover = resolve_hd_cover_url(raw_cover, volume_id=volume_id)
+
             candidates.append(
                 Candidate(
-                    candidate_id=f"google_books:{item.get('id')}",
+                    candidate_id=f"google_books:{volume_id}",
                     provider=self.name,
                     provider_url=item.get("selfLink"),
                     metadata=metadata,
-                    cover_url=volume_info.get("imageLinks", {}).get("thumbnail"),
+                    cover_url=hd_cover,
                 )
             )
         return candidates

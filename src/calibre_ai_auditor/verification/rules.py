@@ -20,6 +20,8 @@ import unicodedata
 from difflib import SequenceMatcher
 from typing import Any
 
+from calibre_ai_auditor.rules.authority import compute_author_sort, normalize_author_display
+from calibre_ai_auditor.rules.lexical import clean_title
 from calibre_ai_auditor.verification.verdict import (
     EvidenceSpan,
     FieldVerdict,
@@ -428,9 +430,29 @@ def verify_title(
             reason="One or both titles are empty after normalization.",
         )
 
+    # Detect scraper junk or raw file extensions via clean_title
+    raw_decl = str(declared).strip()
+    cleaned_decl = clean_title(raw_decl)
+    if cleaned_decl and cleaned_decl != raw_decl and _normalize_text(cleaned_decl) == norm_obs:
+        return FieldVerdict(
+            field="title",
+            declared_value=declared,
+            observed_value=observed,
+            verdict=VerdictKind.mismatch,
+            confidence=95,
+            evidence=[
+                EvidenceSpan(
+                    source="title_page",
+                    text=str(observed),
+                    page_range=page_range,
+                    confidence=95,
+                )
+            ],
+            reason=f"Declared title contains scraper/extension junk; canonical title is {cleaned_decl!r}.",
+        )
+
     # Detect trailing punctuation noise on the RAW declared string
     # (after normalization the punct is gone, but we want to flag it as a fix)
-    raw_decl = str(declared).strip()
     raw_decl_stripped_punct = raw_decl.rstrip("!?.,;:*")
     if (
         raw_decl_stripped_punct
@@ -610,10 +632,18 @@ def verify_title(
 
 
 def _authors_equal(declared: list[str], observed: list[str]) -> bool:
-    """Set-equality after normalization."""
+    """Set-equality after authority display normalization and text normalization."""
     norm_decl = {_normalize_text(a) for a in declared if a}
     norm_obs = {_normalize_text(a) for a in observed if a}
-    return norm_decl == norm_obs
+    if norm_decl == norm_obs:
+        return True
+    auth_decl = {_normalize_text(normalize_author_display(a)) for a in declared if a}
+    auth_obs = {_normalize_text(normalize_author_display(a)) for a in observed if a}
+    if auth_decl == auth_obs:
+        return True
+    sort_decl = {_normalize_text(compute_author_sort(a)) for a in declared if a}
+    sort_obs = {_normalize_text(compute_author_sort(a)) for a in observed if a}
+    return sort_decl == sort_obs
 
 
 def verify_authors(
@@ -730,11 +760,22 @@ def verify_authors(
         return any(_surname_match(a, b) for b in b_set)  # noqa: SIM110
         return False
 
-    norm_decl = {_normalize_text(a) for a in declared_list if a}
-    norm_obs = {_normalize_text(a) for a in observed_list if a}
+    norm_decl = {_normalize_text(normalize_author_display(a)) for a in declared_list if a}
+    norm_obs = {_normalize_text(normalize_author_display(a)) for a in observed_list if a}
 
-    # Sentinel authors (Unknown, Anonymous, N.N., etc.) — these are NOT real conflicts.
-    sentinels = {"unknown", "anonymous", "n n", "n n ", "various", "n a"}
+    # Sentinel authors (Unknown, Anonymous, N.N., scrapers) — these are NOT real conflicts.
+    sentinels = {
+        "unknown",
+        "anonymous",
+        "n n",
+        "n n ",
+        "various",
+        "n a",
+        "desconocido",
+        "calibre",
+        "mantesh",
+        "chenjin5 com",
+    }
 
     # Cross-script transliteration match
     def _cross(a_set: set[str], b_set: set[str]) -> bool:

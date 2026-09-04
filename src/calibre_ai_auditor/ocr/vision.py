@@ -7,6 +7,8 @@ from typing import Any, cast
 from sqlmodel import Session, select
 
 from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.covers.scorer import CoverQualityScorer
+from calibre_ai_auditor.covers.spurious_detector import SpuriousCoverDetector
 from calibre_ai_auditor.extractors.cover_hashes import calculate_phash, compare_phashes
 from calibre_ai_auditor.llm.router import LLMRouter
 from calibre_ai_auditor.llm.schemas import LLMRequest
@@ -66,10 +68,13 @@ class VisionVerifier:
                             logger.info(f"Cover vision cache hit via exact phash for: {cover_path.name}")
                             cached_response = record.response
 
-                    # 3. Try similar phash match (Hamming distance <= 4)
+                    # 3. Try similar phash match (Hamming distance <= 4, bounded scan)
                     if not cached_response and phash:
                         records = session.exec(
-                            select(CoverVisionCache).where(CoverVisionCache.phash.is_not(None))
+                            select(CoverVisionCache)
+                            .where(CoverVisionCache.phash.is_not(None))
+                            .order_by(CoverVisionCache.id.desc())
+                            .limit(150)
                         ).all()
                         for rec in records:
                             if rec.phash and compare_phashes(phash, rec.phash) <= 4:
@@ -194,6 +199,26 @@ class VisionVerifier:
                 except Exception as cache_err:
                     logger.error(f"Failed to cache cover vision response: {cache_err}")
 
+            if isinstance(result, dict):
+                try:
+                    score_res = CoverQualityScorer().score_image(cover_path)
+                    spurious_res = SpuriousCoverDetector().inspect(cover_path)
+                    result["cqs"] = {
+                        "score": score_res.cqs,
+                        "tier": score_res.tier,
+                        "aspect_ratio": score_res.aspect_ratio,
+                        "is_actionable": score_res.is_actionable,
+                        "penalties": score_res.penalties,
+                        "fatal_defects": score_res.fatal_defects,
+                    }
+                    result["spurious"] = {
+                        "is_spurious": spurious_res.is_spurious,
+                        "defect_type": spurious_res.defect_type,
+                        "confidence": spurious_res.confidence,
+                    }
+                except Exception as qc_err:
+                    logger.debug(f"Cover QC scoring skipped: {qc_err}")
+
             return result
         except Exception as e:
             logger.error(f"Vision cover verification failed: {e}")
@@ -277,10 +302,29 @@ class VisionVerifier:
         try:
             resp = await self.router.execute_structured("vision", req, schema)
             if isinstance(resp.content, dict):
-                return resp.content
-            import json
+                resp_data = resp.content
+            else:
+                import json
 
-            return cast(dict[str, Any], json.loads(resp.content))
+                resp_data = cast(dict[str, Any], json.loads(resp.content))
+
+            if isinstance(resp_data, dict):
+                try:
+                    score_res = CoverQualityScorer().score_image(cover_path)
+                    spurious_res = SpuriousCoverDetector().inspect(cover_path)
+                    resp_data["cqs"] = {
+                        "score": score_res.cqs,
+                        "tier": score_res.tier,
+                        "is_actionable": score_res.is_actionable,
+                    }
+                    resp_data["spurious"] = {
+                        "is_spurious": spurious_res.is_spurious,
+                        "defect_type": spurious_res.defect_type,
+                    }
+                except Exception as qc_err:
+                    logger.debug(f"Cover QC scoring skipped: {qc_err}")
+
+            return resp_data
         except Exception as exc:
             logger.error(f"Cross check cover alignment failed: {exc}")
             return None

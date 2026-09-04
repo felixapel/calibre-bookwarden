@@ -17,9 +17,11 @@ from starlette.middleware.gzip import GZipMiddleware
 from calibre_ai_auditor.web.api import (
     apply,
     audit,
+    audit_360,
     books,
     bridges,
     config,
+    covers_api,
     health,
     inspect,
     providers,
@@ -50,7 +52,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     if not getattr(_app.state, "covers_mounted", False):
         covers_dir = resolve_covers_dir(settings.storage.artifacts_dir)
-        _app.mount("/api/covers", StaticFiles(directory=str(covers_dir)), name="covers")
+        _app.mount("/api/covers/static", StaticFiles(directory=str(covers_dir)), name="covers_static")
         _app.state.covers_mounted = True
 
     # Start Valkey background workers
@@ -301,6 +303,8 @@ app.include_router(review_v2.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
+app.include_router(audit_360.router, prefix="/api")
+app.include_router(covers_api.router, prefix="/api")
 app.include_router(bridges.router, prefix="/api")
 app.include_router(verify.router, prefix="/api")
 
