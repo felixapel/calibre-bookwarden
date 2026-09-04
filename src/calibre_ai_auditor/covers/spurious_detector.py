@@ -9,10 +9,12 @@ Identifies:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,7 @@ class SpuriousCoverResult:
     defect_type: str | None  # "calibre_default_template", "interior_page_scan", "blank_canvas", None
     confidence: float  # 0.0 to 1.0
     details: dict[str, Any]
+    entropy: float = 0.0
 
 
 class SpuriousCoverDetector:
@@ -47,6 +50,17 @@ class SpuriousCoverDetector:
                 rgb = img.convert("RGB")
                 gray = img.convert("L")
 
+                # Calculate Shannon information entropy (0.0 to 8.0)
+                hist = gray.histogram()
+                total_h = sum(hist)
+                entropy = 0.0
+                if total_h > 0:
+                    for count in hist:
+                        if count > 0:
+                            p = count / total_h
+                            entropy -= p * math.log2(p)
+                entropy = round(entropy, 2)
+
                 # 1. Check for Calibre Default Generated Template
                 is_calibre, cal_conf, cal_details = self._check_calibre_default_template(rgb, ocr_text)
                 if is_calibre:
@@ -55,9 +69,10 @@ class SpuriousCoverDetector:
                         defect_type="calibre_default_template",
                         confidence=cal_conf,
                         details=cal_details,
+                        entropy=entropy,
                     )
 
-                # 2. Blank canvas / solid color check
+                # 2. Blank canvas / solid color check (or entropy < 0.5)
                 is_blank, blank_conf, blank_color = self._check_solid_or_blank(rgb)
                 if is_blank:
                     return SpuriousCoverResult(
@@ -65,16 +80,18 @@ class SpuriousCoverDetector:
                         defect_type="blank_canvas",
                         confidence=blank_conf,
                         details={"color": blank_color, "dimensions": (w, h)},
+                        entropy=entropy,
                     )
 
                 # 3. Check for Interior Scanned Page (white background + black text paragraph)
-                is_interior, int_conf, int_details = self._check_interior_page_scan(gray, ocr_text)
+                is_interior, int_conf, int_details = self._check_interior_page_scan(gray, ocr_text, entropy)
                 if is_interior:
                     return SpuriousCoverResult(
                         is_spurious=True,
                         defect_type="interior_page_scan",
                         confidence=int_conf,
                         details=int_details,
+                        entropy=entropy,
                     )
 
                 return SpuriousCoverResult(
@@ -82,6 +99,7 @@ class SpuriousCoverDetector:
                     defect_type=None,
                     confidence=0.0,
                     details={"dimensions": (w, h)},
+                    entropy=entropy,
                 )
         except Exception as exc:
             logger.warning(f"Failed to inspect cover for spurious defects {path}: {exc}")
@@ -90,6 +108,7 @@ class SpuriousCoverDetector:
                 defect_type=None,
                 confidence=0.0,
                 details={"error": str(exc)},
+                entropy=0.0,
             )
 
     def _check_solid_or_blank(self, rgb: Image.Image) -> tuple[bool, float, tuple[int, int, int] | None]:
@@ -123,35 +142,38 @@ class SpuriousCoverDetector:
         self,
         gray: Image.Image,
         ocr_text: str | None,
+        entropy: float = 0.0,
     ) -> tuple[bool, float, dict[str, Any]]:
         """Detects if an image is predominantly a white page with lines of body text."""
         # Downsample to 100x150
         small = gray.resize((100, 150), Image.Resampling.BILINEAR)
-        pixels = list(small.getdata())
-        total = len(pixels)
+        arr = np.asarray(small, dtype=np.uint8)
+        total = arr.size
 
-        white_pixels = sum(1 for p in pixels if p >= self.white_threshold)
+        white_pixels = int(np.count_nonzero(arr >= self.white_threshold))
         white_ratio = white_pixels / total
 
-        # If >82% of the image is stark white/paper background
-        if white_ratio > 0.82:
-            dark_pixels = sum(1 for p in pixels if p < 80)
+        # If >80% of the image is stark white/paper background
+        if white_ratio > 0.80:
+            dark_pixels = int(np.count_nonzero(arr < 80))
             dark_ratio = dark_pixels / total
-            # Typical page scan has 3% to 15% text ink
-            if 0.02 < dark_ratio < 0.20:
-                # If OCR text contains common interior page markers
+            # Typical page scan has 1.5% to 22% text ink and low-to-moderate entropy (1.2 to 3.5)
+            if 0.015 < dark_ratio < 0.22:
                 confidence = 0.85
+                if 1.2 <= entropy <= 3.5:
+                    confidence = 0.92
                 if ocr_text:
                     interior_markers = ["contents", "chapter", "preface", "index", "all rights reserved", "printed in"]
                     if any(m in ocr_text.lower() for m in interior_markers):
-                        confidence = 0.95
+                        confidence = 0.98
                 return (
                     True,
                     confidence,
                     {
                         "white_ratio": round(white_ratio, 3),
                         "dark_ratio": round(dark_ratio, 3),
+                        "entropy": entropy,
                     },
                 )
 
-        return False, 0.0, {}
+        return False, 0.0, {"entropy": entropy}

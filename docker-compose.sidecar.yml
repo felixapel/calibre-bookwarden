@@ -1,0 +1,41 @@
+services:
+  calibre-ai-auditor:
+    image: ghcr.io/felix/calibre-ai-auditor:latest
+    container_name: calibre-ai-auditor
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - BOOKAUDIT_READ_ONLY=false
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - CALIBRE_WEB_CONTAINER=calibre-web-automated
+      - CALIBRE_WEB_URL=http://calibre-web-automated:8083
+    volumes:
+      - /mnt/user/MEDIA/Books/Calibre Library:/calibre:rw
+      - /mnt/user/appdata/calibre-ai-auditor:/config:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - calibre-net
+    depends_on:
+      - calibre-web-automated
+
+  calibre-web-automated:
+    image: crocodilestick/calibre-web-automated:latest
+    container_name: calibre-web-automated
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=Europe/Berlin
+      - DOCKER_MODS=linuxserver/mods:universal-calibre
+    volumes:
+      - /mnt/user/MEDIA/Books/Calibre Library:/books:rw
+      - /mnt/user/appdata/calibre-web-automated:/config:rw
+    networks:
+      - calibre-net
+
+networks:
+  calibre-net:
+    driver: bridge

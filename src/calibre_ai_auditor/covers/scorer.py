@@ -12,6 +12,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class CoverScoreResult:
     penalties: list[str]
     fatal_defects: list[str]
     is_actionable: bool  # True if cover should be replaced
+    entropy: float = 0.0  # Shannon information entropy (0.0 - 8.0)
 
 
 class CoverQualityScorer:
@@ -83,6 +85,11 @@ class CoverQualityScorer:
                 # 4. Cleanliness & Watermarks (0 - 25)
                 cleanliness_score = self._compute_cleanliness_score(ocr_text, penalties)
 
+                # 5. Shannon Entropy calculation (0.0 to 8.0 bits)
+                entropy = round(self.compute_shannon_entropy(gray), 2)
+                if entropy < 1.5 and "monochrome_or_blank_wash" not in penalties:
+                    penalties.append("monochrome_or_blank_wash")
+
                 # Total raw score
                 total_raw = dim_score + sharpness_score + contrast_score + cleanliness_score
 
@@ -119,6 +126,7 @@ class CoverQualityScorer:
                     penalties=penalties,
                     fatal_defects=fatal_defects,
                     is_actionable=final_score < 60 or bool(fatal_defects),
+                    entropy=entropy,
                 )
         except Exception as exc:
             logger.error(f"Error scoring cover {path}: {exc}")
@@ -135,6 +143,7 @@ class CoverQualityScorer:
                 penalties=[f"read_error: {exc}"],
                 fatal_defects=["corrupt_image"],
                 is_actionable=True,
+                entropy=0.0,
             )
 
     def _compute_dimension_score(
@@ -166,22 +175,28 @@ class CoverQualityScorer:
 
         return min(25.0, base)
 
+    @staticmethod
+    def compute_shannon_entropy(gray: Image.Image) -> float:
+        """Calculates Shannon information entropy (0.0 to 8.0 bits) from 256-bin histogram."""
+        histogram = gray.histogram()
+        total_pixels = sum(histogram)
+        if total_pixels == 0:
+            return 0.0
+        entropy = 0.0
+        for count in histogram:
+            if count > 0:
+                p = count / total_pixels
+                entropy -= p * math.log2(p)
+        return float(entropy)
+
     def _compute_sharpness_score(self, gray: Image.Image, penalties: list[str]) -> float:
-        """Approximates high-frequency sharpness variance without external OpenCV."""
+        """Vectorized high-frequency sharpness variance using NumPy array slicing."""
         small = gray.resize((200, 300), Image.Resampling.BILINEAR)
-        pixels = list(small.get_flattened_data()) if hasattr(small, "get_flattened_data") else list(small.getdata())
-        width, height = small.size
+        arr = np.asarray(small, dtype=np.int16)
+        # Vectorized absolute difference of adjacent horizontal pixels
+        diffs = np.abs(arr[:, 1:] - arr[:, :-1])
+        avg_grad = float(np.mean(diffs))
 
-        grad_sum = 0
-        count = 0
-        for y in range(height):
-            row_start = y * width
-            for x in range(width - 1):
-                diff = abs(pixels[row_start + x] - pixels[row_start + x + 1])
-                grad_sum += diff
-                count += 1
-
-        avg_grad = grad_sum / max(1, count)
         if avg_grad < 4.0:
             penalties.append("severe_blur_or_flat_wash")
             return 5.0

@@ -9,10 +9,13 @@ author-sort synchronization, and foreign key saneamiento.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import sqlite3
+from collections import defaultdict
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,17 @@ from PIL import Image
 from calibre_ai_auditor.rules.authority import compute_author_sort
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_path(p: Path) -> Path:
+    """Normalize path on Windows with extended path prefix to support paths > 260 chars."""
+    s = str(p)
+    if os.name == "nt" and not s.startswith("\\\\?\\"):
+        if s.startswith("\\\\"):
+            return Path("\\\\?\\UNC" + s[1:])
+        elif len(s) >= 2 and s[1] == ":":
+            return Path("\\\\?\\" + s)
+    return p
 
 # Leading articles to invert for sorting
 LEADING_ARTICLES = [
@@ -80,6 +94,135 @@ def calibre_author_sort(author: str | None) -> str:
     return compute_author_sort(author)
 
 
+def _inspect_single_book(
+    b: dict[str, Any],
+    library_path: Path,
+    dfiles: list[dict[str, Any]],
+    max_image_pixels: int,
+    junk_patterns: list[str],
+) -> dict[str, Any]:
+    bid = b["id"]
+    title = b["title"] or ""
+    path = b["path"]
+
+    bad_title = None
+    for pat in junk_patterns:
+        if re.search(pat, title, re.IGNORECASE):
+            bad_title = {"book_id": bid, "title": title, "pattern": pat}
+            break
+    if not bad_title and any(title.lower().endswith(ext) for ext in [".pdf", ".epub", ".mobi", ".azw3"]):
+        bad_title = {"book_id": bid, "title": title, "pattern": "ends_with_extension"}
+
+    empty_format = None
+    if not dfiles:
+        empty_format = {"book_id": bid, "title": title, "path": str(path) if path else ""}
+
+    missing_data: list[dict[str, Any]] = []
+    missing_cover = None
+    tiny_cover = None
+    huge_cover = None
+    broken_cover = None
+
+    if not path:
+        if dfiles:
+            missing_data.append({"book_id": bid, "title": title, "reason": "NO_PATH_IN_DB"})
+        return {
+            "bad_title": bad_title,
+            "empty_format": empty_format,
+            "missing_data": missing_data,
+            "missing_cover": missing_cover,
+            "tiny_cover": tiny_cover,
+            "huge_cover": huge_cover,
+            "broken_cover": broken_cover,
+        }
+
+    folder = _safe_path(library_path / path)
+    try:
+        entries: dict[str, os.DirEntry] = {}
+        with os.scandir(folder) as it:
+            for entry in it:
+                entries[entry.name.lower()] = entry
+    except (FileNotFoundError, NotADirectoryError):
+        if dfiles:
+            missing_data.append(
+                {"book_id": bid, "title": title, "reason": "FOLDER_NOT_FOUND", "path": str(path)}
+            )
+        return {
+            "bad_title": bad_title,
+            "empty_format": empty_format,
+            "missing_data": missing_data,
+            "missing_cover": missing_cover,
+            "tiny_cover": tiny_cover,
+            "huge_cover": huge_cover,
+            "broken_cover": broken_cover,
+        }
+    except OSError as e:
+        if dfiles:
+            missing_data.append(
+                {"book_id": bid, "title": title, "reason": f"OS_ERROR: {e}", "path": str(path)}
+            )
+        return {
+            "bad_title": bad_title,
+            "empty_format": empty_format,
+            "missing_data": missing_data,
+            "missing_cover": missing_cover,
+            "tiny_cover": tiny_cover,
+            "huge_cover": huge_cover,
+            "broken_cover": broken_cover,
+        }
+
+    # Format files on disk check
+    for df in dfiles:
+        fname = f"{df['name']}.{df['format'].lower()}"
+        entry = entries.get(fname.lower())
+        if entry is None or not entry.is_file():
+            missing_data.append(
+                {"book_id": bid, "title": title, "file": fname, "reason": "FILE_MISSING_ON_DISK"}
+            )
+
+    # Cover checks
+    cov_entry = entries.get("cover.jpg")
+    if cov_entry is None or not cov_entry.is_file():
+        missing_cover = {"book_id": bid, "title": title}
+    else:
+        try:
+            size_bytes = cov_entry.stat().st_size
+            if size_bytes < 4000:
+                tiny_cover = {"book_id": bid, "title": title, "size_bytes": size_bytes}
+            else:
+                cov_path = _safe_path(Path(cov_entry.path))
+                with Image.open(cov_path) as im:
+                    w, h = im.size
+                    pixels = w * h
+                    if pixels > max_image_pixels or size_bytes > 15_000_000:
+                        huge_cover = {
+                            "book_id": bid,
+                            "title": title,
+                            "dimensions": f"{w}x{h}",
+                            "pixels": pixels,
+                            "size_bytes": size_bytes,
+                        }
+                    elif w < 200 or h < 250:
+                        tiny_cover = {
+                            "book_id": bid,
+                            "title": title,
+                            "dimensions": f"{w}x{h}",
+                            "size_bytes": size_bytes,
+                        }
+        except Exception as e:
+            broken_cover = {"book_id": bid, "title": title, "error": str(e)}
+
+    return {
+        "bad_title": bad_title,
+        "empty_format": empty_format,
+        "missing_data": missing_data,
+        "missing_cover": missing_cover,
+        "tiny_cover": tiny_cover,
+        "huge_cover": huge_cover,
+        "broken_cover": broken_cover,
+    }
+
+
 class DirectCalibreEngine:
     def __init__(self, library_path: Path | str):
         self.library_path = Path(library_path).resolve()
@@ -89,8 +232,13 @@ class DirectCalibreEngine:
 
     def get_connection(self, read_only: bool = False) -> sqlite3.Connection:
         """Returns an optimized connection with custom functions registered for Calibre triggers."""
-        uri = f"file:{self.db_path.as_posix()}?mode=ro" if read_only else str(self.db_path)
-        conn = sqlite3.connect(uri, uri=read_only, timeout=30.0)
+        # Windows UNC network paths (e.g. \\server\share) cannot use standard file: URI syntax
+        is_unc = str(self.db_path).startswith(r"\\") or str(self.db_path).startswith("//")
+        if read_only and not is_unc:
+            uri = f"file:{self.db_path.as_posix()}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+        else:
+            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.create_function("title_sort", 1, calibre_title_sort)
         conn.create_function("author_sort", 1, calibre_author_sort)
@@ -158,7 +306,7 @@ class DirectCalibreEngine:
         finally:
             conn.close()
 
-    def audit_library(self, max_image_pixels: int = 30_000_000) -> dict[str, Any]:
+    def audit_library(self, max_image_pixels: int = 30_000_000, max_workers: int = 32) -> dict[str, Any]:
         """Runs a comprehensive 360-degree audit across SQLite, physical files, and covers."""
         Image.MAX_IMAGE_PIXELS = 60_000_000
         conn = self.get_connection(read_only=True)
@@ -237,6 +385,12 @@ class DirectCalibreEngine:
         ]
 
         # 6. Physical files & cover audit
+        # Query all data files in a single atomic SQL query (eliminates N+1 queries)
+        c.execute("SELECT book, name, format, uncompressed_size FROM data")
+        data_by_book: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for r in c.fetchall():
+            data_by_book[r["book"]].append(dict(r))
+
         c.execute("""
             SELECT b.id, b.title, b.path, b.has_cover,
                    (
@@ -247,7 +401,10 @@ class DirectCalibreEngine:
                    ) as authors
             FROM books b
         """)
-        books = c.fetchall()
+        books = [dict(r) for r in c.fetchall()]
+        conn.close()
+
+        junk_patterns = [r"\[welib\.org\]", r"\(z-library\)", r"_print", r"untitled", r"microsoft word", r"v\d+\.\d+"]
 
         missing_data_files: list[dict[str, Any]] = []
         empty_format_records: list[dict[str, Any]] = []
@@ -257,80 +414,35 @@ class DirectCalibreEngine:
         missing_covers: list[dict[str, Any]] = []
         bad_titles: list[dict[str, Any]] = []
 
-        junk_patterns = [r"\[welib\.org\]", r"\(z-library\)", r"_print", r"untitled", r"microsoft word", r"v\d+\.\d+"]
-
-        for b in books:
-            bid = b["id"]
-            title = b["title"] or ""
-            path = b["path"]
-
-            # Junk title check
-            for pat in junk_patterns:
-                if re.search(pat, title, re.IGNORECASE):
-                    bad_titles.append({"book_id": bid, "title": title, "pattern": pat})
-                    break
-            if any(title.lower().endswith(ext) for ext in [".pdf", ".epub", ".mobi", ".azw3"]):
-                bad_titles.append({"book_id": bid, "title": title, "pattern": "ends_with_extension"})
-
-            # Format files check in data table
-            c.execute("SELECT name, format, uncompressed_size FROM data WHERE book = ?", (bid,))
-            dfiles = c.fetchall()
-            if not dfiles:
-                empty_format_records.append({"book_id": bid, "title": title, "path": str(path) if path else ""})
-
-            if not path:
-                if dfiles:
-                    missing_data_files.append({"book_id": bid, "title": title, "reason": "NO_PATH_IN_DB"})
-                continue
-
-            folder = self.library_path / path
-            if not folder.exists():
-                if dfiles:
-                    missing_data_files.append(
-                        {"book_id": bid, "title": title, "reason": "FOLDER_NOT_FOUND", "path": str(path)}
-                    )
-                continue
-
-            # Format files on disk check
-            for df in dfiles:
-                fname = f"{df['name']}.{df['format'].lower()}"
-                fpath = folder / fname
-                if not fpath.exists():
-                    missing_data_files.append(
-                        {"book_id": bid, "title": title, "file": fname, "reason": "FILE_MISSING_ON_DISK"}
-                    )
-
-            # Cover checks
-            cov_path = folder / "cover.jpg"
-            if not cov_path.exists():
-                missing_covers.append({"book_id": bid, "title": title})
-            else:
-                size_bytes = cov_path.stat().st_size
-                if size_bytes < 4000:
-                    tiny_covers.append({"book_id": bid, "title": title, "size_bytes": size_bytes})
-                else:
-                    try:
-                        with Image.open(cov_path) as im:
-                            w, h = im.size
-                            pixels = w * h
-                            if pixels > max_image_pixels or size_bytes > 15_000_000:
-                                huge_covers.append(
-                                    {
-                                        "book_id": bid,
-                                        "title": title,
-                                        "dimensions": f"{w}x{h}",
-                                        "pixels": pixels,
-                                        "size_bytes": size_bytes,
-                                    }
-                                )
-                            elif w < 200 or h < 250:
-                                tiny_covers.append(
-                                    {"book_id": bid, "title": title, "dimensions": f"{w}x{h}", "size_bytes": size_bytes}
-                                )
-                    except Exception as e:
-                        broken_covers.append({"book_id": bid, "title": title, "error": str(e)})
-
-        conn.close()
+        workers = max(1, min(max_workers, len(books) or 1))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(
+                    _inspect_single_book,
+                    b,
+                    self.library_path,
+                    data_by_book.get(b["id"], []),
+                    max_image_pixels,
+                    junk_patterns,
+                )
+                for b in books
+            ]
+            for future in futures:
+                res = future.result()
+                if res["bad_title"]:
+                    bad_titles.append(res["bad_title"])
+                if res["empty_format"]:
+                    empty_format_records.append(res["empty_format"])
+                if res["missing_data"]:
+                    missing_data_files.extend(res["missing_data"])
+                if res["missing_cover"]:
+                    missing_covers.append(res["missing_cover"])
+                if res["tiny_cover"]:
+                    tiny_covers.append(res["tiny_cover"])
+                if res["huge_cover"]:
+                    huge_covers.append(res["huge_cover"])
+                if res["broken_cover"]:
+                    broken_covers.append(res["broken_cover"])
 
         return {
             "sqlite_integrity": integrity,

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calibre AI Auditor - Cover Deck (Fast Review)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    .cover-glow {
+      box-shadow: 0 0 25px -5px rgba(59, 130, 246, 0.5);
+    }
+    .tier-d { background-color: #ef4444; }
+    .tier-c { background-color: #f59e0b; }
+    .tier-b { background-color: #3b82f6; }
+    .tier-a { background-color: #10b981; }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased" tabindex="0" id="deck-body">
+
+  <!-- Navigation Bar -->
+  <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <span class="text-2xl font-black tracking-tight text-blue-400">⚡ Calibre AI Auditor</span>
+      <span class="text-xs px-2.5 py-1 rounded bg-blue-900/60 text-blue-300 font-semibold uppercase tracking-wider">Cover Deck</span>
+    </div>
+    <div class="flex items-center space-x-4 text-sm text-slate-400">
+      <span>Keyboard Shortcuts:</span>
+      <span class="px-2 py-0.5 bg-slate-700 rounded text-slate-200 font-mono text-xs">[1] [2] [3] Select</span>
+      <span class="px-2 py-0.5 bg-slate-700 rounded text-slate-200 font-mono text-xs">[Enter] Apply</span>
+      <span class="px-2 py-0.5 bg-slate-700 rounded text-slate-200 font-mono text-xs">[Space] Skip</span>
+      <span class="px-2 py-0.5 bg-slate-700 rounded text-slate-200 font-mono text-xs">[Z] Undo</span>
+    </div>
+  </header>
+
+  <!-- Deck Container -->
+  <main class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto" id="deck-container">
+    {% if item %}
+    <div class="w-full max-w-5xl bg-slate-800/90 backdrop-blur rounded-2xl border border-slate-700 p-8 shadow-2xl flex flex-col gap-6">
+      
+      <!-- Book Header -->
+      <div class="flex items-start justify-between border-b border-slate-700/60 pb-4">
+        <div>
+          <span class="text-xs font-mono text-slate-400 uppercase tracking-wider">Book ID #{{ item.book_id }}</span>
+          <h1 class="text-2xl font-bold text-white mt-1">{{ item.title }}</h1>
+          <p class="text-sm text-slate-300">{{ item.authors or 'Unknown Author' }}</p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <span class="px-3 py-1 rounded-full text-xs font-bold text-white {{ 'tier-d' if item.cqs_tier == 'Tier D' else ('tier-c' if item.cqs_tier == 'Tier C' else 'tier-b') }}">
+            {{ item.cqs_tier }} (CQS {{ item.cqs_score }})
+          </span>
+          <span class="px-3 py-1 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-800">
+            {{ item.issue }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Comparison Arena -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
+        
+        <!-- Current Cover (Flagged) -->
+        <div class="bg-slate-900/80 rounded-xl p-4 border border-rose-500/40 flex flex-col items-center">
+          <div class="text-xs font-semibold text-rose-400 mb-2 uppercase tracking-wide">Current Cover (Flagged)</div>
+          <div class="w-48 h-72 bg-slate-950 rounded-lg overflow-hidden flex items-center justify-center border border-slate-800 shadow-inner relative group">
+            {% if item.has_current_image %}
+            <img src="/api/covers/book/{{ item.book_id }}/image" alt="Current Cover" class="w-full h-full object-contain">
+            {% else %}
+            <span class="text-slate-600 text-xs text-center px-4">No image file on disk</span>
+            {% endif %}
+          </div>
+          <div class="mt-3 text-xs text-slate-400 text-center font-mono">
+            <div>Dim: {{ item.dimensions or 'N/A' }}</div>
+            {% if item.penalties %}
+            <div class="text-rose-400 mt-1 truncate max-w-[180px]" title="{{ item.penalties|join(', ') }}">{{ item.penalties|join(', ') }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Candidate 1: Native Container Extraction -->
+        <div class="candidate-card bg-slate-900/80 rounded-xl p-4 border border-slate-700 hover:border-blue-500 transition cursor-pointer flex flex-col items-center relative" id="cand-1" onclick="selectCandidate(1)">
+          <div class="absolute top-2 left-2 px-2 py-0.5 rounded bg-blue-600 text-white font-mono text-xs font-bold">[1]</div>
+          <div class="text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">Native Extract</div>
+          <div class="w-48 h-72 bg-slate-950 rounded-lg overflow-hidden flex items-center justify-center border border-slate-800 relative">
+            {% if item.candidates and item.candidates|length > 0 %}
+            <img src="{{ item.candidates[0].preview_url }}" alt="Candidate 1" class="w-full h-full object-contain">
+            {% else %}
+            <span class="text-slate-600 text-xs text-center px-4">None found</span>
+            {% endif %}
+          </div>
+          <div class="mt-3 text-xs text-slate-300 text-center">
+            <span class="text-emerald-400 font-bold">{{ item.candidates[0].tier if (item.candidates and item.candidates|length > 0) else 'N/A' }}</span>
+            <span class="text-slate-400 font-mono">({{ item.candidates[0].dimensions if (item.candidates and item.candidates|length > 0) else 'N/A' }})</span>
+          </div>
+        </div>
+
+        <!-- Candidate 2: High-Def Publisher / OpenLibrary -->
+        <div class="candidate-card bg-slate-900/80 rounded-xl p-4 border border-slate-700 hover:border-blue-500 transition cursor-pointer flex flex-col items-center relative" id="cand-2" onclick="selectCandidate(2)">
+          <div class="absolute top-2 left-2 px-2 py-0.5 rounded bg-blue-600 text-white font-mono text-xs font-bold">[2]</div>
+          <div class="text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">OpenLibrary HD</div>
+          <div class="w-48 h-72 bg-slate-950 rounded-lg overflow-hidden flex items-center justify-center border border-slate-800 relative">
+            {% if item.candidates and item.candidates|length > 1 %}
+            <img src="{{ item.candidates[1].preview_url }}" alt="Candidate 2" class="w-full h-full object-contain">
+            {% else %}
+            <span class="text-slate-600 text-xs text-center px-4">None found</span>
+            {% endif %}
+          </div>
+          <div class="mt-3 text-xs text-slate-300 text-center">
+            <span class="text-emerald-400 font-bold">{{ item.candidates[1].tier if (item.candidates and item.candidates|length > 1) else 'N/A' }}</span>
+            <span class="text-slate-400 font-mono">({{ item.candidates[1].dimensions if (item.candidates and item.candidates|length > 1) else 'N/A' }})</span>
+          </div>
+        </div>
+
+        <!-- Candidate 3: Hardcover / Google Books HD -->
+        <div class="candidate-card bg-slate-900/80 rounded-xl p-4 border border-slate-700 hover:border-blue-500 transition cursor-pointer flex flex-col items-center relative" id="cand-3" onclick="selectCandidate(3)">
+          <div class="absolute top-2 left-2 px-2 py-0.5 rounded bg-blue-600 text-white font-mono text-xs font-bold">[3]</div>
+          <div class="text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wide">Hardcover HD</div>
+          <div class="w-48 h-72 bg-slate-950 rounded-lg overflow-hidden flex items-center justify-center border border-slate-800 relative">
+            {% if item.candidates and item.candidates|length > 2 %}
+            <img src="{{ item.candidates[2].preview_url }}" alt="Candidate 3" class="w-full h-full object-contain">
+            {% else %}
+            <span class="text-slate-600 text-xs text-center px-4">None found</span>
+            {% endif %}
+          </div>
+          <div class="mt-3 text-xs text-slate-300 text-center">
+            <span class="text-emerald-400 font-bold">{{ item.candidates[2].tier if (item.candidates and item.candidates|length > 2) else 'N/A' }}</span>
+            <span class="text-slate-400 font-mono">({{ item.candidates[2].dimensions if (item.candidates and item.candidates|length > 2) else 'N/A' }})</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Action Bar -->
+      <div class="flex items-center justify-between pt-4 border-t border-slate-700/60 mt-2">
+        <div class="text-sm text-slate-400">
+          Queue progress: <span class="font-bold text-white">{{ index + 1 }}</span> of <span class="font-bold text-white">{{ total }}</span>
+        </div>
+        <div class="flex items-center space-x-3">
+          <button type="button" hx-post="/api/covers/ui/deck/action?action=skip&book_id={{ item.book_id }}" hx-target="#deck-container" class="px-5 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium transition text-sm flex items-center space-x-1">
+            <span>Skip [Space]</span>
+          </button>
+          <button type="button" id="apply-btn" onclick="applySelected()" class="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition text-sm shadow-lg shadow-blue-600/30 flex items-center space-x-1">
+            <span>Apply Selected [Enter]</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+    {% else %}
+    <!-- Empty Deck State -->
+    <div class="text-center p-12 bg-slate-800/60 rounded-2xl border border-slate-700 max-w-lg">
+      <div class="text-5xl mb-4">🎉</div>
+      <h2 class="text-2xl font-bold text-white">Cover Deck Clean!</h2>
+      <p class="text-slate-400 mt-2 text-sm">No remaining low-resolution or spurious covers found in the queue. All audited covers are Tier A or Tier B.</p>
+      <a href="/api/covers/ui/deck" class="mt-6 inline-block px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition">
+        Refresh Deck
+      </a>
+    </div>
+    {% endif %}
+  </main>
+
+  <script>
+    let selectedCandidate = 1;
+
+    function selectCandidate(index) {
+      selectedCandidate = index;
+      document.querySelectorAll('.candidate-card').forEach((el, idx) => {
+        if (idx + 1 === index) {
+          el.classList.add('border-blue-500', 'cover-glow', 'bg-blue-950/30');
+          el.classList.remove('border-slate-700');
+        } else {
+          el.classList.remove('border-blue-500', 'cover-glow', 'bg-blue-950/30');
+          el.classList.add('border-slate-700');
+        }
+      });
+    }
+
+    function applySelected() {
+      {% if item %}
+      htmx.ajax('POST', '/api/covers/ui/deck/action?action=apply&book_id={{ item.book_id }}&candidate=' + selectedCandidate, {target: '#deck-container', swap: 'outerHTML'});
+      {% endif %}
+    }
+
+    // Keyboard Shortcuts Listener
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '1') { selectCandidate(1); }
+      else if (e.key === '2') { selectCandidate(2); }
+      else if (e.key === '3') { selectCandidate(3); }
+      else if (e.key === 'Enter') { applySelected(); }
+      else if (e.code === 'Space') {
+        e.preventDefault();
+        {% if item %}
+        htmx.ajax('POST', '/api/covers/ui/deck/action?action=skip&book_id={{ item.book_id }}', {target: '#deck-container', swap: 'outerHTML'});
+        {% endif %}
+      }
+    });
+
+    // Auto-select candidate 1 on load
+    selectCandidate(1);
+  </script>
+</body>
+</html>

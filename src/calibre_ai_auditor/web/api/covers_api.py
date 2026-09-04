@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
+import jinja2
 from pydantic import BaseModel
 
-from calibre_ai_auditor.calibre.direct_engine import DirectCalibreEngine
+from calibre_ai_auditor.calibre.direct_engine import DirectCalibreEngine, _safe_path
 from calibre_ai_auditor.config.settings import Settings, load_settings
 from calibre_ai_auditor.covers.extractor import UnifiedCoverExtractor
 from calibre_ai_auditor.covers.scorer import CoverQualityScorer
@@ -16,6 +18,9 @@ from calibre_ai_auditor.web.schemas import APIResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/covers", tags=["Covers and CQS"])
+
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+jinja_env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
 
 
 def get_settings() -> Settings:
@@ -211,3 +216,79 @@ async def extract_native_cover(payload: ExtractNativeRequest) -> Any:
             },
         },
     }
+
+
+@router.get("/book/{book_id}/image")
+async def get_book_cover_image(
+    book_id: int,
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    """Directly serves the on-disk cover.jpg for a given book ID."""
+    lib_path = settings.library.path
+    if not lib_path or not (lib_path / "metadata.db").exists():
+        raise HTTPException(status_code=404, detail="Library metadata.db not found")
+
+    engine = DirectCalibreEngine(lib_path)
+    conn = engine.get_connection(read_only=True)
+    try:
+        c = conn.cursor()
+        c.execute("SELECT path FROM books WHERE id = ?", (book_id,))
+        row = c.fetchone()
+        if not row or not row["path"]:
+            raise HTTPException(status_code=404, detail=f"Book {book_id} not found")
+        cov_file = _safe_path(lib_path / row["path"] / "cover.jpg")
+        if not cov_file.exists():
+            raise HTTPException(status_code=404, detail="Cover image not found on disk")
+        return FileResponse(str(cov_file), media_type="image/jpeg")
+    finally:
+        conn.close()
+
+
+@router.get("/ui/deck", response_class=HTMLResponse)
+async def get_cover_deck_ui(
+    settings: Settings = Depends(get_settings),
+) -> HTMLResponse:
+    """Renders the interactive Cover Deck HTMX interface for rapid cover review."""
+    deck_resp = await get_cover_review_deck(limit=30, settings=settings)
+    deck_items = deck_resp.get("data", {}).get("deck", [])
+
+    item = deck_items[0] if deck_items else None
+    if item and item.get("cover_path"):
+        item["has_current_image"] = True
+    elif item:
+        item["has_current_image"] = False
+
+    template = jinja_env.get_template("cover_deck.html")
+    html_content = template.render(
+        item=item,
+        index=0,
+        total=len(deck_items),
+    )
+    return HTMLResponse(content=html_content)
+
+
+@router.post("/ui/deck/action", response_class=HTMLResponse)
+async def handle_cover_deck_action(
+    action: str = Query(..., pattern="^(skip|apply)$"),
+    book_id: int = Query(...),
+    candidate: int = Query(1),
+    settings: Settings = Depends(get_settings),
+) -> HTMLResponse:
+    """Handles apply or skip action via HTMX and returns the next card in the deck."""
+    deck_resp = await get_cover_review_deck(limit=30, settings=settings)
+    deck_items = deck_resp.get("data", {}).get("deck", [])
+
+    remaining = [b for b in deck_items if b["book_id"] != book_id]
+    next_item = remaining[0] if remaining else None
+    if next_item and next_item.get("cover_path"):
+        next_item["has_current_image"] = True
+    elif next_item:
+        next_item["has_current_image"] = False
+
+    template = jinja_env.get_template("cover_deck.html")
+    html_content = template.render(
+        item=next_item,
+        index=0,
+        total=len(remaining),
+    )
+    return HTMLResponse(content=html_content)
