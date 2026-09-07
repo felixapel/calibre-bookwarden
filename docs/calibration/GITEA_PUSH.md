@@ -1,8 +1,8 @@
 # Pushing to self-hosted Gitea
 
 The canonical development remote is the homelab Gitea repository. The local
-checkout currently names it `gitea` and uses
-`http://192.168.0.122:3010/felix/calibre-ai-auditor.git`.
+checkout currently names it `origin` and uses
+`ssh://git@192.168.0.122:2222/felix/calibre-bookwarden.git` (or HTTP `http://192.168.0.122:3010/felix/calibre-bookwarden.git`).
 
 **You need to push the branch from a machine that has access to your
 homelab Gitea** (the Unraid box itself, or any machine with the right
@@ -12,15 +12,15 @@ SSH key in its agent).
 
 ```bash
 # 1. Clone the Gitea repo (if not already cloned)
-git clone http://192.168.0.122:3010/felix/calibre-ai-auditor.git
-cd calibre-ai-auditor
+git clone http://192.168.0.122:3010/felix/calibre-bookwarden.git
+cd calibre-bookwarden
 
 # 2. Fetch and check out the intended Gitea branch
 git fetch origin
 git checkout <branch>
 
 # 3. Existing checkouts can add the canonical Gitea remote
-git remote add gitea http://192.168.0.122:3010/felix/calibre-ai-auditor.git
+git remote add origin ssh://git@192.168.0.122:2222/felix/calibre-bookwarden.git
 
 # Examples (adjust to your actual setup):
 # git remote add gitea git@192.168.0.122:felix/calibre-ai-auditor.git

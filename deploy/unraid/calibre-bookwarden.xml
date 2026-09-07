@@ -1,19 +1,19 @@
-﻿<?xml version="1.0"?>
+<?xml version="1.0"?>
 <Container version="2">
   <Name>calibre-bookwarden</Name>
   <Repository>ghcr.io/felixapel/calibre-bookwarden:latest</Repository>
-  <Registry>https://github.com/felixapel/calibre-ai-auditor/pkgs/container/calibre-bookwarden</Registry>
+  <Registry>https://github.com/felixapel/calibre-bookwarden/pkgs/container/calibre-bookwarden</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/felixapel/calibre-ai-auditor/issues</Support>
-  <Project>https://github.com/felixapel/calibre-ai-auditor</Project>
+  <Support>https://github.com/felixapel/calibre-bookwarden/issues</Support>
+  <Project>https://github.com/felixapel/calibre-bookwarden</Project>
   <Overview>Calibre Bookwarden is the content-grounded metadata verification and cover forensics guardian for Calibre libraries. The book file is the ground truth, LLMs are witnesses. Zero hallucinations, read-only 360-degree forensic audits, Cover Deck swipeable UI, Series Gap Hunter, and surgical rollbacks.</Overview>
   <Category>Productivity: MediaApp:Books Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/felixapel/calibre-ai-auditor/main/deploy/unraid/calibre-bookwarden.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/felixapel/calibre-ai-auditor/main/docs/assets/hero-banner.jpg</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/deploy/unraid/calibre-bookwarden.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/docs/assets/hero-banner.jpg</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>

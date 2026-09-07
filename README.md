@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/felixapel/calibre-ai-auditor/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/felixapel/calibre-ai-auditor/ci.yml?branch=main&label=CI&logo=github" alt="CI Status"></a>
-  <a href="https://github.com/felixapel/calibre-ai-auditor/releases"><img src="https://img.shields.io/badge/Release-v1.3.0-blue.svg?logo=semantic-release" alt="Release Version"></a>
+  <a href="https://github.com/felixapel/calibre-bookwarden/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/felixapel/calibre-bookwarden/ci.yml?branch=main&label=CI&logo=github" alt="CI Status"></a>
+  <a href="https://github.com/felixapel/calibre-bookwarden/releases"><img src="https://img.shields.io/badge/Release-v1.3.0-blue.svg?logo=semantic-release" alt="Release Version"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB.svg?logo=python&logoColor=white" alt="Python Versions"></a>
-  <a href="https://github.com/felixapel/calibre-ai-auditor/pkgs/container/calibre-bookwarden"><img src="https://img.shields.io/badge/Docker-calibre--bookwarden-2496ED.svg?logo=docker&logoColor=white" alt="Docker Multi-Arch"></a>
+  <a href="https://github.com/felixapel/calibre-bookwarden/pkgs/container/calibre-bookwarden"><img src="https://img.shields.io/badge/Docker-calibre--bookwarden-2496ED.svg?logo=docker&logoColor=white" alt="Docker Multi-Arch"></a>
   <a href="deploy/unraid/calibre-bookwarden.xml"><img src="https://img.shields.io/badge/unRAID-CA%20Template-F15A24.svg?logo=unraid&logoColor=white" alt="unRAID Support"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License"></a>
   <a href="https://github.com/sponsors/felixapel"><img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-EA4AAA.svg?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
@@ -135,10 +135,10 @@ If you have [`uv`](https://docs.astral.sh/uv/) installed, run a comprehensive 36
 
 ```bash
 # Run a 360° forensic audit without modifying any files (using new bookwarden CLI)
-uvx --from git+https://github.com/felixapel/calibre-ai-auditor.git bookwarden audit-360 --library "/path/to/Calibre Library"
+uvx --from git+https://github.com/felixapel/calibre-bookwarden.git bookwarden audit-360 --library "/path/to/Calibre Library"
 
 # Synchronize author sort keys to canonical bibliographic standards
-uvx --from git+https://github.com/felixapel/calibre-ai-auditor.git bookwarden sync-library --library "/path/to/Calibre Library"
+uvx --from git+https://github.com/felixapel/calibre-bookwarden.git bookwarden sync-library --library "/path/to/Calibre Library"
 
 # (Note: `bookaudit` remains fully supported as a transparent backwards-compatible alias)
 ```
@@ -168,7 +168,7 @@ services:
 ### Option C: unRAID Community Applications
 
 Install directly from the unRAID web UI using the pre-configured template:
-* **Template URL**: `https://raw.githubusercontent.com/felixapel/calibre-ai-auditor/main/deploy/unraid/calibre-bookwarden.xml`
+* **Template URL**: `https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/deploy/unraid/calibre-bookwarden.xml`
 * **Volume Mount**: Set `/calibre` to your Calibre library share (e.g. `/mnt/user/MEDIA/Books/Calibre Library`).
 
 ---

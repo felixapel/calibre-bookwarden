@@ -84,10 +84,10 @@ bookwarden-certificate-a = "calibre_ai_auditor.production_cli:app"
 bookaudit-certificate-a = "calibre_ai_auditor.production_cli:app"
 
 [project.urls]
-Homepage = "https://github.com/felixapel/calibre-ai-auditor"
-Documentation = "https://github.com/felixapel/calibre-ai-auditor#readme"
-Repository = "https://github.com/felixapel/calibre-ai-auditor.git"
-Issues = "https://github.com/felixapel/calibre-ai-auditor/issues"
+Homepage = "https://github.com/felixapel/calibre-bookwarden"
+Documentation = "https://github.com/felixapel/calibre-bookwarden#readme"
+Repository = "https://github.com/felixapel/calibre-bookwarden.git"
+Issues = "https://github.com/felixapel/calibre-bookwarden/issues"
 Funding = "https://github.com/sponsors/felixapel"
 
 [build-system]
