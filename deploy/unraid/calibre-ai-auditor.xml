@@ -1,25 +1,25 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>calibre-ai-auditor</Name>
-  <Repository>ghcr.io/felix/calibre-ai-auditor:latest</Repository>
-  <Registry>https://github.com/felix/calibre-ai-auditor/pkgs/container/calibre-ai-auditor</Registry>
+  <Repository>ghcr.io/felixapel/calibre-ai-auditor:latest</Repository>
+  <Registry>https://github.com/felixapel/calibre-ai-auditor/pkgs/container/calibre-ai-auditor</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/felix/calibre-ai-auditor/issues</Support>
-  <Project>https://github.com/felix/calibre-ai-auditor</Project>
+  <Support>https://github.com/felixapel/calibre-ai-auditor/issues</Support>
+  <Project>https://github.com/felixapel/calibre-ai-auditor</Project>
   <Overview>Content-Grounded Metadata and Cover Verification Engine for Calibre libraries. The book file is the ground truth, LLMs are witnesses. Zero hallucinations, read-only 360-degree forensic audits, Cover Tinder UI, and surgical rollbacks.</Overview>
   <Category>Productivity: MediaApp:Books Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/felix/calibre-ai-auditor/main/deploy/unraid/calibre-ai-auditor.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/felix/calibre-ai-auditor/main/docs/assets/logo.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/felixapel/calibre-ai-auditor/main/deploy/unraid/calibre-ai-auditor.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/felixapel/calibre-ai-auditor/main/docs/assets/logo.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>
   <DateInstalled/>
-  <DonateText/>
-  <DonateLink/>
+  <DonateText>Support Calibre AI Auditor development via GitHub Sponsors or Ko-fi</DonateText>
+  <DonateLink>https://ko-fi.com/felixapel</DonateLink>
   <Requires>Calibre Library directory (read-only or read-write)</Requires>
   <Config Name="WebUI Port" Target="8080" Default="8000" Mode="tcp" Description="Port for WebUI and REST API (Host maps 8000 to container 8080)" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
   <Config Name="Calibre Library Path" Target="/calibre" Default="/mnt/user/data/media/books" Mode="rw" Description="Path to your Calibre Library root containing metadata.db" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/media/books</Config>

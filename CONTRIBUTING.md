@@ -49,12 +49,13 @@ Use Conventional Commit-style prefixes where practical:
 
 ## Required local checks
 
+All checks must pass before opening a PR:
+
 ```bash
-ruff check .
-ruff format --check .
-mypy src
-pytest -q
-bookaudit doctor
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest -m "not benchmark and not ocr_live and not network"
 ```
 
 ## PR checklist
