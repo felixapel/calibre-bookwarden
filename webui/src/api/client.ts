@@ -206,3 +206,53 @@ export const fetchReviewV2Detail = async (evidenceId: string) => {
   const envelope = await response.json() as { status: 'success'; data: ReviewV2Detail }
   return envelope.data
 }
+
+// -------------------------------------------------------------
+// SOTA 2026 Calibre Bookwarden Endpoints
+// -------------------------------------------------------------
+
+export const fetchAudit360 = async () => {
+  const response = await fetchWithAuth('/api/audit/360')
+  if (!response.ok) throw await apiError(response, 'Failed to execute 360° audit')
+  const payload = await response.json() as { status: 'success'; data: any }
+  return payload.data
+}
+
+export const syncAuthorSorts = async () => {
+  const response = await fetchWithAuth('/api/audit/sync-author-sorts', { method: 'POST' })
+  if (!response.ok) throw await apiError(response, 'Failed to synchronize author sorts')
+  const payload = await response.json() as { status: 'success'; data: any }
+  return payload.data
+}
+
+export const fetchCoverDeck = async (limit = 30) => {
+  const response = await fetchWithAuth(`/api/covers/deck?limit=${limit}`)
+  if (!response.ok) throw await apiError(response, 'Failed to load cover deck')
+  const payload = await response.json() as { status: 'success'; data: { deck: any[]; count: number } }
+  return payload.data
+}
+
+export const extractNativeCover = async (bookFilePath: string, targetCoverPath: string) => {
+  const response = await fetchWithAuth('/api/covers/extract-native', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ book_file_path: bookFilePath, target_cover_path: targetCoverPath }),
+  })
+  if (!response.ok) throw await apiError(response, 'Failed to extract native container cover')
+  return response.json() as Promise<{ status: 'success'; data: any }>
+}
+
+export const fetchSeriesGaps = async () => {
+  const response = await fetchWithAuth('/api/curation/series-gaps')
+  if (!response.ok) throw await apiError(response, 'Failed to scan series gaps')
+  const payload = await response.json() as { status: 'success'; data: any[]; meta: { total_gaps: number } }
+  return payload.data
+}
+
+export const fetchDuplicateClusters = async () => {
+  const response = await fetchWithAuth('/api/curation/duplicates')
+  if (!response.ok) throw await apiError(response, 'Failed to scan duplicate clusters')
+  const payload = await response.json() as { status: 'success'; data: any[]; meta: { total_clusters: number } }
+  return payload.data
+}
+

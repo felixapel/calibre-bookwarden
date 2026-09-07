@@ -22,6 +22,7 @@ from calibre_ai_auditor.web.api import (
     bridges,
     config,
     covers_api,
+    curation_api,
     health,
     inspect,
     providers,
@@ -305,6 +306,7 @@ app.include_router(reports.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(audit_360.router, prefix="/api")
 app.include_router(covers_api.router, prefix="/api")
+app.include_router(curation_api.router, prefix="/api")
 app.include_router(bridges.router, prefix="/api")
 app.include_router(verify.router, prefix="/api")
 

@@ -188,3 +188,44 @@ def test_series_gap_hunter_supports_long_series_over_500(tmp_path: Path):
     assert gaps[0].series_name == "One Piece"
     assert 602 in gaps[0].missing_indices
     conn.close()
+
+
+def test_curation_api_endpoints(tmp_path: Path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from calibre_ai_auditor.config.settings import Settings
+    from calibre_ai_auditor.web.app import app
+
+    db_path = tmp_path / "metadata.db"
+    conn = _setup_curation_mock_db(db_path)
+    conn.close()
+
+    test_settings = Settings(
+        library={"path": tmp_path, "read_only": True},
+        database={"backend": "sqlite", "sqlite_path": str(tmp_path / "app.db")},
+        queue={"backend": "memory"},
+        rate_limits={"enabled": False},
+        api_key=None,
+    )
+    from calibre_ai_auditor.web.api.curation_api import get_settings
+
+    app.dependency_overrides[get_settings] = lambda: test_settings
+
+    client = TestClient(app)
+
+    # 1. Test series gaps endpoint
+    resp = client.get("/api/curation/series-gaps")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert any(g["series_name"] == "Dune" for g in data["data"])
+
+    # 2. Test duplicates endpoint
+    resp_dup = client.get("/api/curation/duplicates")
+    assert resp_dup.status_code == 200
+    data_dup = resp_dup.json()
+    assert data_dup["status"] == "success"
+    assert len(data_dup["data"]) > 0
+
+    app.dependency_overrides.clear()
+
