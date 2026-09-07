@@ -1,11 +1,6 @@
 # CLI Reference
 
-`bookaudit` is the primary command-line tool for managing the
-calibre-ai-auditor. `verify` defaults to the Manifestation V2 engine. All commands run from the project root
-with the venv activated (`source .venv/bin/activate`) or inside the Docker
-container (`docker compose exec app bookaudit ...`). Content Server commands
-should normally run natively in the same network namespace as the loopback SSH
-tunnel; a container-local `127.0.0.1` cannot reach a tunnel on the host.
+`bookwarden` (aliased as `bookaudit` for backward compatibility) is the primary command-line tool for managing **Calibre Bookwarden**. `verify` defaults to the Manifestation V2 engine. All commands run from the project root with `uv run bookwarden ...`, via `uvx bookwarden ...`, or inside the Docker container (`docker compose exec app bookwarden ...`). Content Server commands should normally run natively in the same network namespace as the loopback SSH tunnel.
 
 ## Global Options
 

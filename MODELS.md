@@ -1,6 +1,6 @@
 # Models and Routing
 
-`calibre-ai-auditor` uses a direct provider abstraction (`LLMRouter`) to handle requests to both local and remote Large Language Models.
+**Calibre Bookwarden** uses a direct provider abstraction (`LLMRouter`) to handle requests to both local and remote Large Language Models.
 
 ---
 

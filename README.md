@@ -1,16 +1,20 @@
-# Calibre AI Auditor
+# Calibre Bookwarden
 
 <p align="center">
-  <strong>The Content-Grounded Metadata, Cover Forensics & Curation Engine for Calibre Libraries.</strong><br>
+  <img src="assets/hero-banner.jpg" alt="Calibre Bookwarden: The Forensic Guardian for your Calibre Vault" width="100%">
+</p>
+
+<p align="center">
+  <strong>The Content-Grounded Metadata, Cover Forensics & Curation Guardian for Calibre Libraries.</strong><br>
   <em>"The book file is the ground truth. LLMs and OCR are witnesses."</em>
 </p>
 
 <p align="center">
   <a href="https://github.com/felixapel/calibre-ai-auditor/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/felixapel/calibre-ai-auditor/ci.yml?branch=main&label=CI&logo=github" alt="CI Status"></a>
-  <a href="https://github.com/felixapel/calibre-ai-auditor/releases"><img src="https://img.shields.io/badge/Release-v1.2.1-blue.svg?logo=semantic-release" alt="Release Version"></a>
+  <a href="https://github.com/felixapel/calibre-ai-auditor/releases"><img src="https://img.shields.io/badge/Release-v1.3.0-blue.svg?logo=semantic-release" alt="Release Version"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB.svg?logo=python&logoColor=white" alt="Python Versions"></a>
-  <a href="https://github.com/felixapel/calibre-ai-auditor/pkgs/container/calibre-ai-auditor"><img src="https://img.shields.io/badge/Docker-Multi--Arch%20(amd64%2Farm64)-2496ED.svg?logo=docker&logoColor=white" alt="Docker Multi-Arch"></a>
-  <a href="deploy/unraid/calibre-ai-auditor.xml"><img src="https://img.shields.io/badge/unRAID-CA%20Template-F15A24.svg?logo=unraid&logoColor=white" alt="unRAID Support"></a>
+  <a href="https://github.com/felixapel/calibre-ai-auditor/pkgs/container/calibre-bookwarden"><img src="https://img.shields.io/badge/Docker-calibre--bookwarden-2496ED.svg?logo=docker&logoColor=white" alt="Docker Multi-Arch"></a>
+  <a href="deploy/unraid/calibre-bookwarden.xml"><img src="https://img.shields.io/badge/unRAID-CA%20Template-F15A24.svg?logo=unraid&logoColor=white" alt="unRAID Support"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License"></a>
   <a href="https://github.com/sponsors/felixapel"><img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-EA4AAA.svg?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
   <a href="https://ko-fi.com/felixapel"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B.svg?logo=kofi&logoColor=white" alt="Support on Ko-fi"></a>
@@ -18,11 +22,14 @@
 
 ---
 
-## 🎯 What is Calibre AI Auditor?
+## 🎯 What is Calibre Bookwarden?
+
+> [!NOTE]
+> **Evolution to Calibre Bookwarden:** Formerly titled *Calibre AI Auditor*, the project evolved and was rebranded to **Calibre Bookwarden** to honor its true calling: acting as an incorruptible custodian and guardian of your digital book vault. We eliminated the corporate "AI auditor" jargon because our foundation is **deterministic mathematics, container forensics, and zero-risk invariant checking**—never stochastic hallucinations.
 
 Music collections have **Beets**, document archives have **Paperless-ngx**, and home cinema has **Sonarr/Radarr**. Yet digital book collectors have spent over 15 years trapped in desktop PyQt interfaces or wrestling with fragile SQLite lockups, corrupted thumbnails, missing series volumes, and AI plugins that hallucinate synopses.
 
-**Calibre AI Auditor** is a headless, high-performance forensic curation engine built for modern homelabs, power readers, and digital archivists. It verifies metadata and covers directly against the authentic container contents (EPUB OCF container, PDF XMP dictionary, CBZ/CBR comics) with zero-risk read-only audits, deterministic bibliographic authority rules, Shannon entropy vision scoring, and surgical atomic rollbacks.
+**Calibre Bookwarden** is a headless, high-performance forensic curation engine built for modern homelabs, power readers, and digital archivists. It verifies metadata and covers directly against the authentic container contents (EPUB OCF container, PDF XMP dictionary, CBZ/CBR comics) with zero-risk read-only audits, deterministic bibliographic authority rules, Shannon entropy vision scoring, and surgical atomic rollbacks.
 
 ```
                   ┌──────────────────────────────────────────────┐
@@ -58,6 +65,10 @@ Music collections have **Beets**, document archives have **Paperless-ngx**, and 
 ### 🃏 "Cover Deck" Swipeable Review UI
 * **Tinder-Style Cover Triage**: Modern, ultra-lightweight HTMX + Tailwind CSS interface.
 * **Keyboard-Driven Workflow**: Review low-quality (Tier C/D) or spurious covers with left/right arrow keys, compare against high-res candidates from OpenLibrary and Hardcover, and approve upgrades with a single keystroke.
+
+<p align="center">
+  <img src="assets/cover-deck-showcase.jpg" alt="Calibre Bookwarden Cover Deck UI" width="95%">
+</p>
 
 ### 📚 Series Gap Hunter & Multi-Format Consolidator
 * **Series Gap Hunter**: Scans collections and multi-volume sagas to detect missing intermediate and leading books (e.g. owning Volumes 1, 2, and 4; flagging missing Volume 3). Includes runaway span guards (`MAX_GAP_SPAN = 200`).
@@ -123,31 +134,33 @@ flowchart TD
 If you have [`uv`](https://docs.astral.sh/uv/) installed, run a comprehensive 360° read-only audit in one command:
 
 ```bash
-# Run a 360° forensic audit without modifying any files
-uvx --from git+https://github.com/felixapel/calibre-ai-auditor.git bookaudit audit-360 --library "/path/to/Calibre Library"
+# Run a 360° forensic audit without modifying any files (using new bookwarden CLI)
+uvx --from git+https://github.com/felixapel/calibre-ai-auditor.git bookwarden audit-360 --library "/path/to/Calibre Library"
 
 # Synchronize author sort keys to canonical bibliographic standards
-uvx --from git+https://github.com/felixapel/calibre-ai-auditor.git bookaudit sync-library --library "/path/to/Calibre Library"
+uvx --from git+https://github.com/felixapel/calibre-ai-auditor.git bookwarden sync-library --library "/path/to/Calibre Library"
+
+# (Note: `bookaudit` remains fully supported as a transparent backwards-compatible alias)
 ```
 
 ### Option B: Docker Compose (Sidecar Pattern for Homelabs)
 
-Run Calibre AI Auditor as a companion sidecar alongside your existing `linuxserver/calibre` and `calibre-web-automated` containers:
+Run **Calibre Bookwarden** as a companion sidecar alongside your existing `linuxserver/calibre` and `calibre-web-automated` containers:
 
 ```yaml
 services:
-  calibre-ai-auditor:
-    image: ghcr.io/felixapel/calibre-ai-auditor:latest
-    container_name: calibre-ai-auditor
+  calibre-bookwarden:
+    image: ghcr.io/felixapel/calibre-bookwarden:latest
+    container_name: calibre-bookwarden
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
       - /mnt/user/MEDIA/Books/Calibre Library:/calibre:ro
-      - /mnt/user/appdata/calibre-ai-auditor:/config
+      - /mnt/user/appdata/calibre-bookwarden:/config
     environment:
-      - BOOKAUDIT_READ_ONLY=true
-      - BOOKAUDIT_LIBRARY_PATH=/calibre
+      - BOOKWARDEN_READ_ONLY=true
+      - BOOKWARDEN_LIBRARY_PATH=/calibre
       - CALIBRE_WEB_CONTAINER=calibre-web-automated
       - GEMINI_API_KEY=${GEMINI_API_KEY}
 ```
@@ -155,16 +168,20 @@ services:
 ### Option C: unRAID Community Applications
 
 Install directly from the unRAID web UI using the pre-configured template:
-* **Template URL**: `https://raw.githubusercontent.com/felixapel/calibre-ai-auditor/main/deploy/unraid/calibre-ai-auditor.xml`
+* **Template URL**: `https://raw.githubusercontent.com/felixapel/calibre-ai-auditor/main/deploy/unraid/calibre-bookwarden.xml`
 * **Volume Mount**: Set `/calibre` to your Calibre library share (e.g. `/mnt/user/MEDIA/Books/Calibre Library`).
 
 ---
 
 ## 📊 Live Library Performance
 
+<p align="center">
+  <img src="assets/terminal-audit-showcase.jpg" alt="Calibre Bookwarden 360° Terminal Audit" width="95%">
+</p>
+
 Benchmarked against a production library of **3,180 books** over SMB network storage:
 
-| Metric | Before (Legacy) | With Calibre AI Auditor 2.0 | Improvement |
+| Metric | Before (Legacy) | With Calibre Bookwarden 2.0 | Improvement |
 | :--- | :---: | :---: | :---: |
 | **Audit Duration (3,180 books)** | 14m 20s | **44.72 seconds** | **19.2x faster** ⚡ |
 | **SQL Queries Executed** | 3,177 individual SELECTs | **1 atomic compound query** | **Zero N+1 overhead** |
@@ -177,7 +194,7 @@ Benchmarked against a production library of **3,180 books** over SMB network sto
 
 ## 🛡️ Safety Invariants (Certificate A)
 
-Calibre AI Auditor operates under strict cryptographic and database constraints:
+Calibre Bookwarden operates under strict cryptographic and database constraints:
 1. **Offline & Read-Only Guarantees**: Core auditing strictly mounts `/calibre` as `:ro`.
 2. **Atomic Snapshots**: Any write or remediation requires an instant `VACUUM INTO` backup (`metadata.db.bak_<timestamp>`) verified on disk before any table modification.
 3. **Non-Root Execution**: Container images run as unprivileged user `10001:10001` with `read-only rootfs` and `CapDrop: ALL`.
@@ -188,7 +205,7 @@ Calibre AI Auditor operates under strict cryptographic and database constraints:
 
 ## 💖 Supporting & Sponsoring
 
-Calibre AI Auditor is an independent open-source project dedicated to digital preservation, content-grounded media verification, and homelab sovereignty.
+Calibre Bookwarden is an independent open-source project dedicated to digital preservation, content-grounded media verification, and homelab sovereignty.
 
 If this project saved your library from corruption, upgraded your covers, or saved you hours of manual editing, please consider supporting continued development:
 

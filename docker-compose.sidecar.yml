@@ -1,11 +1,13 @@
 services:
-  calibre-ai-auditor:
-    image: ghcr.io/felix/calibre-ai-auditor:latest
-    container_name: calibre-ai-auditor
+  calibre-bookwarden:
+    image: ghcr.io/felixapel/calibre-bookwarden:latest
+    container_name: calibre-bookwarden
     restart: unless-stopped
     ports:
       - "8000:8080"
     environment:
+      - BOOKWARDEN_READ_ONLY=false
+      - BOOKWARDEN_LIBRARY_PATH=/calibre
       - BOOKAUDIT_READ_ONLY=false
       - BOOKAUDIT_LIBRARY_PATH=/calibre
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
@@ -13,7 +15,7 @@ services:
       - CALIBRE_WEB_URL=http://calibre-web-automated:8083
     volumes:
       - /mnt/user/MEDIA/Books/Calibre Library:/calibre:rw
-      - /mnt/user/appdata/calibre-ai-auditor:/config:rw
+      - /mnt/user/appdata/calibre-bookwarden:/config:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - calibre-net

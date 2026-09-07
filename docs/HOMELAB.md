@@ -1,8 +1,7 @@
 # Homelab Integration & Deployment Guide
 
-This guide provides configurations for integrating `calibre-ai-auditor` v1.0
-with your local homelab services running at **`192.168.0.122`**, plus v1.0
-multi-host inference setup.
+This guide provides configurations for integrating **Calibre Bookwarden** (formerly `calibre-ai-auditor`)
+with your local homelab services running at **`192.168.0.122`**, plus multi-host inference setup.
 
 ---
 

@@ -26,7 +26,7 @@ def test_load_settings_yaml(tmp_path: Any) -> None:
     config_path.write_text("profile: custom\nlibrary:\n  path: /tmp/lib")
     settings = load_settings(config_path)
     assert settings.profile == "custom"
-    assert str(settings.library.path) == "/tmp/lib"
+    assert Path(settings.library.path) == Path("/tmp/lib")
 
 
 def test_manifestation_v2_recognition_defaults_are_bounded_and_local_first(

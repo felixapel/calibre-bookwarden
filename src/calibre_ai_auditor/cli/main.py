@@ -99,7 +99,7 @@ def main(
     config: Annotated[Path | None, typer.Option("--config", "-c", help="Path to config.yml")] = None,
 ) -> None:
     """
-    Calibre AI Auditor - Evidence-first metadata auditing.
+    Calibre Bookwarden - The Content-Grounded Metadata, Cover Forensics & Curation Guardian.
     """
     settings = load_settings(config)
     ctx.obj = settings

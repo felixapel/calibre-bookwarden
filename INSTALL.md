@@ -56,7 +56,7 @@ Install the locked Python environment:
 ```bash
 uv python install 3.12.13
 uv sync --python 3.12.13 --frozen
-uv run bookaudit-certificate-a --help
+uv run bookwarden --help
 ```
 
 Install the locked WebUI separately:

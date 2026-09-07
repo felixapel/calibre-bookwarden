@@ -2,7 +2,7 @@
 
 ## Overview
 
-`calibre-ai-auditor` uses a multi-layered persistence strategy to balance performance and explainability.
+**Calibre Bookwarden** uses a multi-layered persistence strategy to balance performance and explainability.
 
 1.  **System-of-Record**: A relational database (**PostgreSQL** or **SQLite**) stores book records, audit runs, background job status, and resolution decisions.
 2.  **Artifact Store**: A directory structure stores heavyweight evidence such as cover images, text snippets, and OPF backups.

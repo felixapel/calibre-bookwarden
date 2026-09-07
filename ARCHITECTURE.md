@@ -6,7 +6,7 @@
 > stopped-library, read-only app/verifier split. LLM, vector, MCP, watcher,
 > Content Server, and writer components below are not in the production closure.
 
-The development head of `calibre-ai-auditor` is the Manifestation V2
+The development head of **Calibre Bookwarden** (formerly `calibre-ai-auditor`) is the Manifestation V2
 exact-edition auditor. It treats each original ebook format as read-only
 evidence, resolves identity before proposing metadata, and seals the complete
 decision record. The historical v1.0 engine remains documented below.

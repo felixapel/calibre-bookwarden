@@ -1,7 +1,6 @@
 # Usage Guide
 
-`calibre-ai-auditor` provides one Manifestation V2 workflow across CLI, API and
-WebUI, while retaining historical V1 inspection compatibility:
+**Calibre Bookwarden** (invoked via `bookwarden` or the backward-compatible `bookaudit` alias) provides one unified Manifestation V2 workflow across CLI, API, and WebUI, while retaining historical V1 inspection compatibility:
 
 1. **CLI/API/WebUI (V2 default)** — exact-edition, all-format, sealed audits and
    supervised per-package correction

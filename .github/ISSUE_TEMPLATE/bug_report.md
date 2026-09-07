@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Create a report to help us improve Calibre AI Auditor
+about: Create a report to help us improve Calibre Bookwarden
 title: '[BUG] '
 labels: 'bug'
 assignees: ''
@@ -18,7 +18,7 @@ A clear and concise description of what the bug is.
 - **OS**: [e.g. unRAID 6.12, Ubuntu 24.04, Windows 11]
 - **Deployment**: [e.g. Docker Compose, unRAID CA template, CLI via uvx]
 - **Calibre Version**: [e.g. 7.15, Calibre-Web 0.6.22]
-- **Calibre AI Auditor Version**: [e.g. 1.2.1, git commit hash]
+- **Calibre Bookwarden Version**: [e.g. 1.3.0, git commit hash]
 - **Python Version**: [e.g. 3.12.13]
 
 ## 📜 Logs & Tracebacks

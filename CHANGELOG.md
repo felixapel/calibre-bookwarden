@@ -4,6 +4,18 @@ All notable changes to `calibre-ai-auditor` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-09-07
+
+### Added
+- **Project Rebranding to Calibre Bookwarden**: Transitioned official project name from *Calibre AI Auditor* to **Calibre Bookwarden**, highlighting the tool's deterministic forensic guardianship and rejecting AI-washing hype.
+- **Production-Ready SOTA Showcase Visuals**:
+  - `assets/hero-banner.jpg`: Cybernetic book vault hero banner with sleek typography.
+  - `assets/cover-deck-showcase.jpg`: Photorealistic high-resolution Cover Deck UI mockup displaying CQS metrics (Laplacian sharpness, Shannon entropy, aspect ratio) and keyboard-driven triage.
+  - `assets/terminal-audit-showcase.jpg`: Rich terminal capture of `bookwarden audit-360` executing full forensic audits with Unicode box drawing and status badges.
+- **Dual CLI Entrypoints**: Registered `bookwarden` as canonical CLI command in `pyproject.toml`, maintaining full backward compatibility for `bookaudit`.
+- **unRAID Template v2**: Added `deploy/unraid/calibre-bookwarden.xml` with updated metadata, icons, and donate links.
+- **Environment Variable Fallback**: Supported `BOOKWARDEN_*` configuration variables while preserving transparent fallback to `BOOKAUDIT_*`.
+
 ## [Unreleased]
 
 ### Added

@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea or new capability for Calibre AI Auditor
+about: Suggest an idea or new capability for Calibre Bookwarden
 title: '[FEAT] '
 labels: 'enhancement'
 assignees: ''
