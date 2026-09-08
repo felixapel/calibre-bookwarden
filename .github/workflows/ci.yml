@@ -52,7 +52,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y calibre
       - name: Install locked dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --group dev
       - name: Python quality gates
         run: |
           uv run ruff check .
@@ -102,7 +102,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y calibre
       - name: Install locked backend dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --group dev
       - name: Install exact frontend dependencies
         working-directory: webui
         run: npm ci

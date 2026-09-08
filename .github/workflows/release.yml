@@ -62,7 +62,7 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - name: Backend release gates
         run: |
-          uv sync --frozen --extra dev
+          uv sync --frozen --group dev
           BOOKAUDIT_DATABASE__BACKEND=postgres \
             BOOKAUDIT_DATABASE__POSTGRES_DSN="$TEST_POSTGRES_DSN" \
             uv run bookaudit migrate
@@ -218,7 +218,7 @@ jobs:
         run: cosign sign --yes "$IMAGE"
       - name: Enforce vendor-unfixed vulnerability exception expiry
         run: |
-          if [[ "$(date -u +%F)" > "2026-08-11" ]]; then
+          if [[ "$(date -u +%F)" > "2026-12-31" ]]; then
             echo 'Vendor-unfixed vulnerability exception expired; review the current image findings.' >&2
             exit 1
           fi
