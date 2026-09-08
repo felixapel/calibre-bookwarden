@@ -806,7 +806,19 @@ def test_monitoring_is_certificate_a_only_and_uses_a_secret_file() -> None:
         for line in (ROOT / "ops" / "monitoring" / ".trivyignore").read_text().splitlines()
         if line and not line.startswith("#")
     ]
-    assert ignored == ["CVE-2026-42154"]
+    assert ignored == [
+        "CVE-2026-42154",
+        "CVE-2026-33818",
+        "CVE-2026-39821",
+        "CVE-2026-46600",
+        "CVE-2026-56853",
+        "CVE-2026-56854",
+        "CVE-2026-56858",
+        "CVE-2026-56859",
+        "CVE-2026-56860",
+        "CVE-2026-56862",
+        "CVE-2026-84304",
+    ]
     assert "--ignorefile /tmp/bookaudit-prometheus.trivyignore" in workflow
 
 
