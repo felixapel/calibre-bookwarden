@@ -170,9 +170,11 @@ jobs:
           export BOOKAUDIT_PORT=18080
           export POSTGRES_PASSWORD=release-admin-password-unique-2026
           export POSTGRES_APP_PASSWORD=release-app-password-unique-2026
+          export POSTGRES_VERIFIER_PASSWORD=release-verifier-password-unique-2026
           export POSTGRES_WRITER_PASSWORD=release-writer-password-unique-2026
           export POSTGRES_MIGRATOR_PASSWORD=release-migrator-password-unique-2026
           export BOOKAUDIT_APP_POSTGRES_DSN=postgresql+psycopg://bookaudit_app:release-app-password-unique-2026@postgres:5432/bookaudit
+          export BOOKAUDIT_VERIFIER_POSTGRES_DSN=postgresql+psycopg://bookaudit_verifier:release-verifier-password-unique-2026@postgres:5432/bookaudit
           export BOOKAUDIT_WRITER_POSTGRES_DSN=postgresql+psycopg://bookaudit_writer:release-writer-password-unique-2026@postgres:5432/bookaudit
           export BOOKAUDIT_MIGRATOR_POSTGRES_DSN=postgresql+psycopg://bookaudit_migrator:release-migrator-password-unique-2026@postgres:5432/bookaudit
           export BOOKAUDIT_API_KEY=release-api-key-with-at-least-32-characters-9Z
@@ -180,7 +182,7 @@ jobs:
           cleanup() { docker compose down -v --remove-orphans; }
           trap cleanup EXIT
           touch .env
-          install -d -m 0750 /tmp/bookaudit-release-library .state .artifacts .writer-artifacts user_library
+          install -d -m 0755 /tmp/bookaudit-release-library .state .artifacts .writer-artifacts user_library
           docker pull "$BOOKAUDIT_IMAGE"
           docker compose up -d --wait postgres valkey
           docker compose --profile maintenance run --rm migrate
