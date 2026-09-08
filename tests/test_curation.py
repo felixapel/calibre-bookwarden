@@ -228,4 +228,3 @@ def test_curation_api_endpoints(tmp_path: Path, monkeypatch):
     assert len(data_dup["data"]) > 0
 
     app.dependency_overrides.clear()
-

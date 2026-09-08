@@ -13,11 +13,13 @@ import clsx from 'clsx'
 
 import { getAuthRevision, getUnauthorized, setApiKey, subscribeAuth } from './api/auth'
 import { Sidebar } from './components/Sidebar'
+import Dashboard from './pages/Dashboard'
+import Verify from './pages/Verify'
+import Review from './pages/Review'
 import CommandCenter from './pages/CommandCenter'
 import Audit360 from './pages/Audit360'
 import CoverStudio from './pages/CoverStudio'
 import Curation from './pages/Curation'
-import Verification from './pages/Verification'
 
 const mobileNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Overview' },
@@ -86,15 +88,16 @@ export default function App() {
         <Sidebar />
         <main className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0">
           <Routes key={authRevision}>
-            <Route path="/" element={<CommandCenter />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/command-center" element={<CommandCenter />} />
             <Route path="/audit-360" element={<Audit360 />} />
             <Route path="/covers" element={<CoverStudio />} />
             <Route path="/curation" element={<Curation />} />
-            <Route path="/verify" element={<Verification />} />
-            <Route path="/verify/:runId" element={<Verification />} />
-            <Route path="/review" element={<Verification />} />
-            <Route path="/review/:evidenceId" element={<Verification />} />
-            <Route path="*" element={<CommandCenter />} />
+            <Route path="/verify" element={<Verify />} />
+            <Route path="/verify/:runId" element={<Verify />} />
+            <Route path="/review" element={<Review />} />
+            <Route path="/review/:evidenceId" element={<Review />} />
+            <Route path="*" element={<Dashboard />} />
           </Routes>
         </main>
         <MobileNavigation />
@@ -110,10 +113,10 @@ export default function App() {
           >
             <h2 id="api-key-title" className="flex items-center gap-2 text-lg font-bold text-slate-100">
               <KeyRound aria-hidden="true" className="h-5 w-5 text-cyan-400" />
-              API Key Required
+              API key required
             </h2>
             <p className="text-sm text-slate-400">
-              Enter the local Calibre Bookwarden API key. It stays only in page memory and is cleared on reload.
+              Enter the local Certificate A API key. It stays only in page memory and is cleared on reload.
             </p>
             <input
               ref={apiKeyInputRef}
@@ -130,7 +133,7 @@ export default function App() {
               disabled={!apiKeyInput.trim()}
               className="w-full rounded-xl bg-cyan-600 px-4 py-3 text-sm font-bold text-white hover:bg-cyan-500 disabled:opacity-40 transition-colors"
             >
-              Save and Retry
+              Save and retry
             </button>
           </div>
         </div>
