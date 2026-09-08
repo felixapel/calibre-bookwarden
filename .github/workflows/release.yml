@@ -182,7 +182,8 @@ jobs:
           cleanup() { docker compose down -v --remove-orphans; }
           trap cleanup EXIT
           touch .env
-          install -d -m 0755 /tmp/bookaudit-release-library .state .artifacts .writer-artifacts user_library
+          install -d -m 0777 /tmp/bookaudit-release-library .state .artifacts .writer-artifacts user_library
+          chmod -R 0777 /tmp/bookaudit-release-library .state .artifacts .writer-artifacts user_library
           docker pull "$BOOKAUDIT_IMAGE"
           docker compose up -d --wait postgres valkey
           docker compose --profile maintenance run --rm migrate
