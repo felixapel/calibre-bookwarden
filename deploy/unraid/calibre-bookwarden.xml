@@ -11,9 +11,9 @@
   <Project>https://github.com/felixapel/calibre-bookwarden</Project>
   <Overview>Calibre Bookwarden is the content-grounded metadata verification and cover forensics guardian for Calibre libraries. The book file is the ground truth, LLMs are witnesses. Zero hallucinations, read-only 360-degree forensic audits, Cover Deck swipeable UI, Series Gap Hunter, and surgical rollbacks.</Overview>
   <Category>Productivity: MediaApp:Books Status:Stable</Category>
-  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/deploy/unraid/calibre-bookwarden.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/docs/assets/hero-banner.jpg</Icon>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/felixapel/unraid-templates/main/calibre-bookwarden.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/felixapel/unraid-templates/main/icons/calibre-bookwarden.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>
