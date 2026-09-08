@@ -50,7 +50,7 @@ jobs:
       - name: Install Calibre integration dependency
         run: |
           sudo apt-get update
-          sudo apt-get install -y calibre
+          sudo apt-get install -y calibre postgresql-client
       - name: Install locked dependencies
         run: uv sync --frozen --group dev
       - name: Python quality gates
@@ -59,10 +59,23 @@ jobs:
           uv run ruff format --check .
           uv run mypy src
       - name: Unit, integration, and migration tests
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: bookaudit
+          PGPASSWORD: ci-postgres-password
+          POSTGRES_USER: bookaudit
+          POSTGRES_DB: bookaudit_test
+          POSTGRES_APP_PASSWORD: ci-app-password
+          POSTGRES_VERIFIER_PASSWORD: ci-verifier-password
+          POSTGRES_WRITER_PASSWORD: ci-writer-password
+          POSTGRES_MIGRATOR_PASSWORD: ci-migrator-password
         run: |
+          ./scripts/postgres-init-roles.sh
+          BOOKAUDIT_PROFILE=production \
           BOOKAUDIT_DATABASE__BACKEND=postgres \
-            BOOKAUDIT_DATABASE__POSTGRES_DSN="$TEST_POSTGRES_DSN" \
-            uv run bookaudit migrate
+          BOOKAUDIT_DATABASE__POSTGRES_DSN="postgresql+psycopg://bookaudit_migrator:ci-migrator-password@127.0.0.1:5432/bookaudit_test" \
+            uv run bookaudit-certificate-a migrate
           test -n "$TEST_POSTGRES_DSN"
           test -n "$TEST_VALKEY_URL"
           uv run pytest tests/test_retention_postgres_valkey.py -q
@@ -155,6 +168,7 @@ jobs:
           POSTGRES_APP_PASSWORD: app
           POSTGRES_WRITER_PASSWORD: writer
           POSTGRES_MIGRATOR_PASSWORD: migrator
+          BOOKAUDIT_RELEASE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
         run: |
           test "$(docker image inspect calibre-ai-auditor:ci --format '{{.Config.User}}')" = "10001:10001"
           docker run --rm --entrypoint sh calibre-ai-auditor:ci -c '! python -c "import pytest" && bookaudit --help >/dev/null'
