@@ -50,7 +50,7 @@ jobs:
       - name: Install Calibre integration dependency
         run: |
           sudo apt-get update
-          sudo apt-get install -y calibre postgresql-client
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends calibre postgresql-client
       - name: Install locked dependencies
         run: uv sync --frozen --group dev
       - name: Python quality gates
@@ -98,24 +98,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-        with:
-          version: "0.11.15"
-          enable-cache: true
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12.13"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20.19.4"
           cache: npm
           cache-dependency-path: webui/package-lock.json
-      - name: Install Calibre integration dependency
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y calibre
-      - name: Install locked backend dependencies
-        run: uv sync --frozen --group dev
       - name: Install exact frontend dependencies
         working-directory: webui
         run: npm ci
