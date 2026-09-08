@@ -73,7 +73,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download \
 FROM alpine@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS caddy-edge
 ARG BOOKAUDIT_BUILD_REVISION=unknown
 LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"
-RUN apk add --no-cache ca-certificates mailcap
+RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates mailcap
 COPY --from=caddy-edge-builder /usr/local/bin/caddy /usr/bin/caddy
 ENTRYPOINT ["caddy"]
 CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

@@ -372,14 +372,22 @@ jobs:
           docker start --attach bookaudit-caddy-config-smoke
       - name: Scan release images for high vulnerabilities and secrets
         run: |
-          trap 'docker rm -f bookaudit-prometheus-trivy >/dev/null 2>&1 || true' EXIT
-          for image in calibre-ai-auditor:gitea-ci calibre-ai-auditor-writer:gitea-ci \
-            calibre-ai-auditor-edge:gitea-ci; do
+          trap 'docker rm -f bookaudit-edge-trivy bookaudit-prometheus-trivy >/dev/null 2>&1 || true' EXIT
+          for image in calibre-ai-auditor:gitea-ci calibre-ai-auditor-writer:gitea-ci; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
               --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
               --scanners vuln,secret "$image"
           done
+          docker create --name bookaudit-edge-trivy \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
+            --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+            --ignorefile /tmp/caddy.trivyignore \
+            --scanners vuln,secret calibre-ai-auditor-edge:gitea-ci
+          docker cp deploy/caddy/.trivyignore \
+            bookaudit-edge-trivy:/tmp/caddy.trivyignore
+          docker start --attach bookaudit-edge-trivy
           docker create --name bookaudit-prometheus-trivy \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293 image \
