@@ -107,6 +107,7 @@ async def score_uploaded_cover(file: UploadFile = File(...)) -> Any:
                 break
             total += len(chunk)
             if total > max_bytes:
+                tmp.close()  # release handle before raise (Windows unlink in finally)
                 raise HTTPException(status_code=413, detail="Upload too large (max 25MB)")
             tmp.write(chunk)
         tmp.flush()

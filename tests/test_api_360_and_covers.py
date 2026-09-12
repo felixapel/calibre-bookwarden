@@ -193,3 +193,15 @@ def test_covers_score_upload_windows_safety(tmp_path: Path):
     assert data["status"] == "success"
     assert "cqs" in data["data"]
     assert data["data"]["cqs"]["width"] == 300
+
+
+def test_covers_score_upload_rejects_oversize():
+    client = TestClient(app)
+    big = b"\xff" * (26 * 1024 * 1024)
+
+    response = client.post(
+        "/api/covers/score-upload",
+        files={"file": ("big.jpg", big, "image/jpeg")},
+    )
+    assert response.status_code == 413
+    assert "too large" in response.json()["detail"]
