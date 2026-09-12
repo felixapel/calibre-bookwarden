@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
@@ -18,8 +17,6 @@ from calibre_ai_auditor.web.jobs import get_job_status, start_job
 from calibre_ai_auditor.web.schemas import APIResponse, RevertRequest
 
 router = APIRouter()
-
-logger = logging.getLogger(__name__)
 
 
 def get_settings() -> Settings:
@@ -57,12 +54,24 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
         run = Run(run_id=run_id, metadata_filter=req.search)
         session.add(run)
 
+        # list_books --fields all already returns full per-book metadata:
+        # reuse the rows (no per-book show_metadata subprocess) and stage
+        # existing records with one bulk select (no per-book lookup).
+        staged_keys = [f"calibre:{book['id']}" for book in books]
+        staged_existing = (
+            {
+                record.book_key: record
+                for record in session.exec(select(BookRecord).where(col(BookRecord.book_key).in_(staged_keys))).all()
+            }
+            if staged_keys
+            else {}
+        )
         for book in books:
             authors_str = book.get("authors", "")
             authors = [a.strip() for a in authors_str.split("&")] if isinstance(authors_str, str) else []  # noqa: SIM108
 
             book_key = f"calibre:{book['id']}"
-            existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
+            existing = staged_existing.get(book_key)
             if existing:
                 existing.run_id = run_id
                 existing.current_metadata = {
@@ -86,23 +95,22 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
                     },
                     files=[{"path": f, "format": Path(f).suffix[1:].lower()} for f in book.get("formats", [])],
                 )
-            try:
-                full_metadata = cli.show_metadata(book["id"])
-                lang = full_metadata.get("languages", [None])[0] if full_metadata.get("languages") else None
-                book_record.current_metadata.update(
-                    {
-                        "publisher": full_metadata.get("publisher"),
-                        "published_date": full_metadata.get("pubdate"),
-                        "language": lang,
-                        "series": full_metadata.get("series"),
-                        "series_index": full_metadata.get("series_index"),
-                        "tags": full_metadata.get("tags", []),
-                    }
-                )
-            except Exception as exc:
-                # Enrichment is best-effort per book; log so persistent
-                # breakage is visible instead of silently degrading runs.
-                logger.warning("Metadata enrichment failed for book %s: %s", book.get("id"), exc)
+                staged_existing[book_key] = book_record
+            # Enrichment reads the already-fetched list row: show_metadata
+            # runs the identical --fields all query, so a per-book call
+            # would re-scan the whole library for data already in hand.
+            languages = book.get("languages")
+            lang = languages[0] if languages else None
+            book_record.current_metadata.update(
+                {
+                    "publisher": book.get("publisher"),
+                    "published_date": book.get("pubdate"),
+                    "language": lang,
+                    "series": book.get("series"),
+                    "series_index": book.get("series_index"),
+                    "tags": book.get("tags", []),
+                }
+            )
 
             session.add(book_record)
 
@@ -121,11 +129,15 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
             )
             eclient = get_embedding_client(settings)
             indexer = VectorIndexer(vclient, eclient)
-            for book in books:
-                book_key = f"calibre:{book['id']}"
-                record = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
-                if record:
-                    await indexer.index_book(record)
+            # Bulk-fetch the records staged above instead of one select per book.
+            vector_keys = [f"calibre:{book['id']}" for book in books]
+            vector_records = (
+                session.exec(select(BookRecord).where(col(BookRecord.book_key).in_(vector_keys))).all()
+                if vector_keys
+                else []
+            )
+            for record in vector_records:
+                await indexer.index_book(record)
 
     return {"run_id": run_id, "books_found": len(books)}
 

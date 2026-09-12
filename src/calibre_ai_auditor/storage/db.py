@@ -36,6 +36,13 @@ def get_engine(settings: Settings) -> Engine:
     return engine
 
 
+def dispose_engines() -> None:
+    """Release all cached engines (test isolation, shutdown hygiene)."""
+    while _engines:
+        _, engine = _engines.popitem()
+        engine.dispose()
+
+
 def init_db(settings: Settings) -> None:
     """Upgrade the configured database to the repository's Alembic head."""
     engine = get_engine(settings)
