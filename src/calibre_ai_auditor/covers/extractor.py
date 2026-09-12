@@ -207,15 +207,15 @@ def _write_zip_member_safely(z: zipfile.ZipFile, member_name: str, target_path: 
         return False
     target = Path(target_path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with z.open(member_name) as source, open(target, "wb") as target:
+    with z.open(member_name) as source, open(target, "wb") as out_fh:
         remaining = MAX_COVER_MEMBER_BYTES
         while remaining > 0:
             chunk = source.read(min(65536, remaining))
             if not chunk:
                 break
-            target.write(chunk)
+            out_fh.write(chunk)
             remaining -= len(chunk)
-    return target_path.exists() and target_path.stat().st_size > 0
+    return target.exists() and target.stat().st_size > 0
 
 
 def _find_cover_href_from_opf(z: zipfile.ZipFile) -> str | None:

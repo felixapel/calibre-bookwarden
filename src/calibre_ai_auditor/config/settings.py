@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml  # type: ignore[import-untyped]  # no PyYAML stubs; same as web/api/config.py
+import yaml
 from pydantic import AliasChoices, BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
