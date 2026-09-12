@@ -1,9 +1,8 @@
 import logging
 from typing import Any
 
-import httpx
-
 from calibre_ai_auditor.providers.base import BaseProvider
+from calibre_ai_auditor.providers.cache import cached_get_json
 from calibre_ai_auditor.storage.models import Candidate, Metadata
 
 logger = logging.getLogger(__name__)
@@ -32,15 +31,12 @@ class OpenLibraryProvider(BaseProvider):
 
         url = "https://openlibrary.org/search.json"
         logger.info(f"Fetching candidates from OpenLibrary (title={title}, isbn={isbn})...")
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            try:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-                data = response.json()
-                return self._parse_search_results(data)
-            except Exception as e:
-                logger.error(f"OpenLibrary fetch failed: {e}")
-                return []
+        try:
+            data = await cached_get_json(url, params=params, timeout=15.0)
+            return self._parse_search_results(data)
+        except Exception as e:
+            logger.error(f"OpenLibrary fetch failed: {e}")
+            return []
 
     def _parse_search_results(self, data: dict[str, Any]) -> list[Candidate]:
         candidates = []

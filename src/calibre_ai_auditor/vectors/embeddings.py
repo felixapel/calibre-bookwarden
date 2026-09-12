@@ -58,7 +58,7 @@ class EmbeddingClient:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:embedContent"
             headers = {"Content-Type": "application/json"}
             params = {"key": self.api_key or ""}
-            payload = {"content": {"parts": [{"text": text}]}}
+            payload: dict[str, Any] = {"content": {"parts": [{"text": text}]}}
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     response = await client.post(url, json=payload, headers=headers, params=params)
@@ -78,7 +78,7 @@ class EmbeddingClient:
 
             # Remove '/v1' if present for the native Ollama endpoint
             ollama_url = f"{url.replace('/v1', '')}/api/embeddings"
-            payload: dict[str, Any] = {"model": self.model, "prompt": text}
+            payload = {"model": self.model, "prompt": text}
 
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:

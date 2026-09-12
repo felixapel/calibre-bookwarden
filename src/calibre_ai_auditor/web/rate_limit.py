@@ -16,18 +16,28 @@ return 0
 """
 
 
-async def consume_rate_limit(url: str, identity: str, limit: int, window: int, timeout: float) -> int:
-    """Consume one request and return retry seconds, or zero when allowed."""
+_POOLS: dict[str, Any] = {}
+
+
+def _pool_for(url: str, timeout: float) -> Any:
+    """Shared connection pool per URL: avoids per-request socket churn."""
     import redis.asyncio as aioredis
 
-    client: Any = aioredis.from_url(
-        url,
-        decode_responses=True,
-        socket_connect_timeout=timeout,
-        socket_timeout=timeout,
-    )
-    try:
-        result = await client.eval(RATE_LIMIT_SCRIPT, 1, f"http-rate:{identity}", limit, window)
-        return max(0, int(result))
-    finally:
-        await client.aclose()
+    pool = _POOLS.get(url)
+    if pool is None:
+        pool = aioredis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=timeout,
+            socket_timeout=timeout,
+            max_connections=20,
+        )
+        _POOLS[url] = pool
+    return pool
+
+
+async def consume_rate_limit(url: str, identity: str, limit: int, window: int, timeout: float) -> int:
+    """Consume one request and return retry seconds, or zero when allowed."""
+    client = _pool_for(url, timeout)
+    result = await client.eval(RATE_LIMIT_SCRIPT, 1, f"http-rate:{identity}", limit, window)
+    return max(0, int(result))

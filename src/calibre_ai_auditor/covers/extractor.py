@@ -190,8 +190,24 @@ def extract_native_cover(book_file: Path | str, target_cover_path: Path | str) -
 
 
 def _write_zip_member_safely(z: zipfile.ZipFile, member_name: str, target_path: Path) -> bool:
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    with z.open(member_name) as source, open(target_path, "wb") as target:
+    # Harden: member must be a real entry (no absolute/.. tricks), with ratio + size caps.
+    if member_name.startswith("/") or ".." in Path(member_name).parts:
+        logger.warning(f"Refusing suspicious zip member {member_name!r}")
+        return False
+    try:
+        info = z.getinfo(member_name)
+    except KeyError:
+        logger.warning(f"Zip member not found: {member_name!r}")
+        return False
+    if info.file_size > MAX_COVER_MEMBER_BYTES:
+        logger.warning(f"Zip member too large: {member_name!r} ({info.file_size} bytes)")
+        return False
+    if info.compress_size and info.file_size / max(1, info.compress_size) > 500:
+        logger.warning(f"Suspicious compression ratio in {member_name!r}")
+        return False
+    target = Path(target_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with z.open(member_name) as source, open(target, "wb") as target:
         remaining = MAX_COVER_MEMBER_BYTES
         while remaining > 0:
             chunk = source.read(min(65536, remaining))

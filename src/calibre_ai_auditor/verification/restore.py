@@ -249,12 +249,19 @@ class RestorePointStore:
                 try:
                     meta = json.loads(meta_file.read_text())
                     applied_at = datetime.fromisoformat(meta["applied_at"])
+                    if applied_at.tzinfo is None:
+                        # Legacy points written without offset: assume UTC
+                        # rather than crashing naive-vs-aware subtraction.
+                        applied_at = applied_at.replace(tzinfo=UTC)
                     ttl = timedelta(seconds=meta.get("ttl_seconds", int(self.default_ttl.total_seconds())))
                     if (now - applied_at) > ttl:
+                        if book_dir.is_symlink():
+                            logger.warning("Refusing to delete symlinked restore point: %s", book_dir)
+                            continue
                         shutil.rmtree(book_dir)
                         deleted += 1
                         logger.info("Cleaned up expired restore point: %s", book_dir)
-                except (json.JSONDecodeError, KeyError, ValueError) as e:
+                except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
                     logger.warning("Bad restore.json at %s: %s", meta_file, e)
         return deleted
 

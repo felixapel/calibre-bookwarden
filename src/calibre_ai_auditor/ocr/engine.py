@@ -41,7 +41,13 @@ class OCREngine:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await proc.communicate()
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+                except TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+                    logger.error("OCR timed out after 300s; killed ocrmypdf.")
+                    return ""
 
                 if proc.returncode != 0:
                     logger.error(f"OCR failed: {stderr.decode(errors='replace')}")

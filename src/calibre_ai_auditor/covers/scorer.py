@@ -69,8 +69,42 @@ class CoverQualityScorer:
         fatal_defects: list[str] = []
 
         try:
+            if path.stat().st_size > 25 * 1024 * 1024:
+                penalties.append("file_too_large")
+                fatal_defects.append("file_too_large")
+                return CoverScoreResult(
+                    cqs=0,
+                    tier="Tier D",
+                    width=0,
+                    height=0,
+                    aspect_ratio=0.0,
+                    dimension_score=0.0,
+                    sharpness_score=0.0,
+                    contrast_score=0.0,
+                    cleanliness_score=0.0,
+                    penalties=penalties,
+                    fatal_defects=fatal_defects,
+                    is_actionable=True,
+                )
             with Image.open(path) as img:
                 w, h = img.size
+                if w * h > 25_000_000:
+                    penalties.append("excessive_pixels")
+                    fatal_defects.append("excessive_pixels")
+                    return CoverScoreResult(
+                        cqs=0,
+                        tier="Tier D",
+                        width=w,
+                        height=h,
+                        aspect_ratio=round(h / w, 2) if w > 0 else 0.0,
+                        dimension_score=0.0,
+                        sharpness_score=0.0,
+                        contrast_score=0.0,
+                        cleanliness_score=0.0,
+                        penalties=penalties,
+                        fatal_defects=fatal_defects,
+                        is_actionable=True,
+                    )
                 gray = img.convert("L")
 
                 # 1. Dimension & Aspect Ratio Score (0 - 25)

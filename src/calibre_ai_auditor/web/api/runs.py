@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,8 @@ from calibre_ai_auditor.web.jobs import get_job_status, start_job
 from calibre_ai_auditor.web.schemas import APIResponse, RevertRequest
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def get_settings() -> Settings:
@@ -96,8 +99,10 @@ async def do_scan(settings: Settings, req: ScanRequest) -> dict[str, Any]:
                         "tags": full_metadata.get("tags", []),
                     }
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # Enrichment is best-effort per book; log so persistent
+                # breakage is visible instead of silently degrading runs.
+                logger.warning("Metadata enrichment failed for book %s: %s", book.get("id"), exc)
 
             session.add(book_record)
 

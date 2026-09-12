@@ -398,10 +398,13 @@ def scan(
         run = Run(run_id=run_id, status="completed")
         session.add(run)
 
+        # list_books --fields all already returns full per-book metadata;
+        # re-querying show_metadata per book would re-scan the whole library
+        # once per book (N subprocesses, O(N^2) parse). Reuse the rows.
         for b in books:
             book_id = b["id"]
             typer.echo(f"  Processing book {book_id}: {b.get('title')}")
-            full_meta = cli.show_metadata(book_id)
+            full_meta = b
 
             book_key = f"calibre:{book_id}"
             existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
@@ -436,13 +439,20 @@ def scan(
             )
             eclient = get_embedding_client(settings)
             indexer = VectorIndexer(vclient, eclient)
-            for b in books:
-                book_key = f"calibre:{b['id']}"
-                existing_book: BookRecord | None = session.exec(
-                    select(BookRecord).where(BookRecord.book_key == book_key)
-                ).first()
-                if existing_book:
-                    asyncio.run(indexer.index_book(existing_book))
+            # One bulk select (not one per book) and a single event loop
+            # (not one asyncio.run per book) for the same sequential indexing.
+            book_keys = [f"calibre:{b['id']}" for b in books]
+            existing_books = (
+                session.exec(select(BookRecord).where(col(BookRecord.book_key).in_(book_keys))).all()
+                if book_keys
+                else []
+            )
+
+            async def _index_all() -> None:
+                for existing_book in existing_books:
+                    await indexer.index_book(existing_book)
+
+            asyncio.run(_index_all())
 
     typer.secho(f"Scan complete. Found {len(books)} books.", fg=typer.colors.GREEN)
 

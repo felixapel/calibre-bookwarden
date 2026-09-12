@@ -17,14 +17,14 @@ class ValkeyQueue(JobQueue):
             raise ValueError(f"Unsupported queue backend: {backend}")
         self.url = url
         self.backend = backend
-        self._client = None
+        self._client: Any = None
         self._fallback_db: dict[str, dict[str, Any]] = {}
         self._fallback_queue: list[str] = []
         if backend == "valkey":
             try:
-                import redis.asyncio as aioredis  # type: ignore[import-untyped]
+                import redis.asyncio as aioredis
 
-                self._client = aioredis.from_url(url, decode_responses=True)  # type: ignore[assignment]
+                self._client = aioredis.from_url(url, decode_responses=True)
                 logger.info(f"ValkeyQueue initialized with URL: {url}")
             except ImportError:
                 raise RuntimeError("Valkey backend requires the 'redis' package") from None
@@ -154,12 +154,12 @@ class ValkeyCache(CacheBackend):
 
     def __init__(self, url: str) -> None:
         self.url = url
-        self._client = None
+        self._client: Any = None
         self._fallback_db: dict[str, Any] = {}
         try:
-            import redis.asyncio as aioredis  # type: ignore[import-untyped]
+            import redis.asyncio as aioredis
 
-            self._client = aioredis.from_url(url, decode_responses=True)  # type: ignore[assignment]
+            self._client = aioredis.from_url(url, decode_responses=True)
         except ImportError:
             pass
 

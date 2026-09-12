@@ -42,22 +42,16 @@ def _normalize_str(s: str | None) -> str:
 
 def is_valid_isbn10(isbn: str) -> bool:
     """Validates ISBN-10 with standard modulo-11 check digit."""
-    if len(isbn) != 10:
-        return False
-    if not isbn[:9].isdigit():
-        return False
-    if not (isbn[9].isdigit() or isbn[9] == "X"):
-        return False
-    total = sum((10 - i) * (10 if c == "X" else int(c)) for i, c in enumerate(isbn))
-    return total % 11 == 0
+    from calibre_ai_auditor.rules.isbn import isbn10_checksum_valid
+
+    return isbn10_checksum_valid(isbn)
 
 
 def is_valid_isbn13(isbn: str) -> bool:
     """Validates ISBN-13 with standard modulo-10 check digit."""
-    if len(isbn) != 13 or not isbn.isdigit():
-        return False
-    total = sum(int(c) * (1 if i % 2 == 0 else 3) for i, c in enumerate(isbn))
-    return total % 10 == 0
+    from calibre_ai_auditor.rules.isbn import isbn13_checksum_valid
+
+    return isbn13_checksum_valid(isbn)
 
 
 def is_valid_isbn(isbn: str, strict_checksum: bool = False) -> bool:

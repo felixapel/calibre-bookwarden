@@ -338,19 +338,27 @@ class ApplyEngine:
             element = ET.SubElement(metadata, f"{{{DC}}}{tag}")
             element.text = value
 
-    def undo_change(self, session: Session, change: Change) -> None:
+    def undo_change(self, session: Session, change: Change, *, commit: bool = True) -> None:
         """
         Reverts a change using the backup OPF.
+
+        Owns its status-write: commits by default so the ``undone`` flip is
+        never silently lost. Pass ``commit=False`` only when the caller wraps
+        this in a larger transaction and will commit itself.
         """
         if change.status == "undone":
             logger.warning(f"Change {change.id} is already undone.")
             return
 
-        book_id_str = change.book_key.split(":")[-1]
-        book_id = int(book_id_str)
+        try:
+            book_id = int(change.book_key.split(":")[-1])
+        except (ValueError, AttributeError) as exc:
+            raise ValueError(f"Invalid book_key {change.book_key!r}: expected 'calibre:<id>'") from exc
 
         logger.info(f"Restoring metadata for book {book_id} from {change.backup_opf_path}")
         self._restore_components(book_id, change)
 
         change.status = "undone"
         session.add(change)
+        if commit:
+            session.commit()

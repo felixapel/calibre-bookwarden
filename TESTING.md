@@ -1,9 +1,9 @@
 # Testing Guide
 
-`calibre-ai-auditor` package version 1.2.1 includes unit, integration, E2E, and
+`calibre-ai-auditor` package version 1.3.0 includes unit, integration, E2E, and
 benchmark suites plus Manifestation V2 contract, pipeline, persistence,
 security, writer, calibration, and migration coverage. The latest repository
-tag is `v1.2.0`; exact test totals are reported by each run instead of being
+tag is `v1.3.0`; exact test totals are reported by each run instead of being
 treated as a permanent contract.
 
 ```

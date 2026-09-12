@@ -94,14 +94,25 @@ async def score_cover(
 @router.post("/score-upload", response_model=APIResponse)
 async def score_uploaded_cover(file: UploadFile = File(...)) -> Any:
     """Scores an uploaded cover file in-memory or temporary storage."""
+    # DoS guard: stream with hard cap instead of unbounded read().
+    max_bytes = 25 * 1024 * 1024
     # Must close handle before reading with PIL on Windows to prevent WinError 32
     tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)  # noqa: SIM115
     tmp_path = Path(tmp.name)
     try:
-        content = await file.read()
-        tmp.write(content)
+        total = 0
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail="Upload too large (max 25MB)")
+            tmp.write(chunk)
         tmp.flush()
         tmp.close()
+        if total == 0:
+            raise HTTPException(status_code=400, detail="Empty upload")
 
         scorer = CoverQualityScorer()
         detector = SpuriousCoverDetector()

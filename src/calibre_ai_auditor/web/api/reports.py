@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from urllib.parse import unquote
 
@@ -67,9 +68,9 @@ async def preview_pdf(
     if not pdf_bytes:
         raise HTTPException(status_code=500, detail="Failed to generate PDF")
 
-    safe_name = key.replace(":", "_")
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", key.replace(":", "_"))[:80] or "review"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={safe_name}_review.pdf"},
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}_review.pdf"'},
     )

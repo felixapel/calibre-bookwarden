@@ -13,9 +13,9 @@ class PreviewRenderer:
         self.enabled = enabled
         self.url = url.rstrip("/")
 
-        # Setup Jinja2 environment
+        # Setup Jinja2 environment (autoescape ON: book metadata is untrusted)
         template_dir = Path(__file__).parent / "templates"
-        self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
+        self.jinja_env = Environment(loader=FileSystemLoader(template_dir), autoescape=True)
 
     async def render_html(self, template_name: str, context: dict[str, Any]) -> str:
         """Renders an HTML template using Jinja2."""
@@ -28,7 +28,7 @@ class PreviewRenderer:
             return None
 
         url = f"{self.url}/forms/chromium/convert/html"
-        files = {"index.html": html_content.encode("utf-8")}
+        files = {"index.html": ("index.html", html_content.encode("utf-8"), "text/html")}
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

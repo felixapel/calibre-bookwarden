@@ -2,9 +2,8 @@ import logging
 import re
 from typing import Any
 
-import httpx
-
 from calibre_ai_auditor.providers.base import BaseProvider
+from calibre_ai_auditor.providers.cache import cached_get_json
 from calibre_ai_auditor.storage.models import Candidate, Metadata
 
 logger = logging.getLogger(__name__)
@@ -72,15 +71,12 @@ class GoogleBooksProvider(BaseProvider):
         params: dict[str, str | int] = {"q": q, "maxResults": 5}
 
         logger.info(f"Fetching candidates from Google Books (q={q})...")
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            try:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-                data = response.json()
-                return self._parse_volumes(data)
-            except Exception as e:
-                logger.error(f"Google Books fetch failed: {e}")
-                return []
+        try:
+            data = await cached_get_json(url, params=params, timeout=15.0)
+            return self._parse_volumes(data)
+        except Exception as e:
+            logger.error(f"Google Books fetch failed: {e}")
+            return []
 
     def _parse_volumes(self, data: dict[str, Any]) -> list[Candidate]:
         candidates = []

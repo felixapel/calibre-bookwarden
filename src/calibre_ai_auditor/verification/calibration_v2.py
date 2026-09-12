@@ -32,6 +32,9 @@ class CalibrationObservationV2(BaseModel):
     would_auto_apply: bool
     identity_correct: bool
     patch_correct: bool
+    # v2 operational telemetry (optional so v1 corpora validate unchanged).
+    review_seconds: float | None = Field(default=None, ge=0)
+    egress_bytes: int | None = Field(default=None, ge=0)
 
 
 class CalibrationCorpusV2(BaseModel):
@@ -49,16 +52,28 @@ class CalibrationCorpusV2(BaseModel):
         return self
 
 
+CALIBRATION_SCHEMA_VERSION = 2
+CALIBRATION_SCHEMA_VERSIONS = (1, 2)
+# Keys introduced in v2. The legacy seal path excludes exactly these so
+# pre-migration v1 seals keep verifying byte-identically (see verify_seal).
+_V2_REPORT_KEYS = frozenset({"observations_with_timing", "total_review_seconds", "total_egress_bytes"})
+
+
 class CalibrationReportV2(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = 1
+    schema_version: int = CALIBRATION_SCHEMA_VERSION
     policy_version: str = "manifestation-v2"
     corpus_sha256: str
     sample_size: int = Field(ge=1)
     tier_a_decisions: int = Field(ge=0)
     false_positive_count: int = Field(ge=0)
     false_auto_apply_count: int = Field(ge=0)
+    # v2 derived operational aggregates (derived from observations, like the
+    # correctness counts above — never trusted from input).
+    observations_with_timing: int = Field(default=0, ge=0)
+    total_review_seconds: float = Field(default=0.0, ge=0)
+    total_egress_bytes: int = Field(default=0, ge=0)
     evaluated_at: datetime
     expires_at: datetime
     report_sha256: str | None = None
@@ -81,16 +96,29 @@ class CalibrationReportV2(BaseModel):
             raise ValueError("report_sha256 must contain exactly 64 hexadecimal characters")
         return lowered
 
-    def _seal_value(self) -> str:
-        payload = self.model_dump(mode="json", exclude={"report_sha256"})
+    def _seal_value(self, *, exclude: set[str] | None = None) -> str:
+        payload = self.model_dump(mode="json", exclude={"report_sha256"} | (exclude or set()))
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
         return hashlib.sha256(encoded).hexdigest()
 
     def seal(self) -> CalibrationReportV2:
         return self.model_copy(update={"report_sha256": self._seal_value()})
 
+    def _v2_keys_at_default(self) -> bool:
+        return self.observations_with_timing == 0 and self.total_review_seconds == 0 and self.total_egress_bytes == 0
+
     def verify_seal(self) -> bool:
-        return self.report_sha256 is not None and self.report_sha256 == self._seal_value()
+        if self.report_sha256 is None:
+            return False
+        if self.report_sha256 == self._seal_value():
+            return True
+        # Legacy path: pre-migration v1 seals were computed over a payload
+        # without the v2 aggregate keys. Accept that exact shape only for
+        # genuine v1 files (schema 1 + v2 keys at default); anything else
+        # carrying non-default v2 data under a v1 stamp is malformed.
+        if self.schema_version == 1 and self._v2_keys_at_default():
+            return self.report_sha256 == self._seal_value(exclude=set(_V2_REPORT_KEYS))
+        return False
 
 
 class CalibrationGateDecision(BaseModel):
@@ -140,7 +168,7 @@ def create_report_from_labeled_corpus(
         corpus = CalibrationCorpusV2.model_validate(json.loads(corpus_bytes))
     except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
         raise ValueError("calibration corpus is invalid") from exc
-    if corpus.policy_version != "manifestation-v2" or corpus.schema_version != 1:
+    if corpus.policy_version != "manifestation-v2" or corpus.schema_version not in CALIBRATION_SCHEMA_VERSIONS:
         raise ValueError("calibration corpus policy or schema version does not match")
     evaluated_at = now or datetime.now(UTC)
     tier_a = [item for item in corpus.observations if item.tier == "A"]
@@ -148,12 +176,17 @@ def create_report_from_labeled_corpus(
     false_auto_applies = sum(
         item.would_auto_apply and (not item.identity_correct or not item.patch_correct) for item in corpus.observations
     )
+    timed = [item for item in corpus.observations if item.review_seconds is not None]
     return CalibrationReportV2(
+        schema_version=CALIBRATION_SCHEMA_VERSION,
         corpus_sha256=hashlib.sha256(corpus_bytes).hexdigest(),
         sample_size=len(corpus.observations),
         tier_a_decisions=len(tier_a),
         false_positive_count=false_positives,
         false_auto_apply_count=false_auto_applies,
+        observations_with_timing=len(timed),
+        total_review_seconds=round(sum(item.review_seconds or 0.0 for item in timed), 3),
+        total_egress_bytes=sum(item.egress_bytes or 0 for item in corpus.observations),
         evaluated_at=evaluated_at,
         expires_at=evaluated_at + timedelta(days=valid_days),
     ).seal()
@@ -209,7 +242,7 @@ def calibration_gate_from_settings(
 
     current = now or datetime.now(UTC)
     reasons: list[str] = []
-    if report.policy_version != "manifestation-v2" or report.schema_version != 1:
+    if report.policy_version != "manifestation-v2" or report.schema_version not in CALIBRATION_SCHEMA_VERSIONS:
         reasons.append("calibration policy or schema version does not match")
     if report.sample_size < gate.min_sample_size:
         reasons.append("calibration sample is below the configured minimum")

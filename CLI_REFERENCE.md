@@ -321,16 +321,9 @@ bookaudit audit [--run latest] [--judge/--no-judge] [--save-evidence]
 | `--judge` / `--no-judge` | `judge` | Enable or skip the LLM witness. |
 | `--save-evidence` | `True` | Persist the BookVerdict back into EvidencePackage.decision. |
 
-### `bookaudit report`
+### Run reports (API)
 
-Export a run summary in Markdown or JSON format.
-
-```bash
-bookaudit report [--run latest] [--format markdown|json] [--output PATH]
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--run` | `latest` | Run ID or `latest`. |
-| `--format` | `markdown` | `markdown` or `json`. |
-| `--output` | stdout | Destination file path. |
+There is no `bookaudit report` CLI command. Export a run summary via the
+web API instead: `GET /api/preview/{book_key}.pdf` renders the review-packet
+PDF, and run/audit endpoints return JSON. Markdown rendering lives in
+`reports/writer.py:generate_markdown_report` for API use.

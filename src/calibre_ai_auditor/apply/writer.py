@@ -80,7 +80,14 @@ def claim_next_operation(
         session.add(operation)
         session.add(event)
         session.add(book_lock)
-        session.commit()
+        try:
+            session.commit()
+        except Exception as exc:
+            # Concurrent claim won the race (notably on SQLite where
+            # FOR UPDATE is a no-op and duplicate PK raises IntegrityError).
+            session.rollback()
+            logger.info("Concurrent claim for %s lost race: %s", operation.book_key, exc)
+            return None
         return operation.operation_id
 
 

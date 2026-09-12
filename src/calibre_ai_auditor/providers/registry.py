@@ -29,7 +29,8 @@ class KomfProvider(BaseProvider):
         try:
             import httpx  # lazy to avoid hard dep if not installed
 
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
+            async with httpx.AsyncClient(timeout=6.0, limits=limits) as client:
                 payload: dict[str, Any] = {"title": title}
                 if authors:
                     payload["authors"] = authors

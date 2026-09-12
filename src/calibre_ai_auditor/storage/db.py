@@ -9,25 +9,31 @@ from sqlmodel import create_engine
 
 from calibre_ai_auditor.config.settings import Settings
 
-_engine: Engine | None = None
+_engines: dict[str, Engine] = {}
 
 
-def get_engine(settings: Settings) -> Engine:
-    global _engine
-    if _engine is not None:
-        return _engine
-
+def _settings_dsn(settings: Settings) -> tuple[str, dict[str, object]]:
     if settings.database.backend == "postgres":
         if not settings.database.postgres_dsn:
             raise ValueError("BOOKAUDIT_DATABASE__POSTGRES_DSN is required for the postgres backend")
-        _engine = create_engine(settings.database.postgres_dsn)
-    else:
-        # Default to SQLite
-        sqlite_url = f"sqlite:///{settings.storage.sqlite_path}"
-        # Ensure parent directory exists
-        settings.storage.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-        _engine = create_engine(sqlite_url)
-    return _engine
+        return settings.database.postgres_dsn, {}
+    # Default to SQLite
+    sqlite_url = f"sqlite:///{settings.storage.sqlite_path}"
+    # Ensure parent directory exists
+    settings.storage.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    # The API serves threaded requests; the default SQLite driver guard
+    # (check_same_thread) would raise under concurrency.
+    return sqlite_url, {"check_same_thread": False}
+
+
+def get_engine(settings: Settings) -> Engine:
+    """Engine cached per DSN so settings changes (e.g. tests) never get a stale engine."""
+    dsn, connect_args = _settings_dsn(settings)
+    engine = _engines.get(dsn)
+    if engine is None:
+        engine = create_engine(dsn, connect_args=connect_args)
+        _engines[dsn] = engine
+    return engine
 
 
 def init_db(settings: Settings) -> None:

@@ -25,6 +25,7 @@ dependencies = [
     "alembic>=1.13.1",
     "numpy>=1.26.0",
     "jinja2>=3.1.3",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -139,22 +140,14 @@ ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "calibre_ai_auditor.ingest.watcher"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "calibre_ai_auditor.config.settings"
-ignore_errors = true
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "calibre_ai_auditor.queue.valkey"
-ignore_errors = true
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "calibre_ai_auditor.llm.providers.google_provider"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "calibre_ai_auditor.vectors.embeddings"
 ignore_errors = true
 
 [[tool.mypy.overrides]]

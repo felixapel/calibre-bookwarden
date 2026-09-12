@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # no PyYAML stubs; same as web/api/config.py
 from pydantic import AliasChoices, BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
@@ -38,9 +38,13 @@ class PrivacySettings(BaseModel):
     max_remote_images: int = 1
 
 
+def _default_ocr_backends() -> list[Literal["tesseract", "paddleocr", "surya"]]:
+    return ["tesseract"]
+
+
 class OCRRecognitionV2Settings(BaseModel):
     enabled: bool = True
-    backends: list[Literal["tesseract", "paddleocr", "surya"]] = Field(default_factory=lambda: ["tesseract"])
+    backends: list[Literal["tesseract", "paddleocr", "surya"]] = Field(default_factory=_default_ocr_backends)
     max_pages: int = Field(default=6, ge=1, le=12)
     timeout_seconds: int = Field(default=180, ge=10, le=600)
     language: str = Field(default="en", pattern=r"^[a-z]{2,3}$")
@@ -186,17 +190,17 @@ class Settings(BaseSettings):
     release_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     library: LibrarySettings = Field(default_factory=_default_library)
     storage: StorageSettings = Field(default_factory=_default_storage)
-    database: DatabaseSettings = Field(default_factory=DatabaseSettings)  # type: ignore[arg-type]
-    queue: QueueSettings = Field(default_factory=QueueSettings)  # type: ignore[arg-type]
-    rate_limits: RateLimitSettings = Field(default_factory=RateLimitSettings)  # type: ignore[arg-type]
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    queue: QueueSettings = Field(default_factory=QueueSettings)
+    rate_limits: RateLimitSettings = Field(default_factory=RateLimitSettings)
     verifier: VerifierSettings = Field(default_factory=VerifierSettings)
-    vectors: VectorSettings = Field(default_factory=VectorSettings)  # type: ignore[arg-type]
-    providers: ProviderSettings = Field(default_factory=ProviderSettings)  # type: ignore[arg-type]
+    vectors: VectorSettings = Field(default_factory=VectorSettings)
+    providers: ProviderSettings = Field(default_factory=ProviderSettings)
     privacy: PrivacySettings = Field(default_factory=PrivacySettings)  # type: ignore[arg-type]
     recognition_v2: RecognitionV2Settings = Field(default_factory=RecognitionV2Settings)
     manifestation_v2: ManifestationV2Settings = Field(default_factory=ManifestationV2Settings)
-    extractors: ExtractorSettings = Field(default_factory=ExtractorSettings)  # type: ignore[arg-type]
-    paperless: PaperlessSettings = Field(default_factory=PaperlessSettings)  # type: ignore[arg-type]
+    extractors: ExtractorSettings = Field(default_factory=ExtractorSettings)
+    paperless: PaperlessSettings = Field(default_factory=PaperlessSettings)
     preview: PreviewSettings = Field(default_factory=PreviewSettings)
     manga_mode: MangaSettings = Field(default_factory=MangaSettings)
     model_config_path: Path = Field(default=Path("config/models.yml"), alias="routing__model_config")

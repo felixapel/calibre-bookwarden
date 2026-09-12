@@ -24,23 +24,8 @@ def check_risks(current: dict[str, Any], patch: dict[str, Any]) -> list[str]:
     if current_isbn and patch_isbn and current_isbn != patch_isbn:
         flags.append("isbn_conflict")
 
-    # 3. Title ambiguity (very different titles)
-    current_title = current.get("title", "").lower()
-    patch_title = patch.get("title", "").lower()
-
-    # Very crude check: if neither title contains a significant word from the other
-    # This should be replaced with a proper fuzzy match later
-    if (
-        current_title
-        and patch_title
-        and len(current_title) > 5
-        and len(patch_title) > 5
-        and patch_title not in current_title
-        and current_title not in patch_title
-    ):
-        # We could add more logic here, but let's keep it simple for v0.2
-        pass
-
+    # 3. Title ambiguity is handled by the verification rules engine
+    # (fuzzy title match); this legacy pass was a no-op and is removed.
     return flags
 
 

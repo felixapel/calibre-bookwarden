@@ -129,24 +129,17 @@ def _cross_script_similarity(a: str, b: str) -> float:
 
 
 def _isbn13_checksum_valid(s: str) -> bool:
-    """Standard ISBN-13 mod-11 checksum (after clearing the check digit and weighting 1,3)."""
-    if len(s) != 13 or not s.isdigit():
-        return False
-    total = sum(int(c) * (1 if i % 2 == 0 else 3) for i, c in enumerate(s[:-1]))
-    check = (10 - (total % 10)) % 10
-    return check == int(s[-1])
+    """Standard ISBN-13 checksum (delegates to shared rules.isbn)."""
+    from calibre_ai_auditor.rules.isbn import isbn13_checksum_valid
+
+    return isbn13_checksum_valid(s)
 
 
 def _isbn10_checksum_valid(s: str) -> bool:
-    """Standard ISBN-10 checksum."""
-    if len(s) != 10:
-        return False
-    if not (s[:9].isdigit() and (s[9].isdigit() or s[9].upper() == "X")):
-        return False
-    total = sum(int(c) * (10 - i) for i, c in enumerate(s[:9]))
-    if s[9].upper() == "X":
-        total += 10
-    return total % 11 == 0
+    """Standard ISBN-10 checksum (delegates to shared rules.isbn)."""
+    from calibre_ai_auditor.rules.isbn import isbn10_checksum_valid
+
+    return isbn10_checksum_valid(s)
 
 
 def _isbn_is_valid(s: str) -> bool:

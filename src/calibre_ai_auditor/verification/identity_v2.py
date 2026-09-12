@@ -98,19 +98,9 @@ OFFICIAL_KINDS = frozenset(
 
 def validate_isbn(value: str) -> str | None:
     """Return a canonical ISBN-13 only when the supplied checksum is valid."""
-    digits = re.sub(r"[^0-9Xx]", "", value)
-    if len(digits) == 10:
-        total = sum((10 - index) * (10 if char.upper() == "X" else int(char)) for index, char in enumerate(digits))
-        if total % 11:
-            return None
-        body = "978" + digits[:9]
-        check = (10 - sum((1 if index % 2 == 0 else 3) * int(char) for index, char in enumerate(body)) % 10) % 10
-        return body + str(check)
-    if len(digits) == 13:
-        total = sum((1 if index % 2 == 0 else 3) * int(char) for index, char in enumerate(digits[:12]))
-        if (10 - total % 10) % 10 == int(digits[-1]):
-            return digits
-    return None
+    from calibre_ai_auditor.rules.isbn import canonical_isbn13
+
+    return canonical_isbn13(value)
 
 
 def _normalize_identifiers(value: dict[str, str]) -> dict[str, str]:

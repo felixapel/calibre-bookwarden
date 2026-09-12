@@ -12,6 +12,7 @@ class PollingWatcher:
         folders: list[Path],
         interval: int = 60,
         supported_extensions: list[str] | None = None,
+        max_seen_files: int = 50_000,
     ):
         self.folders = folders
         self.interval = interval
@@ -23,6 +24,7 @@ class PollingWatcher:
         ]
         self.running = False
         self.seen_files: set[Path] = set()
+        self.max_seen_files = max_seen_files
 
     async def start(self, callback: Any) -> None:
         """Starts the polling loop."""
@@ -48,8 +50,14 @@ class PollingWatcher:
                     if file_path.is_file() and file_path.suffix.lower() in self.supported_extensions:
                         resolved_path = file_path.resolve()
                         if resolved_path not in self.seen_files:
+                            if len(self.seen_files) >= self.max_seen_files:
+                                logger.warning("PollingWatcher seen-set full; dropping oldest entries")
+                                self.seen_files.clear()
                             self.seen_files.add(resolved_path)
-                            await callback(file_path)
+                            try:
+                                await callback(file_path)
+                            except Exception:
+                                logger.exception("PollingWatcher callback failed for %s", file_path)
 
     def stop(self) -> None:
         self.running = False

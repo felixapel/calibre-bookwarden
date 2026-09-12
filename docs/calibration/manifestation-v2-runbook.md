@@ -157,6 +157,13 @@ work. `patch_correct` means every field and value in the proposed canonical
 patch is correct. `would_auto_apply` labels the decision under the exact policy
 being calibrated.
 
+Schema versions: corpora stamped `1` or `2` are both accepted. Observations
+may optionally carry v2 telemetry (`review_seconds`, `egress_bytes`); the
+derived report (schema `2`) aggregates them as `observations_with_timing`,
+`total_review_seconds`, `total_egress_bytes`. Pre-migration v1 sealed reports
+keep verifying unchanged — no re-issue needed; a v1 stamp carrying non-default
+v2 data is rejected as malformed.
+
 ## 5. Derive and seal the report
 
 ```bash

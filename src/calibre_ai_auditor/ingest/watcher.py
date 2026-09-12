@@ -35,10 +35,10 @@ class IngestWatcher:
         try:
             import asyncio
 
-            from watchdog.events import FileSystemEventHandler  # type: ignore[import-not-found]
-            from watchdog.observers import Observer  # type: ignore[import-not-found]
+            from watchdog.events import FileSystemEventHandler
+            from watchdog.observers import Observer
 
-            class IngestHandler(FileSystemEventHandler):  # type: ignore[misc]
+            class IngestHandler(FileSystemEventHandler):
                 def __init__(
                     self,
                     loop: asyncio.AbstractEventLoop,

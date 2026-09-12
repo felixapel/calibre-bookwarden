@@ -81,7 +81,10 @@ class CalibreCLI:
         json_part = self._extract_json(result.stdout)
         if not json_part:
             return []
-        return cast(list[dict[str, Any]], json.loads(json_part))
+        try:
+            return cast(list[dict[str, Any]], json.loads(json_part))
+        except json.JSONDecodeError as exc:
+            raise CalibreCLIError(f"calibredb returned invalid JSON: {exc}") from exc
 
     def show_metadata(self, book_id: int) -> dict[str, Any]:
         """Wraps 'calibredb show_metadata --as-opf'."""
@@ -101,7 +104,10 @@ class CalibreCLI:
         json_part = self._extract_json(result.stdout)
         if not json_part:
             raise CalibreCLIError(f"Book with ID {book_id} not found (no JSON output).")
-        books = cast(list[dict[str, Any]], json.loads(json_part))
+        try:
+            books = cast(list[dict[str, Any]], json.loads(json_part))
+        except json.JSONDecodeError as exc:
+            raise CalibreCLIError(f"calibredb returned invalid JSON for book {book_id}: {exc}") from exc
         if not books:
             raise CalibreCLIError(f"Book with ID {book_id} not found.")
         return books[0]

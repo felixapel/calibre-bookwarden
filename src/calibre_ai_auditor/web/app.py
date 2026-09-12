@@ -35,6 +35,16 @@ from calibre_ai_auditor.web.api import (
 logger = logging.getLogger(__name__)
 
 
+def is_path_within_static(static_root: str, candidate_path: str) -> bool:
+    """Return True only when candidate resolves inside static_root (traversal-safe)."""
+    try:
+        real_root = os.path.realpath(static_root)
+        real_candidate = os.path.realpath(candidate_path)
+        return os.path.commonpath([real_root, real_candidate]) == real_root
+    except ValueError:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting Calibre AI Auditor API...")
@@ -322,18 +332,26 @@ if os.path.exists(static_dir):
     if os.path.exists(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+    _static_real = os.path.realpath(static_dir)
+    _index_real = os.path.realpath(os.path.join(static_dir, "index.html"))
+
     # Mount other top-level static files if needed, but we'll just serve index.html as fallback
     @app.get("/{full_path:path}", response_model=None)
     async def serve_spa(full_path: str) -> FileResponse:
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
 
+        # Anchored containment: reject traversal / encoded traversal escapes.
+        candidate = os.path.join(static_dir, full_path)
+        if not is_path_within_static(_static_real, candidate):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = os.path.realpath(candidate)
+
         # Check if the requested file exists in the static_dir
-        file_path = os.path.join(static_dir, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
+        if os.path.isfile(candidate):
+            return FileResponse(candidate)
 
         # Fallback to SPA index.html
-        return FileResponse(os.path.join(static_dir, "index.html"))
+        return FileResponse(_index_real)
 else:
     logger.warning(f"Static directory not found at {static_dir}. Frontend will not be served.")
