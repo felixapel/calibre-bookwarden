@@ -37,7 +37,7 @@ services:
     build:
       context: .
       target: certificate-a
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.3.0}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     mem_limit: 512m
@@ -76,7 +76,7 @@ services:
 
   verifier:
     <<: *runtime-security
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.3.0}
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     mem_limit: 2g
@@ -191,7 +191,7 @@ services:
 
   caddy:
     <<: *runtime-security
-    image: ${BOOKAUDIT_EDGE_IMAGE:-calibre-ai-auditor-edge:1.2.1}
+    image: ${BOOKAUDIT_EDGE_IMAGE:-calibre-ai-auditor-edge:1.3.0}
     profiles: ["edge"]
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
@@ -257,7 +257,7 @@ services:
 
   migrate:
     <<: *runtime-security
-    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}
+    image: ${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.3.0}
     profiles: ["maintenance"]
     restart: "no"
     command: ["migrate"]
@@ -278,7 +278,7 @@ services:
     build:
       context: .
       target: writer
-    image: ${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.2.1}
+    image: ${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.3.0}
     profiles: ["writer"]
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
@@ -313,7 +313,7 @@ services:
 
   retention:
     <<: *runtime-security
-    image: ${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.2.1}
+    image: ${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.3.0}
     profiles: ["writer-maintenance"]
     user: "${UID:-1000}:${GID:-1000}"
     restart: "no"

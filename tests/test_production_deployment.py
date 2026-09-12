@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".gitea" / "workflows" / "v1-tests.yml"
 
 
+def _package_version() -> str:
+    """Single source of truth: compose fallbacks must track pyproject version."""
+    with (ROOT / "pyproject.toml").open("rb") as fh:
+        return str(tomllib.load(fh)["project"]["version"])
+
+
 def _fake_docker(tmp_path: Path, body: str) -> Path:
     executable = tmp_path / "docker"
     executable.write_text(f"#!/bin/sh\nset -eu\n{body}\n")
@@ -154,7 +160,7 @@ def test_caddy_is_an_isolated_tailscale_only_edge() -> None:
     caddy = compose["services"]["caddy"]
 
     assert caddy["profiles"] == ["edge"]
-    assert caddy["image"] == "${BOOKAUDIT_EDGE_IMAGE:-calibre-ai-auditor-edge:1.2.1}"
+    assert caddy["image"] == "${BOOKAUDIT_EDGE_IMAGE:-calibre-ai-auditor-edge:" + _package_version() + "}"
     assert "network_mode" not in caddy
     assert caddy["ports"] == [
         "${BOOKAUDIT_EDGE_BIND_IP:-127.0.0.1}:80:80",
@@ -582,8 +588,9 @@ def test_restore_drill_uses_the_pinned_wrapper_project() -> None:
 def test_compose_uses_separate_configurable_certificate_and_writer_images() -> None:
     compose = (ROOT / "docker-compose.yml").read_text()
 
-    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:1.2.1}") == 3
-    assert compose.count("${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:1.2.1}") == 2
+    version = _package_version()
+    assert compose.count("${BOOKAUDIT_IMAGE:-calibre-ai-auditor:" + version + "}") == 3
+    assert compose.count("${BOOKAUDIT_WRITER_IMAGE:-calibre-ai-auditor-writer:" + version + "}") == 2
     assert '"127.0.0.1:${BOOKAUDIT_PORT:-8080}:8080"' in compose
 
 
