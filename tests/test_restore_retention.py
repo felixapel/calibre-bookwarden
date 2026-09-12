@@ -360,3 +360,18 @@ def test_retention_discards_staging_abandoned_after_first_journal(
     assert store.list_pending_quarantines() == []
     assert restore_point.exists()
     assert list((store.restore_root / ".retention-quarantine").iterdir()) == []
+
+
+def test_cleanup_expired_skips_symlinked_run_dir(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "secret.txt"
+    secret.write_text("do not touch")
+    link = tmp_path / "restore" / "run-evil"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(outside, target_is_directory=True)
+
+    store = RestorePointStore(tmp_path)
+    assert store.cleanup_expired() == 0
+    assert secret.read_text() == "do not touch"
+    assert store.list_all() == []

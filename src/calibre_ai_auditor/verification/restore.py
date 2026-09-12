@@ -238,7 +238,8 @@ class RestorePointStore:
         if not self.restore_root.exists():
             return 0
         for run_dir in self.restore_root.iterdir():
-            if not run_dir.is_dir():
+            if run_dir.is_symlink() or not run_dir.is_dir():
+                logger.warning("Refusing to descend into symlinked restore run dir: %s", run_dir)
                 continue
             for book_dir in run_dir.iterdir():
                 if not book_dir.is_dir():
@@ -297,6 +298,8 @@ class RestorePointStore:
                     payload = meta_file.read_bytes()
                     meta = json.loads(payload)
                     applied_at = datetime.fromisoformat(meta["applied_at"])
+                    if applied_at.tzinfo is None:
+                        applied_at = applied_at.replace(tzinfo=UTC)
                     ttl = timedelta(seconds=meta.get("ttl_seconds", int(self.default_ttl.total_seconds())))
                 except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
                     raise RuntimeError(f"Invalid restore manifest: {meta_file}") from exc
@@ -658,7 +661,8 @@ class RestorePointStore:
         if not self.restore_root.exists():
             return out
         for run_dir in self.restore_root.iterdir():
-            if not run_dir.is_dir():
+            if run_dir.is_symlink() or not run_dir.is_dir():
+                logger.warning("Skipping symlinked restore run dir: %s", run_dir)
                 continue
             for book_dir in run_dir.iterdir():
                 if not book_dir.is_dir():
