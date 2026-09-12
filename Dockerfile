@@ -41,7 +41,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     XDG_CONFIG_HOME=/tmp/bookaudit-home/.config
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       ghostscript \
