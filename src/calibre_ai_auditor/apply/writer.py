@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from calibre_ai_auditor.apply.artifacts import (
@@ -82,9 +83,11 @@ def claim_next_operation(
         session.add(book_lock)
         try:
             session.commit()
-        except Exception as exc:
+        except IntegrityError as exc:
             # Concurrent claim won the race (notably on SQLite where
             # FOR UPDATE is a no-op and duplicate PK raises IntegrityError).
+            # Only this case means "already claimed"; any other DB failure
+            # must propagate rather than masquerade as a lost race.
             session.rollback()
             logger.info("Concurrent claim for %s lost race: %s", operation.book_key, exc)
             return None

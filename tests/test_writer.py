@@ -1,8 +1,10 @@
 import hashlib
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.apply.coordinator import (
@@ -908,3 +910,51 @@ def test_undo_reconciliation_terminalizes_missing_recovery_evidence() -> None:
         assert book.status == "error"
         assert event.status == "failed"
         assert session.get(BookWriteLock, book.book_key) is None
+
+
+def _minimal_claim_setup(session: Session, suffix: str) -> str:
+    operation_id = f"op-{suffix}"
+    session.add(
+        OperationLedger(
+            operation_id=operation_id,
+            idempotency_key=f"key-{suffix}",
+            operation_type="metadata",
+            book_key=f"calibre:{suffix}",
+            state="requested",
+        )
+    )
+    session.add(
+        OutboxEvent(
+            event_id=f"ev-{suffix}",
+            aggregate_id=operation_id,
+            event_type="operation.requested",
+        )
+    )
+    session.add(BookRecord(book_key=f"calibre:{suffix}", run_id="run-1"))
+    session.commit()
+    return operation_id
+
+
+def test_claim_lost_race_returns_none_on_integrity_error() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        _minimal_claim_setup(session, "race")
+        with patch.object(
+            session,
+            "commit",
+            side_effect=IntegrityError("INSERT", {}, Exception("duplicate key")),
+        ):
+            assert claim_next_operation(session) is None
+
+
+def test_claim_propagates_non_integrity_db_failures() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        _minimal_claim_setup(session, "boom")
+        with (
+            patch.object(session, "commit", side_effect=RuntimeError("db gone")),
+            pytest.raises(RuntimeError, match="db gone"),
+        ):
+            claim_next_operation(session)
