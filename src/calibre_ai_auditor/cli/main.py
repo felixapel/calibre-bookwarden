@@ -401,13 +401,23 @@ def scan(
         # list_books --fields all already returns full per-book metadata;
         # re-querying show_metadata per book would re-scan the whole library
         # once per book (N subprocesses, O(N^2) parse). Reuse the rows.
+        # One bulk select up front instead of one per book (N+1).
+        staged_keys = [f"calibre:{b['id']}" for b in books]
+        staged_existing = (
+            {
+                record.book_key: record
+                for record in session.exec(select(BookRecord).where(col(BookRecord.book_key).in_(staged_keys))).all()
+            }
+            if staged_keys
+            else {}
+        )
         for b in books:
             book_id = b["id"]
             typer.echo(f"  Processing book {book_id}: {b.get('title')}")
             full_meta = b
 
             book_key = f"calibre:{book_id}"
-            existing = session.exec(select(BookRecord).where(BookRecord.book_key == book_key)).first()
+            existing = staged_existing.get(book_key)
             if existing:
                 existing.run_id = run_id
                 existing.current_metadata = full_meta
@@ -424,6 +434,7 @@ def scan(
                     files=full_meta.get("formats", []),
                 )
                 session.add(record)
+                staged_existing[book_key] = record
 
         session.commit()
 

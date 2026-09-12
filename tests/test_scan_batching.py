@@ -69,3 +69,34 @@ def test_scan_reuses_list_rows_without_per_book_subprocess(tmp_path: Path) -> No
         titles = sorted(r.current_metadata["title"] for r in records)
         assert titles == ["Book 1", "Book 2", "Book 3"]
         assert all(r.status == "scanned" for r in records)
+
+
+def test_scan_updates_pre_existing_records_via_bulk_select(tmp_path: Path) -> None:
+    _CountingFakeCLI.show_metadata_calls = 0
+    settings = Settings(
+        library={"path": tmp_path},
+        storage={"sqlite_path": tmp_path / "test.db"},
+    )
+    engine = get_engine(settings)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(BookRecord(book_key="calibre:1", run_id="old_run", current_metadata={"title": "Stale"}))
+        session.commit()
+
+    # The app callback rebuilds settings via load_settings, so patch it too.
+    with (
+        patch("calibre_ai_auditor.cli.main.init_db", return_value=None),
+        patch("calibre_ai_auditor.cli.main.CalibreCLI", _CountingFakeCLI),
+        patch("calibre_ai_auditor.cli.main.load_settings", return_value=settings),
+    ):
+        result = runner.invoke(app, ["scan"])
+
+    assert result.exit_code == 0, result.stdout
+    with Session(engine) as session:
+        from sqlmodel import select
+
+        records = session.exec(select(BookRecord)).all()
+        assert len(records) == 3
+        updated = session.exec(select(BookRecord).where(BookRecord.book_key == "calibre:1")).one()
+        assert updated.current_metadata["title"] == "Book 1"
+        assert updated.status == "scanned"
