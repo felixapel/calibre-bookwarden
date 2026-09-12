@@ -11,15 +11,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-_CACHE: dict[str, tuple[float, Any]] = {}
+_CACHE: OrderedDict[str, tuple[float, Any]] = OrderedDict()
 _LOCK = asyncio.Lock()
 _DEFAULT_TTL_SECONDS = 300.0
+_MAX_ENTRIES = 512
 
 
 def _key(url: str, params: dict[str, Any] | None) -> str:
@@ -47,6 +49,7 @@ async def cached_get_json(
     async with _LOCK:
         hit = _CACHE.get(key)
         if hit is not None and now - hit[0] < ttl:
+            _CACHE.move_to_end(key)
             return hit[1]
     limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
     async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
@@ -54,5 +57,7 @@ async def cached_get_json(
         response.raise_for_status()
         data = response.json()
     async with _LOCK:
+        while len(_CACHE) >= _MAX_ENTRIES:
+            _CACHE.popitem(last=False)
         _CACHE[key] = (time.monotonic(), data)
     return data
