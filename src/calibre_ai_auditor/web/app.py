@@ -109,6 +109,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Shutting down Calibre AI Auditor API...")
 
+    # Release pooled rate-limit Redis connections
+    try:
+        from calibre_ai_auditor.web.rate_limit import aclose_rate_limit_pools
+
+        await aclose_rate_limit_pools()
+    except Exception:
+        logger.exception("Failed to close rate-limit pools on shutdown")
+
     # Stop Valkey background workers
     await stop_worker_task()
 

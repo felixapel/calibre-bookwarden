@@ -1,5 +1,6 @@
 """Fail-closed production HTTP rate limiting backed by Valkey."""
 
+import contextlib
 from typing import Any
 
 RATE_LIMIT_SCRIPT = """
@@ -16,14 +17,15 @@ return 0
 """
 
 
-_POOLS: dict[str, Any] = {}
+_POOLS: dict[tuple[str, float], Any] = {}
 
 
 def _pool_for(url: str, timeout: float) -> Any:
-    """Shared connection pool per URL: avoids per-request socket churn."""
+    """Shared connection pool per (URL, timeout): avoids per-request socket churn."""
     import redis.asyncio as aioredis
 
-    pool = _POOLS.get(url)
+    key = (url, timeout)
+    pool = _POOLS.get(key)
     if pool is None:
         pool = aioredis.from_url(
             url,
@@ -32,8 +34,16 @@ def _pool_for(url: str, timeout: float) -> Any:
             socket_timeout=timeout,
             max_connections=20,
         )
-        _POOLS[url] = pool
+        _POOLS[key] = pool
     return pool
+
+
+async def aclose_rate_limit_pools() -> None:
+    """Release pooled Redis connections (call from ASGI lifespan shutdown)."""
+    while _POOLS:
+        _, pool = _POOLS.popitem()
+        with contextlib.suppress(Exception):
+            await pool.aclose()
 
 
 async def consume_rate_limit(url: str, identity: str, limit: int, window: int, timeout: float) -> int:

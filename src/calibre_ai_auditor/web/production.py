@@ -114,6 +114,12 @@ def create_production_app(
         checker = runtime_app.state.database_readiness_checker
         checker(settings)
         yield
+        try:
+            from calibre_ai_auditor.web.rate_limit import aclose_rate_limit_pools
+
+            await aclose_rate_limit_pools()
+        except Exception:
+            pass
 
     application = FastAPI(
         title="Calibre AI Auditor Certificate A",
