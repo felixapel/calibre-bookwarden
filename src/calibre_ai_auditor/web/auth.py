@@ -23,5 +23,11 @@ def verify_paperless_webhook(request: Request, settings: Settings) -> None:
         or request.headers.get("X-Paperless-Webhook-Secret")
         or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     )
-    if not provided or not hmac.compare_digest(provided, expected):
+    try:
+        # compare_digest requires ASCII-only str; non-ASCII header bytes
+        # (latin-1 decoded) must fail closed, not raise an unhandled 500.
+        valid = bool(provided) and hmac.compare_digest(provided.encode("ascii"), expected.encode("ascii"))
+    except (UnicodeEncodeError, TypeError):
+        valid = False
+    if not valid:
         raise HTTPException(status_code=401, detail="Invalid or missing webhook secret")

@@ -37,3 +37,16 @@ def test_paperless_webhook_skips_when_unconfigured() -> None:
         headers: dict[str, str] = {}
 
     verify_paperless_webhook(FakeRequest(), settings)  # type: ignore[arg-type]
+
+
+def test_paperless_webhook_non_ascii_secret_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-ASCII header bytes must yield 401, never an unhandled TypeError/500."""
+    monkeypatch.setenv("PAPERLESS_WEBHOOK_SECRET", "test-secret")
+    settings = Settings()
+
+    class FakeRequest:
+        headers = {"X-Webhook-Secret": "tëst-sëcret"}
+
+    with pytest.raises(HTTPException) as exc:
+        verify_paperless_webhook(FakeRequest(), settings)  # type: ignore[arg-type]
+    assert exc.value.status_code == 401
