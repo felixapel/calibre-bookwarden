@@ -43,12 +43,7 @@ Regardless of the backend, the database serves as the system-of-record for:
 
 ## Manifestation V2 records
 
-Alembic head `c8e1f0a2b4d6` (after `a72c9d4e8f31` supervised-pilot binding) adds
-worker lease columns on `verificationrun` for restart-safe V2 shadow audits.
-The supervised-pilot binding itself remains on head predecessor `a72c9d4e8f31`
-in the V2 contract
-without reinterpreting legacy
-rows:
+Alembic head `f4a2d6e8c013` (advancing past `c8e1f0a2b4d6` worker leases and `e3c1a4b7d902` verification contracts) establishes full runtime role isolation between `bookaudit_app`, `bookaudit_verifier`, and `bookaudit_migrator`. The contract maintains strict invariant tracking:
 
 - `VerificationRun.pipeline_version` and `mode` distinguish V1/legacy from
   `manifestation-v2` shadow runs.

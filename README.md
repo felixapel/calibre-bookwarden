@@ -10,7 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/felixapel/calibre-bookwarden/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/felixapel/calibre-bookwarden/ci.yml?branch=main&label=CI&logo=github" alt="CI Status"></a>
+  <a href="https://github.com/felixapel/calibre-bookwarden/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/felixapel/calibre-bookwarden/ci.yml?branch=main&label=GitHub%20CI&logo=github" alt="CI Status"></a>
+  <a href="http://192.168.0.122:3010/felix/calibre-bookwarden"><img src="https://img.shields.io/badge/Gitea-Internal%20Forge-609926.svg?logo=gitea&logoColor=white" alt="Gitea Forge"></a>
   <a href="https://github.com/felixapel/calibre-bookwarden/releases"><img src="https://img.shields.io/badge/Release-v1.3.0-blue.svg?logo=semantic-release" alt="Release Version"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB.svg?logo=python&logoColor=white" alt="Python Versions"></a>
   <a href="https://github.com/felixapel/calibre-bookwarden/pkgs/container/calibre-bookwarden"><img src="https://img.shields.io/badge/Docker-calibre--bookwarden-2496ED.svg?logo=docker&logoColor=white" alt="Docker Multi-Arch"></a>
@@ -18,6 +19,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License"></a>
   <a href="https://github.com/sponsors/felixapel"><img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-EA4AAA.svg?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
   <a href="https://ko-fi.com/felixapel"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B.svg?logo=kofi&logoColor=white" alt="Support on Ko-fi"></a>
+</p>
+
+<p align="center">
+  <strong>Dual-Forge Topology:</strong>
+  <a href="https://github.com/felixapel/calibre-bookwarden">GitHub (Public Distribution & Issues)</a>
+  &nbsp;•&nbsp;
+  <a href="http://192.168.0.122:3010/felix/calibre-bookwarden">Gitea (Hermetic CI & Hardware Rig)</a>
 </p>
 
 ---
@@ -154,13 +162,18 @@ services:
     container_name: calibre-bookwarden
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8084:8080"  # WebUI (mapped to 8084 on host to prevent port collisions)
     volumes:
       - /mnt/user/MEDIA/Books/Calibre Library:/calibre:ro
       - /mnt/user/appdata/calibre-bookwarden:/config
     environment:
-      - BOOKWARDEN_READ_ONLY=true
-      - BOOKWARDEN_LIBRARY_PATH=/calibre
+      - BOOKAUDIT_DATABASE__BACKEND=sqlite
+      - BOOKAUDIT_DB_PATH=/config/bookaudit.db
+      - BOOKAUDIT_ARTIFACTS_DIR=/config/artifacts
+      - BOOKAUDIT_QUEUE__BACKEND=memory
+      - BOOKAUDIT_RATE_LIMITS__BACKEND=memory
+      - BOOKAUDIT_READ_ONLY=true
+      - BOOKAUDIT_LIBRARY_PATH=/calibre
       - CALIBRE_WEB_CONTAINER=calibre-web-automated
       - GEMINI_API_KEY=${GEMINI_API_KEY}
 ```
@@ -181,9 +194,10 @@ Install directly from the unRAID web UI using the pre-configured template:
 
 Benchmarked against a production library of **3,180 books** over SMB network storage:
 
-| Metric | Before (Legacy) | With Calibre Bookwarden 2.0 | Improvement |
+| Metric | Before (Legacy) | Calibre Bookwarden v1.3.0 | Improvement |
 | :--- | :---: | :---: | :---: |
 | **Audit Duration (3,180 books)** | 14m 20s | **44.72 seconds** | **19.2x faster** ⚡ |
+| **Direct SQLite Peak Throughput** | ~200 ms / book | **6,090 books / sec** | **DirectCalibreEngine** 🚀 |
 | **SQL Queries Executed** | 3,177 individual SELECTs | **1 atomic compound query** | **Zero N+1 overhead** |
 | **RAM Consumption** | ~480 MB | **< 32 MB** | **93% reduction** |
 | **Author Sort Desyncs** | 13 unformatted | **0 (100% canonical)** | **Clean database** |
@@ -228,6 +242,8 @@ If this project saved your library from corruption, upgraded your covers, or sav
 
 ## 📖 Documentation Index
 
+* 💻 [CLI Reference Guide](CLI_REFERENCE.md)
+* 📖 [User Workflow & Usage Guide](USAGE.md)
 * 📘 [Architecture Specification](docs/ARCHITECTURE.md)
 * 🔒 [Safety Model & Threat Boundaries](docs/SAFETY.md)
 * 🌐 [API Reference](docs/API.md)
@@ -235,7 +251,9 @@ If this project saved your library from corruption, upgraded your covers, or sav
 * 🚀 [Production Operations Runbook](docs/runbooks/production-operations.md)
 * 📑 [Database Schema & Migration Docs](docs/DATABASE.md)
 * 🧪 [Testing & Verification Guide](TESTING.md)
-* 📜 [ADR-005: Certificate A Production Boundary](docs/decisions/ADR-005-certificate-a-production-boundary.md)
+* 📜 [Architecture Decision Records (ADRs)](docs/decisions/)
+* 📦 [Changelog](CHANGELOG.md)
+* 🗺️ [Roadmap](ROADMAP.md)
 
 ---
 

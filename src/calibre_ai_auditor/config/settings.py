@@ -7,18 +7,21 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 
 class LibrarySettings(BaseModel):
-    path: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "library_path", "path"))
+    path: Path | None = Field(
+        None,
+        validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "BOOKWARDEN_LIBRARY_PATH", "library_path", "path"),
+    )
     read_only: bool = True
 
 
 class StorageSettings(BaseModel):
     sqlite_path: Path = Field(
         Path(".state/bookaudit.db"),
-        validation_alias=AliasChoices("BOOKAUDIT_DB_PATH", "sqlite_path", "path"),
+        validation_alias=AliasChoices("BOOKAUDIT_DB_PATH", "BOOKWARDEN_DB_PATH", "sqlite_path", "path"),
     )
     artifacts_dir: Path = Field(
         Path(".artifacts"),
-        validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR", "artifacts_dir"),
+        validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR", "BOOKWARDEN_ARTIFACTS_DIR", "artifacts_dir"),
     )
 
 
@@ -239,26 +242,32 @@ class Settings(BaseSettings):
     log_json: bool = False
     api_key: SecretStr | None = Field(
         None,
-        validation_alias=AliasChoices("BOOKAUDIT_API_KEY", "api_key"),
+        validation_alias=AliasChoices("BOOKAUDIT_API_KEY", "BOOKWARDEN_API_KEY", "api_key"),
     )
     trusted_hosts: str = Field(
         "localhost,127.0.0.1,testserver",
-        validation_alias=AliasChoices("BOOKAUDIT_TRUSTED_HOSTS", "trusted_hosts"),
+        validation_alias=AliasChoices("BOOKAUDIT_TRUSTED_HOSTS", "BOOKWARDEN_TRUSTED_HOSTS", "trusted_hosts"),
     )
     require_writer_ready: bool = False
     writer_heartbeat_max_age_seconds: int = Field(default=300, ge=10, le=3600)
 
     # Flat aliases for common Docker env vars
-    library_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH"))
-    db_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_DB_PATH"))
-    artifacts_dir_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR"))
+    library_path_env: Path | None = Field(
+        None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "BOOKWARDEN_LIBRARY_PATH")
+    )
+    db_path_env: Path | None = Field(
+        None, validation_alias=AliasChoices("BOOKAUDIT_DB_PATH", "BOOKWARDEN_DB_PATH")
+    )
+    artifacts_dir_env: Path | None = Field(
+        None, validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR", "BOOKWARDEN_ARTIFACTS_DIR")
+    )
     read_only_env: bool | None = Field(
         None,
-        validation_alias=AliasChoices("BOOKAUDIT_READ_ONLY"),
+        validation_alias=AliasChoices("BOOKAUDIT_READ_ONLY", "BOOKWARDEN_READ_ONLY"),
     )
     allow_remote_file_upload: bool = Field(
         False,
-        validation_alias=AliasChoices("BOOKAUDIT_ALLOW_REMOTE_FILE_UPLOAD"),
+        validation_alias=AliasChoices("BOOKAUDIT_ALLOW_REMOTE_FILE_UPLOAD", "BOOKWARDEN_ALLOW_REMOTE_FILE_UPLOAD"),
     )
 
 

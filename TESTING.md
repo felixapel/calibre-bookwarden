@@ -1,22 +1,58 @@
 # Testing Guide
 
-`calibre-ai-auditor` package version 1.3.0 includes unit, integration, E2E, and
-benchmark suites plus Manifestation V2 contract, pipeline, persistence,
-security, writer, calibration, and migration coverage. The latest repository
-tag is `v1.3.0`; exact test totals are reported by each run instead of being
-treated as a permanent contract.
+`calibre-bookwarden` (v1.3.0) includes unit, integration, E2E, and benchmark suites
+covering the high-speed `DirectCalibreEngine`, CQS cover analysis, interactive Cover Deck,
+library saneamiento, deduplication, and Manifestation V2 enterprise verification contracts.
 
-```
+```text
 tests/
-├── (root)             # Unit, integration, migration, and V2 security tests
-├── test_comics.py     # ComicInfo.xml parsing
+├── (root)                    # Unit, integration, CLI, and direct engine tests
+│   ├── test_direct_engine.py       # High-speed SQLite keyset benchmarks
+│   ├── test_api_360_and_covers.py  # 360° audit and CQS endpoint tests
+│   ├── test_cover_deck_ui.py       # HTMX swipeable deck routes
+│   ├── test_cover_cache.py         # Provider LRU bounded cover cache
+│   ├── test_curation.py            # Duplicates and series gap detection
+│   ├── test_calibre_web_sync.py    # Hot-reload & thumbnail purge
+│   ├── test_cli_smoke.py           # CLI command coverage
+│   └── test_paperless.py           # Ingestion bridge tests
 ├── fixtures/
-│   ├── synthetic_library/   # 30 hand-crafted bad-metadata fixtures (gold truth)
-│   └── gold_truth/          # Per-field contract for each fixture
-├── benchmarks/        # 32 pytest-benchmark tests (with baseline.json)
-├── calibration/       # 4 smoke tests for the calibration pipeline
-├── web/               # FastAPI route, auth, observability, and V2 review tests
-└── cassettes/         # Recorded LLM responses for the witness tests
+│   ├── synthetic_library/    # Hand-crafted bad-metadata fixtures
+│   └── gold_truth/           # Per-field ground truth contracts
+├── benchmarks/               # pytest-benchmark performance tests
+├── calibration/              # Calibration pipeline smoke tests
+├── web/                      # FastAPI route, auth, and observability tests
+└── cassettes/                # Recorded HTTP/LLM witness responses
+```
+
+## Quick Local Test Execution
+
+To run the standard unit and regression test suite without spinning up external sidecars:
+
+```bash
+uv run pytest -m "not benchmark and not ocr_live and not network and not v2_live"
+```
+
+To run the v1.3 homelab and curation test suites specifically:
+
+```bash
+uv run pytest \
+  tests/test_cli_smoke.py \
+  tests/test_api_360_and_covers.py \
+  tests/test_direct_engine.py \
+  tests/test_curation.py \
+  tests/test_cover_cache.py \
+  tests/test_cover_deck_ui.py \
+  tests/test_calibre_web_sync.py
+```
+
+## Frontend E2E Tests (Playwright)
+
+To test the React 19 WebUI and Cover Deck interfaces:
+
+```bash
+cd webui
+npm install
+npx playwright test
 ```
 
 ## Manifestation V2 gates

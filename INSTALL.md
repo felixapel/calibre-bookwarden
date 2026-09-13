@@ -1,6 +1,9 @@
 # Installation
 
-## Production
+> [!NOTE]
+> **Homelab & Standalone Users:** For homelab setups (UnRAID, TrueNAS, or Docker Compose sidecar with Calibre-Web), see [docs/HOMELAB.md](docs/HOMELAB.md). For immediate local CLI auditing via `uvx` without Docker, see the [Quickstart in README.md](README.md#option-a-run-via-uvx-no-installation-required).
+
+## Production (Certificate A)
 
 Certificate A production is container-only. Required host components:
 

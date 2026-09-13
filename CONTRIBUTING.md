@@ -7,55 +7,77 @@
 - Any write-path change must include tests and docs
 - No secrets, personal libraries, or copyrighted books in the repo
 
-## Development workflow
+## Dual-Forge Development Workflow
 
-1. Fork the repo
-2. Create a feature branch
-3. Run formatting and tests locally
-4. Open a PR with:
-   - problem statement
-   - approach
-   - risk notes
-   - test evidence
-   - screenshots or sample report diffs if CLI output changed
+Calibre Bookwarden maintains a synchronized dual-forge topology:
+
+1. **Gitea (Internal Primary & Hermetic CI)**:
+   - URL: `http://192.168.0.122:3010/felix/calibre-bookwarden`
+   - Hosts full-stack hermetic CI runners (PostgreSQL, Valkey, Tesseract, Calibre lab).
+   - Core release gates and vulnerability scans run here.
+
+2. **GitHub (Public Distribution & Community)**:
+   - URL: `https://github.com/felixapel/calibre-bookwarden`
+   - Canonical open-source distribution, issues, and external contributor PRs.
+   - Mirrors releases and tags after Gitea verification.
+
+### Contribution Workflow
+
+1. Fork the repo (on GitHub or Gitea).
+2. Create a feature branch: `git checkout -b feat/my-improvement`.
+3. Run formatting, linting, and local tests.
+4. Open a Pull Request on GitHub or Gitea with:
+   - Problem statement and motivation
+   - Technical approach and risk assessment
+   - Test evidence and benchmark diffs
+   - Screenshots or CLI snippets if UI/terminal output changed
 
 ## Branch naming
 
 Examples:
 
-- `feat/scan-command`
-- `feat/openlibrary-adapter`
-- `fix/judge-schema-validation`
+- `feat/cover-provider-cache`
+- `fix/author-sort-particle-rule`
+- `refactor/direct-engine-cursor`
 - `docs/roadmap-update`
 
 ## Commit style
 
-Use Conventional Commit-style prefixes where practical:
+Use Conventional Commits format:
 
-- `feat:`
-- `fix:`
-- `docs:`
-- `refactor:`
-- `test:`
-- `chore:`
+- `feat:` New user-facing feature or capability
+- `fix:` Bug fix or error resolution
+- `docs:` Documentation updates
+- `refactor:` Code refactoring without behavior change
+- `test:` Adding or updating tests
+- `chore:` Build scripts, dependencies, CI configuration
 
 ## Coding standards
 
-- Python: typed where reasonable
-- Favor pure functions in rules and normalization
-- Keep provider adapters thin and explicit
-- Do not hide risky behavior behind defaults
-- Surface every external command in logs or artifacts
+- Python: Python 3.12+ using `uv`.
+- Type annotations: Strictly typed where practical (`mypy` compliant).
+- Favor pure, deterministic functions for normalization and rule checking.
+- Keep provider adapters thin, bounded, and failure-tolerant.
+- Zero silent mutations: All writes require explicit confirmation or authorization.
+- Fast execution: Direct engine queries must use streaming keysets, avoiding full-table memory loads.
 
 ## Required local checks
 
 All checks must pass before opening a PR:
 
 ```bash
+# Linting & Formatting
 uv run ruff check .
 uv run ruff format --check .
+
+# Static Type Checking
 uv run mypy src
-uv run pytest -m "not benchmark and not ocr_live and not network"
+
+# Unit & Integration Tests (excluding heavy services/live OCR)
+uv run pytest -m "not benchmark and not ocr_live and not network and not v2_live"
+
+# Frontend Build (if modifying webui/)
+cd webui && npm run build && cd ..
 ```
 
 ## PR checklist

@@ -1,85 +1,76 @@
-# Certificate A safety model
+# Certificate A & Container Safety Model
 
-Certificate A audits evidence and never changes Calibre metadata. Safety comes
-from removing authority, not from asking a broad application to behave.
+Safety in Calibre Bookwarden comes from removing authority, enforcing least privilege at every system boundary, and treating all untrusted container contents as potential attack vectors.
 
-## Enforced boundaries
+---
 
-- Calibre and Content Server must be stopped. The offline source rejects a
-  missing/unsafe `metadata.db`, unsupported schema, symlinked roots or metadata,
-  mismatched schema/application-ID marker, and WAL/SHM/journal sidecars. Known
-  schemas 25-27 are checked against their exact official marker state and the
-  complete required table-and-column contract.
-- Only the verifier receives `/library:ro`. The web app has no library mount;
-  the Certificate A image has no Calibre executable.
-- Formats are copied to a private bounded tmpfs and inspected there. Logical
-  source references, not scratch paths, are sealed into evidence.
-- The source snapshot freezes selected membership, metadata hash, and format
-  hashes. Drift becomes `source_changed`.
-- PostgreSQL atomically claims work with `FOR UPDATE SKIP LOCKED` semantics,
-  increments a monotonic fence, and stores an expiring lease. Every worker
-  mutation rechecks owner, fence, live lease, run state, and frozen membership.
-- The app and verifier use different PostgreSQL login roles. App privileges are
-  limited to request insertion, reads, and cancellation columns. Verifier
-  privileges are limited to audit evidence/progress tables. Neither runtime
-  role can migrate schema. Compose uses `.env` only for interpolation and
-  passes each process its own declared DSN; it never injects the whole file.
-- Readiness requires production configuration, exact app role/Alembic head,
-  and a verifier heartbeat matching release digest, schema, and library root.
-- OCR is Tesseract-only with bounded pages, timeout, process-group termination,
-  and bounded sidecar output.
-- Remote providers receive only one checksum-valid ISBN. Book text/images,
-  uploads, LLM, vision, Tika, Paperless, vectors, watcher, MCP, and Content
-  Server paths are disabled in the production contract.
-- Evidence is schema-validated and SHA-256 sealed before review. Integrity
-  mismatch is a conflict, never a best-effort display.
-- The production API has no authorization or writer route. The retired apply
-  route returns 410 and `writes_enabled` is always false.
+## 1. Enforced Production Boundaries (Certificate A)
 
-## Operator responsibilities
+- **Library Isolation**: Calibre and Content Server must be stopped. The offline source rejects a missing/unsafe `metadata.db`, unsupported schema, symlinked roots or metadata, mismatched schema/application-ID marker, and WAL/SHM/journal sidecars. Known schemas 25-27 are checked against their exact official marker state and the complete required table-and-column contract.
+- **Process & Mount Separation**: Only the verifier receives `/library:ro`. The web application has no library mount; the Certificate A image contains no Calibre executable.
+- **Private Bounded Scratch**: Formats are copied to a private bounded tmpfs and inspected there. Logical source references, not scratch paths, are sealed into evidence.
+- **Monotonic Fencing & Atomic Claims**: PostgreSQL atomically claims work with `FOR UPDATE SKIP LOCKED` semantics, increments a monotonic fence token, and records an expiring lease. Every worker mutation rechecks owner, fence, live lease, run state, and frozen membership.
+- **Database Role Partitioning**: The app and verifier use different PostgreSQL login roles (`bookaudit_app`, `bookaudit_verifier`, `bookaudit_migrator`). App privileges are limited to request insertion, reads, and cancellation columns. Verifier privileges are limited to audit evidence and progress tables. Neither runtime role can migrate schema.
+- **Fail-Closed API**: The production API exposes no writer route. The retired legacy apply route returns HTTP 410 and `writes_enabled` is immutable `false`.
 
-Code cannot determine with certainty that every external Calibre writer is
-stopped. The operator must provide that assertion before each run and keep the
-library quiescent until terminal state.
+---
+
+## 2. Container & Operating System Hardening
+
+- **Non-Root Execution**: Container processes run strictly under unprivileged user identity `UID:GID 10001:10001` (`bookaudit`).
+- **Read-Only Root Filesystem**: The container root filesystem is mounted `read_only: true`. Temporary file operations are constrained to explicit `tmpfs` mounts with `mode=1777`.
+- **Capability Dropping**: All Linux kernel capabilities are dropped (`cap_drop: [ALL]`).
+- **No Privilege Escalation**: Enforces `security_opt: ["no-new-privileges:true"]`, preventing binaries from gaining elevated permissions via setuid bits.
+- **Process Resource Limits**: Production Compose files specify explicit CPU, memory, and PID limits to mitigate runaway threads or denial-of-service conditions.
+
+---
+
+## 3. Ingestion & Malicious File Defenses (Zip-Bombs & Traversal)
+
+All incoming ebooks and archives are treated as untrusted binary blobs and validated prior to decompression:
+
+### Zip-Bomb & Decompression Bomb Protection
+- **Member Size Caps**: In `extractors/multiformat.py` and `extractors/text.py`, each archive member is validated against `MAX_MEMBER_BYTES` (50 MB).
+- **Archive Size Caps**: Total uncompressed archive size is constrained to `MAX_ARCHIVE_BYTES` (250 MB).
+- **Compression Ratio Invariant**: Archives exceeding a compression ratio of **500:1** (`uncompressed_size / compressed_size > 500`) are rejected immediately as potential Zip-bomb denial-of-service payloads.
+- **Image Decompression Bomb Guard**: Image parsing is capped at `MAX_IMAGE_PIXELS = 60,000,000` (60 Megapixels). Any oversized image triggers an `Image.DecompressionBombError` catch block, preventing process memory exhaustion.
+
+### Path Traversal & Symlink Resolution
+- **Anchored Traversal Prevention**: `security/files.py` enforces component-by-component path resolution using `openat(2)` with `O_NOFOLLOW | O_DIRECTORY` flags starting from the validated library root.
+- **Sealed File Descriptors**: Under Linux, format handoff between processes uses `memfd_create` with write seals (`_F_SEAL_WRITE`), ensuring bytes cannot be mutated after verification.
+- **Web Static Guard**: All WebUI asset requests pass through `is_path_within_static`, preventing directory escape attacks (`../`).
+
+---
+
+## 4. Operator Responsibilities
+
+Code cannot determine with certainty that every external Calibre writer is stopped. The operator must provide that assertion before each run and keep the library quiescent until terminal state.
 
 Protect the following separately:
-
 - `.env` (mode 0600), database role passwords, and internal API key;
 - Caddy password hash and private TLS/DNS/VPN boundary;
 - PostgreSQL dumps and their checksum files;
 - the immutable image digest and exact Gitea release evidence;
-- logs/evidence, which can contain private book metadata even though secrets and
-  paths are excluded from public capability and metric surfaces.
+- logs/evidence, which can contain private book metadata even though secrets and paths are excluded from public capability and metric surfaces.
 
-Do not delete sidecars, edit run/fence/lease rows, disable integrity checks,
-mount the library into the app, broaden database grants, expose port 8080 to the
-LAN, or manually mark an incident complete.
+---
 
-## Expected failure behavior
+## 5. Expected Failure Behavior
 
-- Provider timeout/conflict: incomplete or review evidence, no fabricated
-  fallback metadata.
-- OCR failure/timeout: bounded failure for that evidence path; no alternate
-  cloud OCR.
-- Verifier crash: lease expires and a recovery verifier increments the fence;
-  the stale process loses write authority.
-- Calibre/source change: terminal `source_changed` and operator investigation.
-- Contract/release/schema mismatch during recovery: `blocked_recovery`.
-- PostgreSQL, Valkey rate limiter, or verifier unavailable: readiness fails and
-  request handling fails closed.
-- Evidence seal mismatch: HTTP 409 integrity failure.
+- **Provider timeout/conflict**: Incomplete or review evidence, no fabricated fallback metadata.
+- **OCR failure/timeout**: Bounded failure for that evidence path; no alternate cloud OCR.
+- **Verifier crash**: Lease expires and a recovery verifier increments the fence; the stale process loses write authority.
+- **Calibre/source change**: Terminal `source_changed` and operator investigation.
+- **Contract/release/schema mismatch during recovery**: `blocked_recovery`.
+- **PostgreSQL, Valkey rate limiter, or verifier unavailable**: Readiness fails and request handling fails closed.
+- **Evidence seal mismatch**: HTTP 409 integrity failure.
 
-## Certificate B
+---
 
-The repository retains historical writer code, an explicit writer image, and
-non-default profiles. They are outside Certificate A's deployment, monitoring,
-backup, and support contract. Do not enable auto-apply or the supervised pilot;
-the Certificate A validator rejects them.
+## 6. Certificate B Boundary
 
-A future Certificate B must receive its own threat model and promotion evidence
-covering real Calibre mutations, immutable handoff, readback, rollback, crash
-windows, disk exhaustion, restored-clone rehearsal, and serial human canaries.
-No Certificate A result implies that approval.
+The repository retains historical writer code, an explicit writer image, and non-default profiles. They are outside Certificate A's deployment, monitoring, backup, and support contract. Do not enable auto-apply or the supervised pilot; the Certificate A validator rejects them.
 
-See [ADR-005](decisions/ADR-005-certificate-a-production-boundary.md) and the
-[production operations runbook](runbooks/production-operations.md).
+A future Certificate B must receive its own threat model and promotion evidence covering real Calibre mutations, immutable handoff, readback, rollback, crash windows, disk exhaustion, restored-clone rehearsal, and serial human canaries. No Certificate A result implies that approval.
+
+See [ADR-005](decisions/ADR-005-certificate-a-production-boundary.md) and the [production operations runbook](runbooks/production-operations.md).

@@ -1,73 +1,74 @@
-# React + TypeScript + Vite
+# Calibre Bookwarden WebUI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend interface for **Calibre Bookwarden** is a modern Single Page Application (SPA) designed for rapid bibliographic inspection, cover triage, and evidence verification.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🛠️ Technology Stack
 
-## React Compiler
+- **Framework**: React 19 with TypeScript
+- **Bundler & Tooling**: Vite 6, Tailwind CSS, Lucide React icons
+- **Dynamic Interactions**: Native React hooks + HTMX integration for the swipeable Cover Deck
+- **Testing**: Playwright (E2E testing across desktop and mobile Chromium viewports)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 📱 Core Views & Features
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 1. Bento Dashboard (`src/pages/Dashboard.tsx`)
+- High-level overview of library health, active background workers, and persistent storage.
+- Real-time connectivity status for homelab inference hosts (Ollama, LM Studio).
+- Aggregate metrics: total books audited, Tier A/B/C breakdown, pending reviews, and disk savings.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### 2. Manifestation V2 Verification (`src/pages/Verify.tsx` & `Review.tsx`)
+- Submits exact-edition audit runs (`pipeline: "v2"`) with granular OCR and witness model options.
+- Detailed evidence inspector displaying:
+  - Cryptographic SHA-256 package seal.
+  - Per-format container extraction (EPUB OCF, PDF XMP, CBZ/CBR).
+  - Exact external provider candidates (OpenLibrary, Google Books).
+  - Canonical proposed patches with field-by-field diff views.
+  - Single-click manual authorization for verified Tier A packages.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 3. Cover Studio & Cover Deck (`src/pages/CoverStudio.tsx`)
+- **Cover Deck (Swipeable Review)**: Fast, keyboard-driven triage of defective and low-resolution covers (powered by HTMX at `/api/covers/ui/deck`).
+- **Mathematical CQS Inspector**: Displays Cover Quality Scores (0–100), Laplacian sharpness metrics, Shannon entropy, and aspect ratio adherence.
+- **Side-by-Side Comparison**: Review current covers against candidate high-definition replacements before applying.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 4. Curation & Library Diagnostics (`src/pages/Duplicates.tsx`, `Series.tsx`)
+- **Series Gap Hunter**: Visualizes multi-volume series, identifying missing leading and intermediate volumes.
+- **FRBR Multi-Format Consolidator**: Detects duplicate book entries across distinct formats (e.g. EPUB vs PDF) with safe merge actions.
+
+### 5. Settings & Security (`src/pages/Settings.tsx`)
+- Configures external metadata provider toggles, local API keys, and privacy boundaries.
+
+---
+
+## 🚀 Development & Build Scripts
+
+From the `webui/` directory:
+
+```bash
+# Install dependencies
+npm install
+
+# Start local development server (proxies /api to http://localhost:8080)
+npm run dev
+
+# Run TypeScript type check and linter
+npm run lint
+
+# Build production assets (outputs to webui/dist/)
+npm run build
+
+# Run Playwright end-to-end tests
+npx playwright test
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 🔒 Authentication & API Integration
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+The SPA communicates with the backend via `src/api/client.ts`:
+- **Development**: Vite development server automatically proxies API requests (`/api/*`) to the backend running at `http://localhost:8080`.
+- **Production**: When served from the compiled container image, static assets are hosted directly by the Bookwarden backend or reverse-proxied via Caddy Edge.
+- **Security Headers**: API requests include the configured `X-API-Key` header when required. In enterprise Certificate A deployments, the entire site is protected by Caddy TLS and Basic Auth with bcrypt hashing.

@@ -1,5 +1,8 @@
 # Certificate A deployment
 
+> [!NOTE]
+> **Homelab Users:** This document describes the formal enterprise Certificate A deployment boundary (read-only stopped library, PostgreSQL, Valkey, and isolated verification workers). For daily homelab companion setups with `calibre-web-automated`, UnRAID, or TrueNAS, see [docs/HOMELAB.md](docs/HOMELAB.md) and [docker-compose.sidecar.yml](docker-compose.sidecar.yml).
+
 The supported deployment is the four-service Certificate A Compose graph:
 
 | Service | Authority |
@@ -61,8 +64,7 @@ command uses `scripts/certificate-a-compose.sh`, which pins the project,
 Compose file, environment file, and only permitted maintenance profile instead
 of trusting ambient Compose variables.
 
-Only the app port is published, and only on
-`127.0.0.1:${BOOKAUDIT_PORT:-8080}`. PostgreSQL and Valkey have no host ports.
+Only the app port is published on `127.0.0.1:${BOOKAUDIT_PORT:-8080}`, along with Prometheus metrics on `127.0.0.1:${BOOKAUDIT_PROMETHEUS_PORT:-19090}`. PostgreSQL and Valkey have no host ports.
 The opt-in `edge` profile runs the pinned Caddy image after loopback readiness
 passes. Docker publishes its ports only on `BOOKAUDIT_EDGE_BIND_IP`, which must
 be this host's Tailscale IPv4 address; Caddy reaches the app only through the

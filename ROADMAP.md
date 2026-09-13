@@ -26,6 +26,9 @@ perform unattended bulk writes. See
 | `v1.1` | **Comics/Manga Vision**: cover and ComicInfo support; experimental Komf adapter | [PARTIAL] |
 | `v1.2` | **MCP Server**: legacy V1 read model for Hermes | [PARTIAL] |
 | `v1.2.x` | **Production hardening**: release integrity, writer recovery, retention, operations | [DONE] |
+| `v1.3` | **Forensic Saneamiento & Visual Curation**: DirectCalibreEngine (6,090 b/s), CQS 0-100, Cover Deck, Multiformat Dedup, Calibre-Web | [DONE] |
+| `v1.4` | **Homelab Harmonization & Cover Cache**: Autonomous provider caching, background workers, paperless bridge maturity | [PLANNED] |
+| `v2.0` | **Certificate B Supervised Writes**: Full pilot rollout, cryptographic audit trail, calibrated manifestation | [PLANNED] |
 | `Manifestation V2` | **Exact edition audit**: all formats, evidence tiers, supervised correction | [IMPLEMENTED; PILOT REQUIRED] |
 | `Remote Content Server` | **Read-only intake**: aggregate inventory and source-bound shadow audit | [IMPLEMENTED; LIVE USE REQUIRES OPERATOR SCOPE] |
 
@@ -87,6 +90,40 @@ See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) and the
 Do not start unattended apply, Paperless/Qdrant expansion, ingest automation,
 audiobooks, Komga/Kavita writes, or advanced manga matching before the reviewed
 corpus establishes product value and accuracy.
+
+---
+
+## v1.3 — Forensic Saneamiento & Visual Curation (DONE 2026-09-13)
+
+Transform Calibre Bookwarden into the definitive homelab and enterprise book guardianship platform with lightning-fast direct database forensics, visual cover curation, and automated library cleanup.
+
+### Core v1.3 Capabilities
+
+- **`DirectCalibreEngine`**: High-performance SQLite inspection running directly against `metadata.db` with keyset streaming. Benchmarked at **6,090 books/second** with constant `<32 MB` RAM footprint.
+- **Cover Quality Score (CQS 0–100)**: Multi-factor scoring engine evaluating Laplacian sharpness, Shannon entropy, aspect ratio adherence, and resolution grading.
+- **Interactive Cover Deck**: Swipeable HTMX/Tailwind deck providing human-in-the-loop triage for low-scoring covers with native EPUB/MOBI extraction fallbacks.
+- **Spurious Cover Detector**: Algorithmic detection of solid-color, template, corrupt, and low-res cover placeholders.
+- **Library 360° Forensic Audit**: Comprehensive CLI command (`bookwarden audit-360`) and API reporting integrity issues, missing fields, and orphan DB relations.
+- **Automated Saneamiento**:
+  - Title Case remediation for ALL-CAPS titles with grammar and acronym preservation.
+  - Multi-naming `author_sort` authority synchronization supporting particles and royal/noble names.
+  - Non-destructive multiformat duplicate merging (EPUB + PDF) and byte clone elimination.
+- **Calibre-Web Hot-Reload**: HTTP `/reconnect` reload combined with direct `/thumbnails` cache invalidation, eliminating container restarts.
+- **Paperless-ngx Bridge**: Automated webhook ingestion for documents tagged `#book` or `#manual`.
+- **System Hardening**: Non-root container (`10001:10001`), read-only rootfs, anti-Zip-bomb safeguards (500:1 cap, 2 GB uncompressed limit), and 60MP decompression limit.
+
+---
+
+## Future Horizons: v1.4 & v2.0
+
+### v1.4 — Homelab Harmonization & Cover Cache (PLANNED)
+- **Autonomous Provider Cache**: Background worker pre-fetching and caching high-resolution covers and verified ISBNs during low-traffic hours.
+- **Calibre-Web Annotations Sync**: Exporting and syncing bookmarks and highlights between Calibre-Web and Bookwarden.
+- **Full MCP Read Model**: Exposing complete Manifestation V2 evidence trees to local agent frameworks (Claude Desktop, Hermes).
+
+### v2.0 — Certificate B Supervised Writes (PLANNED)
+- **Supervised Live Pilot Rollout**: Progression from shadow mode to cryptographically supervised live writes on production libraries.
+- **Cross-Library Federated Deduplication**: Networked instance deduplication across remote and multi-user Calibre instances.
 
 ---
 

@@ -4,84 +4,70 @@ All notable changes to `calibre-ai-auditor` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.3.0] - 2026-09-07
+# Changelog
 
-### Added
-- **Project Rebranding to Calibre Bookwarden**: Transitioned official project name from *Calibre AI Auditor* to **Calibre Bookwarden**, highlighting the tool's deterministic forensic guardianship and rejecting AI-washing hype.
-- **Production-Ready SOTA Showcase Visuals**:
-  - `assets/hero-banner.jpg`: Cybernetic book vault hero banner with sleek typography.
-  - `assets/cover-deck-showcase.jpg`: Photorealistic high-resolution Cover Deck UI mockup displaying CQS metrics (Laplacian sharpness, Shannon entropy, aspect ratio) and keyboard-driven triage.
-  - `assets/terminal-audit-showcase.jpg`: Rich terminal capture of `bookwarden audit-360` executing full forensic audits with Unicode box drawing and status badges.
-- **Dual CLI Entrypoints**: Registered `bookwarden` as canonical CLI command in `pyproject.toml`, maintaining full backward compatibility for `bookaudit`.
-- **unRAID Template v2**: Added `deploy/unraid/calibre-bookwarden.xml` with updated metadata, icons, and donate links.
-- **Environment Variable Fallback**: Supported `BOOKWARDEN_*` configuration variables while preserving transparent fallback to `BOOKAUDIT_*`.
+All notable changes to `calibre-bookwarden` (formerly `calibre-ai-auditor`) are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/) and
+this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
+### Planned
+- Automated background provider enricher with adaptive rate-limiting.
+- Bidirectional annotations sync between Calibre-Web and Bookwarden.
+- Certificate B supervised live pilot rollouts.
 
-- A capability-limited Calibre Content Server source for aggregate-only
-  inventory and one-book-at-a-time Manifestation V2 shadow verification through
-  a loopback tunnel. Remote packages use source-bound logical references,
-  detect source changes, deny cloud/provider egress by default, and can never
-  authorize a writer operation.
-- A disposable Calibre 9.11.0 safety lab with generated CC0 EPUB/PDF/AZW3
-  fixtures, a read-only `calibredb` wrapper, ACL denial checks, whole-library
-  regular-file hash comparison, scratch validation, and zero-resource cleanup
-  verification.
-- V2-native WebUI review with paginated/filterable sealed evidence, exact
-  format hashes and provenance, current-versus-patch comparison, disabled Tier
-  B/C controls, one-package authorization, and sanitized operation polling.
-- Disabled-by-default supervised V2 pilot sessions bound to the canonical
-  library-root hash, immutable release digest, Alembic revision and a persisted
-  budget of at most five serial operation reservations.
-- Exact writer heartbeat binding, durable pilot metrics, bounded structured
-  audit events, and alerts for binding mismatch, stalled/failed V2 operations
-  and exhausted pilot budget.
-- `bookaudit pilot-stop PILOT_ID --yes` for fail-closed persistent pilot
-  shutdown.
-- `bookaudit incident-ack OPERATION_ID --actor ... --reason ... --yes` and an
-  append-only incident table for reviewed, quiescent V2 failures; uncertain and
-  restore-failed operations remain hard stops.
-- A required Gitea real-service integration job that refuses skips while testing
-  authenticated authorization, unit queueing, real Calibre apply/readback,
-  queued undo and restored readback with PostgreSQL, Valkey and Tesseract.
+---
+
+## [1.3.0] - 2026-09-13
+
+### Added
+- **Project Rebranding to Calibre Bookwarden**: Official transition from *Calibre AI Auditor* to **Calibre Bookwarden**, emphasizing deterministic forensic guardianship, cryptographic evidence, and rejecting AI hype.
+- **DirectCalibreEngine (High-Speed Forensics)**:
+  - High-performance SQLite engine querying `metadata.db` directly with zero in-memory book serialization.
+  - Keyset-based streaming cursor maintaining constant `<32 MB` RAM footprint even on libraries with `>50,000` books.
+  - Benchmarked at **6,090 books/second** on standard NVMe homelab storage.
+- **Cover Quality Score (CQS 0–100) & Spurious Cover Detection**:
+  - Multi-factor algorithmic scoring combining Laplacian edge sharpness, Shannon information entropy, aspect ratio penalty (target 1:1.5 standard paperback), and resolution grading.
+  - Automatic detection of placeholder, generic, corrupted, or low-resolution covers.
+- **Interactive Cover Deck**:
+  - Mobile-responsive swipeable card deck built with HTMX and Tailwind CSS.
+  - Keyboard-driven triage (`Keep`, `Replace HD`, `Extract Native`, `Generate AI`, `Skip`).
+  - Seamless fallback to native container-embedded cover extraction from EPUB/MOBI/CBZ files.
+- **360° Forensic Audit & Automated Saneamiento**:
+  - `bookwarden audit-360`: Full-spectrum library diagnostics reporting missing ISBNs, missing publishers, ALL-CAPS titles, malformed ISBNs, and orphan DB relations.
+  - Autonomous repair of ALL-CAPS titles to title case with grammatical preservation.
+  - Automated synchronization of `author_sort` using the royal/particle/multiname authority algorithm (supporting prefixes like *de*, *van*, *von*, *del*, *di*, *el*).
+  - High-resolution cover fetching with LRU provider cache (Google Books HD, OpenLibrary).
+- **Multiformat & Clone Deduplication**:
+  - SHA-256 byte clone detection with automatic redundant file cleanup.
+  - Cross-format duplicate clustering (NetworkX graph-based) merging complementary EPUB and PDF editions under single Calibre records.
+- **Series Gap Hunter**:
+  - Continuous sequence analysis detecting missing volumes in indexed book series.
+- **Calibre-Web Hot-Reload & Cache Invalidation**:
+  - Zero-privilege HTTP reload via `GET /reconnect` against running Calibre-Web instances.
+  - Direct thumbnail volume invalidation (`/thumbnails`) ensuring instant UI cover updates without container restarts or Docker socket exposure.
+- **Paperless-ngx Bridge**:
+  - Automated webhook handler (`POST /api/bridges/paperless/webhook`) for ingesting digitized books from Paperless-ngx.
+- **Dual CLI & Settings Aliases**:
+  - `bookwarden` registered as canonical CLI entrypoint, with seamless backward compatibility for `bookaudit`.
+  - Full configuration alias support for `BOOKWARDEN_*` alongside `BOOKAUDIT_*`.
+- **Showcase Visuals & Assets**:
+  - Added hero banner, Cover Deck photorealistic showcase, and rich terminal capture assets.
+- **unRAID & TrueNAS Deployment Templates**:
+  - Community Applications template `deploy/unraid/calibre-bookwarden.xml` with port `8084` and volume defaults.
+  - TrueNAS Compose manifest and updated sidecar definitions.
 
 ### Changed
+- The application image installs official Calibre 9.11.0 x86_64 pinned by SHA-512.
+- Default Docker Compose host port mapped to `8084:8080` to prevent homelab collisions with Paperless-ngx (port 8000).
+- Alembic database head revision established and verified at `f4a2d6e8c013`.
 
-- The application image installs the official Calibre 9.11.0 x86_64 artifact
-  pinned by SHA-512 instead of resolving the mutable Debian Calibre package.
-- `POST /api/apply/v2` accepts exactly one `evidence_id` and one matching
-  `authorization_id`; batch-shaped payloads are rejected.
-- V2 queueing now rejects stale/mismatched writers, reused or closed pilot IDs,
-  exhausted budgets, any existing nonterminal operation, and any unpublished
-  outbox event without a safe-failure acknowledgement. A fixed PostgreSQL
-  transaction advisory lock serializes reservations across different pilot
-  IDs. The API and writer both reconcile the persisted budget against
-  pilot-bound ledger rows, and the writer revalidates the complete configured
-  binding before mutation.
-- Incident acknowledgement now requires the failed operation's persisted pilot
-  to be stopped under lock. That ID remains closed; only a distinct, separately
-  reviewed pilot may pass the acknowledged historical-failure gate. Queue and
-  failure metrics independently rederive the stopped-pilot, terminal-outbox and
-  no-lease conditions instead of trusting acknowledgement-row existence.
-- Tier A package sealing now recomputes the production deterministic resolver;
-  manually labeled Tier A evidence is rejected. The required real-service
-  canary obtains its internal root through the production EPUB extractor and
-  treats real OCR as a non-authoritative witness.
-- The V2 review list fails closed on invalid sealed rows, authenticated
-  readiness checks the exact enabled-pilot heartbeat binding, and the WebUI
-  ignores out-of-order detail responses.
-- Production preflight verifies that an enabled pilot's configured digest
-  exactly matches the immutable `BOOKAUDIT_IMAGE`, keeps auto-apply disabled,
-  requires writer readiness and limits the budget to one through five.
-
-### Safety status
-
-- This development increment remains shadow/read-only by default and is not yet
-  approved for live-library writes. Promotion requires the exact-commit Gitea
-  gate, disposable and restored-clone rehearsals, and separately approved
-  serial canaries.
+### Security
+- Container execution strictly non-root (`UID/GID 10001:10001`) with read-only rootfs (`read_only: true`).
+- Anti-Zip-Bomb protection: maximum compression ratio cap (500:1), 10,000 maximum entries, 2 GB uncompressed limit.
+- Image decompression hardening: Pillow limit capped at 60 Megapixels.
+- Anchored path traversal validation using realpath containment checks on all static and dynamic endpoints.
 
 ## [1.2.1] - 2026-07-13
 

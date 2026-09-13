@@ -12,8 +12,8 @@
   <Overview>Calibre Bookwarden is the content-grounded metadata verification and cover forensics guardian for Calibre libraries. The book file is the ground truth, LLMs are witnesses. Zero hallucinations, read-only 360-degree forensic audits, Cover Deck swipeable UI, Series Gap Hunter, and surgical rollbacks.</Overview>
   <Category>Productivity: MediaApp:Books Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/felixapel/unraid-templates/main/calibre-bookwarden.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/felixapel/unraid-templates/main/icons/calibre-bookwarden.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/deploy/unraid/calibre-bookwarden.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/assets/calibre-bookwarden-icon.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>
@@ -21,12 +21,18 @@
   <DonateText>Support Calibre Bookwarden development via GitHub Sponsors or Ko-fi</DonateText>
   <DonateLink>https://ko-fi.com/felixapel</DonateLink>
   <Requires>Calibre Library directory (read-only or read-write)</Requires>
-  <Config Name="WebUI Port" Target="8080" Default="8000" Mode="tcp" Description="Port for WebUI and REST API (Host maps 8000 to container 8080)" Type="Port" Display="always" Required="true" Mask="false">8000</Config>
-  <Config Name="Calibre Library Path" Target="/calibre" Default="/mnt/user/data/media/books" Mode="rw" Description="Path to your Calibre Library root containing metadata.db" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/data/media/books</Config>
+  <Config Name="WebUI Port" Target="8080" Default="8084" Mode="tcp" Description="Port for WebUI and REST API (Host maps 8084 to container 8080 to prevent conflicts)" Type="Port" Display="always" Required="true" Mask="false">8084</Config>
+  <Config Name="Calibre Library Path" Target="/calibre" Default="/mnt/user/MEDIA/Books/Calibre Library" Mode="rw" Description="Path to your Calibre Library root containing metadata.db" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/MEDIA/Books/Calibre Library</Config>
   <Config Name="Library Environment Path" Target="BOOKAUDIT_LIBRARY_PATH" Default="/calibre" Description="Path where Calibre library is mounted inside container" Type="Variable" Display="advanced" Required="true" Mask="false">/calibre</Config>
-  <Config Name="Config &amp; Artifacts Path" Target="/config" Default="/mnt/user/appdata/calibre-bookwarden" Mode="rw" Description="Persistent storage for audit reports, restore points, and local cache" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/calibre-bookwarden</Config>
+  <Config Name="Config &amp; Artifacts Path" Target="/config" Default="/mnt/user/appdata/calibre-bookwarden" Mode="rw" Description="Persistent storage for audit reports, restore points, and SQLite DB" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/calibre-bookwarden</Config>
+  <Config Name="Database Backend" Target="BOOKAUDIT_DATABASE__BACKEND" Default="sqlite" Description="Database backend for state and audits (sqlite or postgres)" Type="Variable" Display="advanced" Required="true" Mask="false">sqlite</Config>
+  <Config Name="SQLite DB Path" Target="BOOKAUDIT_DB_PATH" Default="/config/bookaudit.db" Description="Path to persistent SQLite database" Type="Variable" Display="advanced" Required="true" Mask="false">/config/bookaudit.db</Config>
+  <Config Name="Artifacts Directory" Target="BOOKAUDIT_ARTIFACTS_DIR" Default="/config/artifacts" Description="Path to persistent artifacts and restore points directory" Type="Variable" Display="advanced" Required="true" Mask="false">/config/artifacts</Config>
+  <Config Name="Queue Backend" Target="BOOKAUDIT_QUEUE__BACKEND" Default="memory" Description="Queue backend for standalone homelab (memory or valkey)" Type="Variable" Display="advanced" Required="true" Mask="false">memory</Config>
+  <Config Name="Rate Limits Backend" Target="BOOKAUDIT_RATE_LIMITS__BACKEND" Default="memory" Description="Rate limit backend for standalone homelab (memory or valkey)" Type="Variable" Display="advanced" Required="true" Mask="false">memory</Config>
   <Config Name="Read Only Mode" Target="BOOKAUDIT_READ_ONLY" Default="true" Description="When true, mutations are strictly blocked (safe for zero-risk inspection)" Type="Variable" Display="always" Required="true" Mask="false">true</Config>
   <Config Name="Gemini API Key" Target="GEMINI_API_KEY" Default="" Description="Google Gemini API Key for multimodal cover verification (Gemini 3.8 Flash)" Type="Variable" Display="always" Required="false" Mask="true"/>
   <Config Name="OpenAI API Key" Target="OPENAI_API_KEY" Default="" Description="Optional OpenAI API Key for fallback LLM witness" Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="Calibre-Web Container Name" Target="CALIBRE_WEB_CONTAINER" Default="calibre-web-automated" Description="Docker container name for Calibre-Web thumbnail cache purge" Type="Variable" Display="advanced" Required="false" Mask="false">calibre-web-automated</Config>
+  <Config Name="Calibre-Web URL" Target="BOOKAUDIT_CALIBRE_WEB__URL" Default="http://calibre-web-automated:8083" Description="HTTP URL to Calibre-Web instance for zero-downtime hot-reload" Type="Variable" Display="advanced" Required="false" Mask="false">http://calibre-web-automated:8083</Config>
 </Container>
