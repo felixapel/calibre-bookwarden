@@ -129,6 +129,7 @@ def test_api_to_writer_readback_and_undo_with_real_services(
     before = cli.show_metadata(book_id)
     assert before["title"] == "Incorrect Library Title"
     assert before.get("identifiers", {}).get("isbn") == "9780306406157"
+    assert len(before["formats"]) == 1
     format_path = Path(str(before["formats"][0])).absolute()
     assert format_path.is_file()
     book_key = f"calibre:{book_id}"
@@ -327,7 +328,11 @@ def test_api_to_writer_readback_and_undo_with_real_services(
             assert applied.change_id is not None
             change_id = applied.change_id
 
-        assert cli.show_metadata(book_id)["title"] == exact_title
+        after_apply = cli.show_metadata(book_id)
+        assert after_apply["title"] == exact_title
+        assert len(after_apply["formats"]) == 1
+        applied_format = Path(str(after_apply["formats"][0]))
+        assert hashlib.sha256(applied_format.read_bytes()).hexdigest() == format_sha256
         readback = client.get(f"/api/operations/{operation_id}", headers=headers)
         assert readback.status_code == 200
         assert readback.json()["data"]["state"] == "succeeded"
@@ -343,7 +348,11 @@ def test_api_to_writer_readback_and_undo_with_real_services(
             assert change is not None
             assert change.status == "undone"
 
-        assert cli.show_metadata(book_id)["title"] == before["title"]
+        after_undo = cli.show_metadata(book_id)
+        assert after_undo["title"] == before["title"]
+        assert len(after_undo["formats"]) == 1
+        restored_format = Path(str(after_undo["formats"][0]))
+        assert hashlib.sha256(restored_format.read_bytes()).hexdigest() == format_sha256
         undo_readback = client.get(f"/api/operations/{undo_operation_id}", headers=headers)
         assert undo_readback.status_code == 200
         assert undo_readback.json()["data"]["state"] == "succeeded"
