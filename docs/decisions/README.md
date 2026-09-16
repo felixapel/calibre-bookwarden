@@ -14,3 +14,4 @@ This directory documents the key architectural, safety, and operational decision
 | [ADR-008](ADR-008-interactive-cover-deck-triage.md) | Interactive Cover Deck Triage Workflow (HTMX + React) | 2026-08-28 | Superseded by ADR-010 |
 | [ADR-009](ADR-009-direct-calibre-engine-forensics.md) | DirectCalibreEngine SQLite Access for Homelab Forensics | 2026-09-01 | Superseded by ADR-010 |
 | [ADR-010](ADR-010-retire-direct-mutations.md) | Retire Direct Mutations and Preserve the Supervised Writer | 2026-09-16 | Accepted |
+| [ADR-011](ADR-011-prometheus-lts-publication-exception.md) | Time-bounded Prometheus LTS publication exception | 2026-09-16 | Accepted |

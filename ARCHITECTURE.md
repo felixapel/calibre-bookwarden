@@ -6,6 +6,15 @@
 > stopped-library, read-only app/verifier split. LLM, vector, MCP, watcher,
 > Content Server, and writer components below are not in the production closure.
 
+> **v1.3.1 evidence notice:** The current documented baseline is canonical
+> Gitea run 104 (ID `5678`) for
+> `b02eac4c85f4c487609d11ee979c19e856a4d157`. It passed the documented
+> backend, real-service, WebUI, benchmark, image, Compose, monitoring, and
+> Caddy gates for that source revision only. It does not prove a later image,
+> a deployment, a whole-library restore, or a calibrated corpus. The historical
+> component descriptions and performance figures below are not current release
+> guarantees; ADR-003, ADR-005, ADR-010, and ADR-011 control current scope.
+
 The development head of **Calibre Bookwarden** (formerly `calibre-ai-auditor`) is the Manifestation V2
 exact-edition auditor. It treats each original ebook format as read-only
 evidence, resolves identity before proposing metadata, and seals the complete

@@ -398,6 +398,10 @@ jobs:
             validate --config /tmp/Caddyfile --adapter caddyfile
           docker cp deploy/caddy/Caddyfile.example bookaudit-caddy-config-smoke:/tmp/Caddyfile
           docker start --attach bookaudit-caddy-config-smoke
+      - name: Enforce Prometheus exception expiry
+        run: |
+          set -euo pipefail
+          test "$(date -u +%F)" \< "2026-10-17"
       - name: Scan release images for high vulnerabilities and secrets
         run: |
           trap 'docker rm -f bookaudit-edge-trivy bookaudit-prometheus-trivy >/dev/null 2>&1 || true' EXIT

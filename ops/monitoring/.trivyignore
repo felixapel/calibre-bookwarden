@@ -1,8 +1,13 @@
-# Scoped false-positive only: the official Prometheus 3.13.3 binary embeds
-# module v0.0.0-20260907102548-b273ae3adeb6+dirty. Trivy interprets that as
-# older than the CVE-2026-42154 fixed releases 3.5.3 / 3.11.3.
-# Source tag v0.313.3 maps to b273ae3adeb64ad630d65ef7f16440df95658410.
-# References: https://prometheus.io/download/ and
-# https://pkg.go.dev/vuln/GO-2026-5264
-# Do not suppress embedded Go/gRPC findings: these block release.
+# Prometheus-only exceptions; never apply this file to app/writer/Caddy scans.
+# Exact reviewed image: prom/prometheus:v3.13.3@sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7
+# Accepted by the repository owner on 2026-09-16 for v1.3.1 publication.
+# Review expires 2026-10-16; retire earlier when an official stable fix is adopted.
+# Decision, exposure limits and revocation: docs/decisions/ADR-011-prometheus-lts-publication-exception.md
+# These two HIGH findings remain real in gRPC 1.82.1, in both binaries.
+CVE-2026-84304
+CVE-2026-84445
+# Separate false positive: the official 3.13.3 binary embeds module
+# v0.0.0-20260907102548-b273ae3adeb6+dirty, which Trivy misorders below fixes.
+# Source v0.313.3 resolves to b273ae3adeb64ad630d65ef7f16440df95658410.
+# References: https://prometheus.io/download/ and https://pkg.go.dev/vuln/GO-2026-5264
 CVE-2026-42154

@@ -2,11 +2,20 @@
 
 A local Calibre metadata auditor that compares records with ebook contents, records evidence and explains uncertainty.
 
+## v1.3.1 release state
+
+v1.3.1 records a remediation retrospective and the documented validation
+baseline for `b02eac4c85f4c487609d11ee979c19e856a4d157`: canonical Gitea run
+104 (ID `5678`). That evidence belongs only to that revision; it does not prove
+a later release commit, image digest, tag, deployment, or whole-library restore.
+Gitea is the canonical development and validation forge. GitHub is the public
+mirror and does not mirror automatically.
+
 ## Current safety boundary
 
 The supported production profile is **Certificate A: stopped-library, read-only verification**. The development application has a larger historical surface; it is not a substitute for the production entrypoint. Gitea is the canonical development and validation pipeline.
 
-Local remediation is tracked in [the plan](docs/REMEDIATION_PLAN.md) and [validation results](docs/REMEDIATION_RESULTS.md). This working tree has not been promoted by exact-revision Linux/service/image gates. No zero-risk, perfect-accuracy or production-readiness claim is made.
+Local remediation is tracked in [the plan](docs/REMEDIATION_PLAN.md) and [validation results](docs/REMEDIATION_RESULTS.md). Verify publication using the matching release tag, `release-images.json` asset and exact-revision pipeline results; historical test counts do not certify another revision. No zero-risk, perfect-accuracy or production-readiness claim is made.
 
 ## Available inspection
 
@@ -48,11 +57,25 @@ Performance depends on corpus, storage, formats, OCR and providers. Earlier unve
 
 Follow [AGENTS.md](AGENTS.md) and [TESTING.md](TESTING.md). Linux, real Calibre/OCR, PostgreSQL/Valkey, browser and image gates remain distinct. Mocked browser tests and dependency audits cannot substitute for them.
 
+| Gate | Run 104 result for `b02eac4` |
+| --- | --- |
+| Backend | 702 passed, 7 service-dependent skipped, 46 deselected |
+| Real services | 27 passed, no required skips; apply/readback/undo checked EPUB SHA-256 equality in 8.39 s |
+| WebUI | 17 passed |
+| Benchmarks | 30 passed; 718 intentional non-benchmark skips and 10 deselected |
+| Image and Compose | image builds, runtime boundaries, Compose persistence, monitoring, and Caddy checks passed |
+| Scanner policy | app, writer, and Caddy scans reported zero HIGH/CRITICAL under the configured policy; Prometheus failed the run with two gRPC HIGH findings; the later publication decision accepts a documented, time-bounded exception |
+
+The Prometheus exception is not a clean-scan claim and does not remove the
+remaining whole-library restore, calibrated corpus, external-writer exclusion,
+or separately authorized deployment requirements. See
+[ADR-011](docs/decisions/ADR-011-prometheus-lts-publication-exception.md).
+
 ## 💖 Supporting & Sponsoring
 
 Calibre Bookwarden is an independent open-source project dedicated to digital preservation, content-grounded media verification, and homelab sovereignty.
 
-If this project saved your library from corruption, upgraded your covers, or saved you hours of manual editing, please consider supporting continued development:
+If this project helps you inspect your library and review evidence, please consider supporting continued development:
 
 <p align="center">
   <a href="https://github.com/sponsors/felixapel">
@@ -80,6 +103,7 @@ If this project saved your library from corruption, upgraded your covers, or sav
 - [Disposable Calibre lab](docs/runbooks/disposable-calibre-lab.md)
 - [Remediation plan](docs/REMEDIATION_PLAN.md)
 - [Validation results](docs/REMEDIATION_RESULTS.md)
+- [v1.3.1 release notes](docs/releases/v1.3.1.md)
 - [Architecture decisions](docs/decisions/)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

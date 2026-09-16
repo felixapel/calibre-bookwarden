@@ -4,6 +4,10 @@ This document details the Architecture Decision Records (ADRs) for
 `calibre-ai-auditor` v1.0. v0.9 ADRs are retained where still relevant; v1.0
 adds three new ADRs for content-ground verification.
 
+> **Historical document:** These v1.0 integration proposals do not override
+> the current read-only Certificate A boundary or authorize companion services,
+> automatic writes, or performance claims. See ADR-003, ADR-005, and ADR-010.
+
 ---
 
 ## ADR-001: Calibre Integration Layer

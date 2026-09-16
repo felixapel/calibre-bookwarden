@@ -1,5 +1,11 @@
 # Certificate A production readiness
 
+> **Historical checkpoint:** The August candidate values and Gitea run cited
+> below are retained as history. They are superseded for the v1.3.1 release
+> line by [the v1.3.1 release record](releases/v1.3.1.md) and its exact-final-
+> revision requirements. Do not use the older mutable/candidate image values
+> below for a current deployment.
+
 ## Decision
 
 Certificate A is the only production target in this repository. It is a

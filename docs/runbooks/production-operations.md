@@ -29,6 +29,21 @@ digest-pinned image built by the reviewed `caddy-edge` target with the same
 revision label. Its committed Go module lock carries patched dependencies even
 when the latest upstream Caddy image has known fixed HIGH vulnerabilities.
 
+Use only immutable `@sha256:` references from the final release's
+`release-images.json` asset. Do not substitute `1.3.1`, `1.3`, or another tag
+for a digest. The release digest must be the same Certificate A image digest:
+
+```dotenv
+# Fill these only from the exact release asset manifest.
+BOOKAUDIT_IMAGE=ghcr.io/felixapel/calibre-bookwarden@sha256:<certificate-a-digest>
+BOOKAUDIT_EDGE_IMAGE=ghcr.io/felixapel/calibre-bookwarden-edge@sha256:<edge-digest>
+BOOKAUDIT_WRITER_IMAGE=ghcr.io/felixapel/calibre-bookwarden-writer@sha256:<writer-digest>
+BOOKAUDIT_RELEASE_DIGEST=sha256:<certificate-a-digest>
+```
+
+The writer reference is a binding value only. Certificate A must not start the
+writer profile.
+
 For the private HTTPS edge, enable Tailscale HTTPS for the tailnet, then grant
 only the numeric deployment UID certificate access. Add (or update) this line
 in `/etc/default/tailscaled`, restart the daemon, and do not grant the broader
@@ -320,16 +335,22 @@ External notification delivery remains an operator integration and must not be
 claimed until a reviewed receiver is configured and tested.
 
 The pinned Prometheus image is the official 3.13.3 LTS release. Its dedicated
-Trivy invocation ignores only `CVE-2026-42154`: Trivy reports the embedded
-Prometheus module as a `+dirty` pseudo-version even though the upstream fix is
-present in releases 3.5.3, 3.11.3, and later. Do not reuse that ignore file for
-the auditor images or add another entry without a new documented review.
+Trivy invocation retains the separate `CVE-2026-42154` handling because Trivy
+reports the embedded Prometheus module as a `+dirty` pseudo-version even though
+the upstream fix is present in releases 3.5.3, 3.11.3, and later.
 
-Release is currently blocked: this official LTS image still embeds gRPC 1.82.1.
-Its real dependency findings are not ignored. Per the explicit release decision,
-wait for an official stable image with the gRPC fixes, update all three image
-pins, and require a fresh exact-commit Gitea scan and monitoring smoke. Do not
-substitute a release candidate or custom build to bypass this hold.
+The same image embeds gRPC 1.82.1 with HIGH findings `CVE-2026-84304` and
+`CVE-2026-84445`. [ADR-011](../decisions/ADR-011-prometheus-lts-publication-exception.md)
+accepts only those two findings for publication, only in the scoped Prometheus
+policy, until an upstream official fixed image is available or 2026-10-16 is
+reached. This is not a clean-scan claim. Do not reuse the exception for the
+auditor images, add a general waiver, substitute a release candidate, or use a
+custom build. On an upstream fix, update the pin and require a fresh exact-
+commit Gitea scan and monitoring smoke before removing the exception.
+
+The root `docker-compose.yml` and this runbook are the supported Certificate A
+deployment path. The former Unraid/TrueNAS one-click templates are archived
+unsupported stubs; see [deploy/README.md](../../deploy/README.md).
 
 ## Incident response
 

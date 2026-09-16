@@ -1,8 +1,19 @@
 # Calibre Bookwarden: Architecture Specification
 
+> **Historical architecture document:** The supported current production
+> boundary is Certificate A stopped-library, read-only verification. The
+> companion, direct-correction, active-library, Calibre-Web integration,
+> performance, and deployment claims below are historical design material, not
+> v1.3.1 support guarantees. Direct inspection remains read-only; legacy
+> mutation paths are retired. See [ADR-003](decisions/ADR-003-supervised-local-auditor-scope.md),
+> [ADR-005](decisions/ADR-005-certificate-a-production-boundary.md), and
+> [ADR-010](decisions/ADR-010-retire-direct-mutations.md).
+
 Calibre Bookwarden is architected around two complementary execution profiles:
 1. **Certificate A Production Boundary**: Strict enterprise fail-closed auditing on a cold, stopped library with complete process isolation, PostgreSQL ACLs, and non-root containers.
-2. **Homelab & Forensic Power Tools (DirectCalibreEngine)**: High-speed, in-process SQLite companion engine operating at **6,090 books/sec** with zero N+1 queries, CQS vision scoring, and zero-downtime hot-reloading for Calibre-Web.
+2. **Historical homelab and forensic tools**: prior design material for a
+   DirectCalibreEngine companion. Its 6,090-books/second figure, CQS/vision,
+   and Calibre-Web hot-reload statements are not current release guarantees.
 
 ---
 

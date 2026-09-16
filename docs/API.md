@@ -1,5 +1,12 @@
 # Calibre Bookwarden API Reference
 
+> **Historical development API reference:** Certificate A supports only its
+> reviewed read-only verification and sealed-evidence surface. The companion,
+> active-library, legacy write, provider, and performance descriptions below
+> are not v1.3.1 production commitments. Consult the current
+> [operations runbook](runbooks/production-operations.md) and ADR-005 before
+> using a production endpoint.
+
 Calibre Bookwarden exposes a modern, high-performance REST API powered by FastAPI. Depending on deployment mode and profile, the API operates in either **Enterprise Mode (Certificate A Cold Boundary)** or **Homelab Companion Mode (Live Studio & Calibre-Web Companion)**.
 
 ---
@@ -42,7 +49,7 @@ Standard service status and runtime metadata.
 {
   "status": "ok",
   "app": "calibre-bookwarden",
-  "version": "1.3.0"
+  "version": "1.3.1"
 }
 ```
 
@@ -69,7 +76,10 @@ Returns the operational contract of the current runtime (Certificate tier, read-
 ## 3. 360° Forensic Audit Endpoints (`/api/audit`)
 
 ### `GET /api/audit/360`
-Performs an instant forensic scan of the library using `DirectCalibreEngine` (benchmarked at ~6,090 books/second).
+Describes a historical DirectCalibreEngine diagnostic interface. A prior
+~6,090-books/second sample is not a current performance guarantee; no result
+should be extrapolated to filesystem scanning, OCR, network, persistence, or a
+complete library.
 - **Query Parameters**:
   - `include_covers` (bool, default `true`): Include CQS cover quality assessment.
   - `include_duplicates` (bool, default `true`): Include cross-format duplicate cluster detection.

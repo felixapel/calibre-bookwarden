@@ -848,8 +848,9 @@ def test_monitoring_is_certificate_a_only_and_uses_a_secret_file() -> None:
         for line in (ROOT / "ops" / "monitoring" / ".trivyignore").read_text().splitlines()
         if line and not line.startswith("#")
     ]
-    assert ignored == ["CVE-2026-42154"]
+    assert ignored == ["CVE-2026-84304", "CVE-2026-84445", "CVE-2026-42154"]
     assert "--ignorefile /tmp/bookaudit-prometheus.trivyignore" in workflow
+    assert 'test "$(date -u +%F)" \\< "2026-10-17"' in workflow
 
 
 def test_canonical_gpl_license_is_installed() -> None:

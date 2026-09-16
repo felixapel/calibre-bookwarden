@@ -2,6 +2,11 @@
 
 Certificate A is a stopped-library, read-only auditor. The development application contains additional research tools and does not establish production readiness.
 
+Current release evidence is Gitea run 104 (ID `5678`) for
+`b02eac4c85f4c487609d11ee979c19e856a4d157`; do not treat it as validation of a
+later image, deployment, or whole-library restore. Gitea is canonical; GitHub
+is a public mirror without automatic mirroring.
+
 ## 1. Read-only diagnostics
 
 ```sh
@@ -38,7 +43,12 @@ bookwarden verify --limit 0 --format json > v2-library-audit.json
 
 ---
 
-### 2.2 Supervised Correction & Rollback
+### 2.2 Historical development interface — do not use for Certificate A
+
+The following endpoint names describe an existing development-path contract.
+They are not an authorization to use the writer and are not part of Certificate
+A. A future pilot needs explicit operator approval, external-writer exclusion,
+and a whole-library restore drill.
 To apply a verified Tier A patch:
 1. Inspect the evidence package in the WebUI or via `GET /api/review/v2/{evidence_id}`.
 2. Authorize the patch: `POST /api/review/v2/{evidence_id}/authorize`.

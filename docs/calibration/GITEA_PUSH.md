@@ -39,7 +39,7 @@ git push -u gitea <branch>
 1. **Gitea webhook** (if configured) fires → **act_runner** picks up the workflow
 2. **`.gitea/workflows/v1-tests.yml`** runs five jobs:
    - `backend` — ruff + mypy + PostgreSQL/Valkey pytest and dependency gates
-   - `v2-pilot-integration` — required no-skip real Calibre/Tesseract apply,
+   - `real-services` — required no-skip real Calibre/Tesseract apply,
      readback, queued undo and restored readback
    - `benchmarks` — pytest --benchmark-only on push
    - `webui` — npm audit/lint/build plus desktop/mobile Playwright
@@ -89,6 +89,10 @@ SHA is green evidence. A dependent job showing zero duration and no runner after
 an upstream failure was not executed and must not be counted as passing. Keep
 the original run and logs as failure evidence; a later authorized push should
 trigger a fresh run naturally.
+
+Gitea is the canonical development and validation forge. GitHub is a public
+mirror and does not mirror commits, tags, or releases automatically. A GitHub
+workflow result does not replace an exact-head Gitea result.
 
 Do not assume push authorization from implementation work. Inspect the exact
 branch, status, diff, commits, remote, and existing Gitea Actions first. Never

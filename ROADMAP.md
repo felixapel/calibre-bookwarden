@@ -12,25 +12,10 @@ perform unattended bulk writes. See
 
 | Version | Outcome | Status |
 |---|---|---|
-| `v0.1` | **Foundation**: Scan + Inspect + Provider Fetch + Report | [DONE] |
-| `v0.2` | **Intelligence**: Structured Judge + Evidence Ladders | [DONE] |
-| `v0.3` | **Full Stack**: FastAPI Backend + React WebUI | [DONE] |
-| `v0.4` | **Reliability**: PostgreSQL + Valkey + Tika Sidecars | [DONE] |
-| `v0.5` | **Write Path**: Safe Apply + OPF Backups + Undo | [DONE] |
-| `v0.6` | **Semantic Layer**: Qdrant Semantic Duplicates | [DONE] |
-| `v0.7` | **Ingest**: Watchers and Folder Auto-Audit | [DONE] |
-| `v0.8` | **Vision**: Vision-based cover verification | [DONE] |
-| `v0.9` | **Ecosystem Bridges**: Paperless-ngx & Comic/Manga support | [DONE] |
-| `v1.0` | **Content-Ground Verification**: Per-field BookVerdict + scale | [DONE] |
-| `v1.0.x` | **Hardening**: WebUI Verify page + benchmark baselines + CI | [DONE] |
-| `v1.1` | **Comics/Manga Vision**: cover and ComicInfo support; experimental Komf adapter | [PARTIAL] |
-| `v1.2` | **MCP Server**: legacy V1 read model for Hermes | [PARTIAL] |
-| `v1.2.x` | **Production hardening**: release integrity, writer recovery, retention, operations | [DONE] |
-| `v1.3` | Read-only forensic inspection and experimental analysis; unsafe direct mutations retired | [REMEDIATION; RELEASE GATES PENDING] |
-| `v1.4` | **Homelab Harmonization & Cover Cache**: Autonomous provider caching, background workers, paperless bridge maturity | [PLANNED] |
-| `v2.0` | **Certificate B Supervised Writes**: Full pilot rollout, cryptographic audit trail, calibrated manifestation | [PLANNED] |
-| `Manifestation V2` | **Exact edition audit**: all formats, evidence tiers, supervised correction | [IMPLEMENTED; PILOT REQUIRED] |
-| `Remote Content Server` | **Read-only intake**: aggregate inventory and source-bound shadow audit | [IMPLEMENTED; LIVE USE REQUIRES OPERATOR SCOPE] |
+| `v1.3.1` | Remediation retrospective and bounded release evidence | Implementation complete; publication evidence is the matching release manifest and exact-revision workflows |
+| `Certificate A` | stopped-library, read-only verification and sealed-evidence review | Supported boundary; deployment remains separately authorized |
+| `Manifestation V2 writer` | exact human-authorized correction with durable evidence and rollback contracts | Implemented research boundary; pilot requires distinct authorization |
+| `Remote Content Server` | capability-limited, read-only intake | Implemented mechanism; live use requires explicit operator scope |
 
 ---
 
@@ -93,18 +78,27 @@ corpus establishes product value and accuracy.
 
 ---
 
-## v1.3 — Forensic Saneamiento & Visual Curation (DONE 2026-09-13)
+## v1.3.1 — remediation and release evidence
 
-The current priority is [remediation](docs/REMEDIATION_PLAN.md): verified read-only diagnostics, one supervised writer boundary, bounded analysis and honest UI state. Legacy automatic cleanup and in-place cover optimization are retired. Candidate ranking and duplicate suggestions are not write authorization. Performance and recognition quality must be measured on a declared corpus before release claims are made.
+The current priority is [remediation](docs/REMEDIATION_PLAN.md): verified
+read-only diagnostics, one supervised writer boundary, bounded analysis and
+honest UI state. Run 104 (ID `5678`) passed the documented Gitea gates for
+`b02eac4c85f4c487609d11ee979c19e856a4d157`; it does not establish a future
+release image, publication pipeline, production deployment, corpus accuracy,
+or whole-library restoration. Legacy automatic cleanup and in-place cover
+optimization are retired. Candidate ranking and duplicate suggestions are not
+write authorization.
 
 ---
 
 ## Future Horizons: v1.4 & v2.0
 
-### v1.4 — Homelab Harmonization & Cover Cache (PLANNED)
-- **Autonomous Provider Cache**: Background worker pre-fetching and caching high-resolution covers and verified ISBNs during low-traffic hours.
-- **Calibre-Web Annotations Sync**: Exporting and syncing bookmarks and highlights between Calibre-Web and Bookwarden.
-- **Full MCP Read Model**: Exposing complete Manifestation V2 evidence trees to local agent frameworks (Claude Desktop, Hermes).
+### Future scope
+
+No unattended provider cache, Calibre-Web synchronization, automatic merge,
+or background ingestion expansion is planned. Such work requires a separately
+approved milestone with a reviewed corpus, safety boundary, and acceptance
+criteria.
 
 ### v2.0 — Certificate B Supervised Writes (PLANNED)
 - **Supervised Live Pilot Rollout**: Progression from shadow mode to cryptographically supervised live writes on production libraries.

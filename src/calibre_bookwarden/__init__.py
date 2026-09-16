@@ -4,5 +4,5 @@ import sys
 
 import calibre_ai_auditor as _core
 
-__version__ = getattr(_core, "__version__", "1.3.0")
+__version__ = getattr(_core, "__version__", "1.3.1")
 sys.modules[__name__] = _core

@@ -1,6 +1,10 @@
 # Testing Guide
 
-`calibre-bookwarden` (v1.3.0) includes unit, integration, E2E, and benchmark suites
+`calibre-bookwarden` (v1.3.1) includes unit, integration, E2E, and benchmark suites.
+Counts and timings are observations for a specific revision, not release
+contracts. The current documented baseline is canonical Gitea run 104 (ID
+`5678`) for `b02eac4c85f4c487609d11ee979c19e856a4d157`; it does not prove a
+later commit, image, tag, deployment, or whole-library restore.
 covering the high-speed `DirectCalibreEngine`, CQS cover analysis, interactive Cover Deck,
 library saneamiento, deduplication, and Manifestation V2 enterprise verification contracts.
 
@@ -29,7 +33,10 @@ tests/
 To run the standard unit and regression test suite without spinning up external sidecars:
 
 ```bash
-uv run pytest -m "not benchmark and not ocr_live and not network and not v2_live"
+uv run pytest \
+  -m 'not benchmark and not ocr_live and not network' \
+  --ignore=tests/test_retention_postgres_valkey.py \
+  --ignore=tests/test_v2_supervised_pilot_integration.py
 ```
 
 To run the v1.3 homelab and curation test suites specifically:
@@ -271,10 +278,10 @@ that simulate real LLM responses. No API calls in CI.
 | Job | What it does |
 |---|---|
 | `backend` | Locked Python quality, PostgreSQL/Valkey integration, coverage, 50k metadata and dependency gates |
-| `real-services` | Required, no-skip real Calibre/Tesseract/PostgreSQL/Valkey apply/readback/undo round trip; the V2 pilot uses a separate locked legacy-extra environment |
+| `real-services` | Required, no-skip real Calibre/Tesseract/PostgreSQL/Valkey apply/readback/undo round trip; the V2 pilot uses a separate locked legacy-extra environment. Run 104: 27 passed with explicit EPUB SHA-256 equality after apply and undo in 8.39 s |
 | `webui` | Isolated backend bootstrap plus npm lint/build/audit and desktop/mobile Playwright |
 | `benchmarks` | Push-only benchmark suite |
-| `container` | Production image, runtime, Compose, Prometheus and vulnerability contracts after backend/frontend pass |
+| `container` | Production image, runtime, Compose, Prometheus and vulnerability contracts after backend/frontend pass. Run 104 passed its functional checks for the baseline revision; see the Prometheus exception below |
 
 It runs Backend, Benchmarks, WebUI and Production image contract jobs on the
 homelab runner. Its production-image job bootstraps
@@ -283,6 +290,9 @@ and invokes the digest-pinned Trivy 0.56.1 container through the mounted Docker
 socket.
 Files under `.github/workflows/` are mirror/release compatibility assets; they
 are not part of the normal Gitea development workflow.
+
+Gitea is canonical. GitHub is a public mirror and does not automatically mirror
+commits, tags, or releases; GitHub workflow results are not release evidence.
 
 All production-image gates explicitly run both Trivy vulnerability and secret
 scanners. They exclude only the locked `google-auth` 2.53.0 RSA parser bytecode,
@@ -293,6 +303,14 @@ Docker bytecode policy changes.
 Both automatic CI image jobs create a mode-`0600`, empty `.env` only for
 Compose validation and remove it when the step exits. Production still requires
 a fully populated and validated operator-owned `.env`.
+
+For the Run 104 source revision, app, writer, and Caddy scans reported zero
+HIGH/CRITICAL findings under the configured policy. The official Prometheus
+3.13.3 LTS image is an explicit exception: gRPC 1.82.1 has known HIGH findings
+`CVE-2026-84304` and `CVE-2026-84445`. ADR-011 documents a narrow publication
+exception that expires on upstream fix or review by 2026-10-16. This is not a
+clean-scan claim; `CVE-2026-42154` remains a distinct pseudo-version false
+positive.
 
 ## 8. Test quality gates (before any commit)
 

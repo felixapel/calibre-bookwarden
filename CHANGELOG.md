@@ -1,11 +1,5 @@
 # Changelog
 
-All notable changes to `calibre-ai-auditor` are documented here.
-The format follows [Keep a Changelog](https://keepachangelog.com/) and
-this project adheres to [Semantic Versioning](https://semver.org/).
-
-# Changelog
-
 All notable changes to `calibre-bookwarden` (formerly `calibre-ai-auditor`) are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and
 this project adheres to [Semantic Versioning](https://semver.org/).
@@ -13,9 +7,48 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- Automated background provider enricher with adaptive rate-limiting.
-- Bidirectional annotations sync between Calibre-Web and Bookwarden.
-- Certificate B supervised live pilot rollouts.
+- No unattended writer, background provider enrichment, automatic duplicate
+  merge, or external-system synchronization is scheduled. Each would require a
+  separately approved milestone and acceptance criteria.
+
+---
+
+## [1.3.1] - 2026-09-16
+
+### Changed
+
+- Recorded the remediation retrospective, current run-104 evidence baseline,
+  and the Certificate A read-only production boundary in the release
+  documentation.
+- Retired direct mutation entrypoints from supported documentation. The
+  Manifestation V2 writer remains a separately authorized, future pilot path.
+- Made Gitea the canonical development and validation forge in current
+  documentation. GitHub is a public mirror and is not automatic.
+
+### Security
+
+- Accepted a narrow, time-bounded publication exception for the official
+  `prom/prometheus:v3.13.3` LTS digest: `CVE-2026-84304` and
+  `CVE-2026-84445` in embedded gRPC 1.82.1. The exception must be revoked on
+  an upstream fix or reviewed by 2026-10-16; it is not a zero-vulnerability
+  claim. `CVE-2026-42154` remains a distinct Prometheus pseudo-version false
+  positive. See ADR-011.
+
+### Evidence
+
+- Canonical Gitea run 104 (ID `5678`) passed the documented backend,
+  real-service, WebUI, benchmark, image, Compose, monitoring, and Caddy gates
+  for `b02eac4c85f4c487609d11ee979c19e856a4d157`; the overall run failed its
+  Prometheus scan. Consult the v1.3.1 release assets and linked exact-revision
+  workflows for final image digests and publication evidence.
+
+### Historical note
+
+The 1.3.0 entry below preserves the prior project narrative. Its direct
+mutation, autonomous-maintenance, deployment-template, performance, test-count,
+and readiness assertions are historical and unsupported as current v1.3.1
+claims. Current supported behavior is defined by README, ADR-003, ADR-005,
+ADR-010, and ADR-011.
 
 ---
 
@@ -23,7 +56,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - **Project Rebranding to Calibre Bookwarden**: Official transition from *Calibre AI Auditor* to **Calibre Bookwarden**, emphasizing deterministic forensic guardianship, cryptographic evidence, and rejecting AI hype.
-- **DirectCalibreEngine (High-Speed Forensics)**:
+- **DirectCalibreEngine (historical; read-only diagnostics remain supported)**:
   - High-performance SQLite engine querying `metadata.db` directly with zero in-memory book serialization.
   - Keyset-based streaming cursor maintaining constant `<32 MB` RAM footprint even on libraries with `>50,000` books.
   - Benchmarked at **6,090 books/second** on standard NVMe homelab storage.
@@ -54,9 +87,10 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   - Full configuration alias support for `BOOKWARDEN_*` alongside `BOOKAUDIT_*`.
 - **Showcase Visuals & Assets**:
   - Added hero banner, Cover Deck photorealistic showcase, and rich terminal capture assets.
-- **unRAID & TrueNAS Deployment Templates**:
-  - Community Applications template `deploy/unraid/calibre-bookwarden.xml` with port `8084` and volume defaults.
-  - TrueNAS Compose manifest and updated sidecar definitions.
+- **unRAID & TrueNAS Deployment Templates (withdrawn; archived unsupported stubs)**:
+  - The former `deploy/unraid/` and `deploy/truenas/` one-click templates are
+    not current install paths and must not be treated as deployable release
+    assets. See `deploy/README.md` for the supported root Compose/runbook path.
 
 ### Changed
 - The application image installs official Calibre 9.11.0 x86_64 pinned by SHA-512.

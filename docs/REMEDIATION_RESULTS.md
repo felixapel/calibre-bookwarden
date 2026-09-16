@@ -135,6 +135,39 @@ as a workaround. The next CI can establish Caddy and functional results while th
 Prometheus security gate remains an expected release blocker. The whole-library
 restore, production canary and other earlier release limits remain outstanding.
 
+### Run 104 and v1.3.1 publication decision
+
+Canonical Gitea run #104 (ID `5678`) completed for
+`b02eac4c85f4c487609d11ee979c19e856a4d157`. The backend reported **702
+passed, 7 service-dependent skipped, 46 deselected**. Real services reported
+**27 passed with no required skips**; the supervised apply/readback/undo case
+included one EPUB and verified the format SHA-256 after both apply and undo in
+8.39 seconds. WebUI reported **17 passed**. Benchmarks reported **30 passed**,
+with 718 intentional non-benchmark skips and 10 deselected.
+
+The production image build/runtime, Compose persistence, monitoring, and Caddy
+checks passed for that source revision. Under the configured scanner policy,
+the app, writer, and Caddy scans reported zero HIGH/CRITICAL findings. These
+are baseline observations only; they do not identify a final v1.3.1 image
+digest, verify the pipeline for a later release commit, or establish deployment
+readiness.
+
+The publication decision supersedes the earlier Prometheus release hold. The
+official Prometheus 3.13.3 LTS digest embeds gRPC 1.82.1 with known HIGH
+findings `CVE-2026-84304` and `CVE-2026-84445`. The user accepts this narrow,
+time-bounded residual risk for publication under ADR-011, with review by
+2026-10-16 or revocation on an upstream official fix. The existing
+`CVE-2026-42154` pseudo-version false positive remains distinct. This is not a
+zero-vulnerability statement, and loopback-only UI/internal networking is not
+risk elimination. No general scanner waiver is accepted.
+
+The remaining production limits are a verified whole-library restore,
+external-writer exclusion, a calibrated representative corpus, final immutable
+image digest(s), exact-final-revision Gitea evidence, and separate operator
+authorization for deployment or any live-library action. The old 1.3.0
+automatic mutation, performance, template-installation, and readiness claims
+are historical and unsupported as current release assertions.
+
 Local final checks: Ruff check/format and mypy passed; Bash syntax passed.
 The combined deployment/helper test invocation reported 35 passed and 15 failures
 because Windows cannot directly execute the existing POSIX `.sh` wrappers

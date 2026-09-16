@@ -54,15 +54,15 @@ Task-based routing rules:
 
 Calibre Bookwarden provides two clear operational profiles:
 
-### Mode A: Homelab Sidecar Companion (Recommended for Daily Use)
+### Mode A: Historical Homelab Sidecar Companion (unsupported)
 Run alongside `calibre-web-automated` using `docker-compose.sidecar.yml`:
 - Mounts `/mnt/user/MEDIA/Books/Calibre Library` into `/calibre`.
 - Mounts `/mnt/user/appdata/calibre-web-automated/thumbnails` into `/thumbnails` to allow zero-privilege file invalidation.
 - Uses SQLite (`BOOKAUDIT_DATABASE__BACKEND=sqlite`) stored persistently in `/config/bookaudit.db`.
 - Hot-reloads Calibre-Web on metadata updates via `GET http://calibre-web:8083/reconnect`.
 
-### Mode B: Cold Forensic & Certificate A Auditing (Enterprise Isolation)
-For absolute zero-risk forensic audits:
+### Mode B: Cold Forensic & Certificate A Auditing
+For a stopped-library, read-only audit; this reduces risk but does not eliminate it:
 - The personal Calibre instance and Content Server must be fully stopped.
 - Run using `docker-compose.yml` (App + Verifier + PostgreSQL + Valkey).
 - Mounts library as `:ro` into the verifier container only. The Web app has zero library mount.

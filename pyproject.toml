@@ -1,7 +1,7 @@
 [project]
 name = "calibre-bookwarden"
-version = "1.3.0"
-description = "Content-grounded metadata verification and cover forensics for Calibre libraries — the book file is the ground truth, LLMs are witnesses"
+version = "1.3.1"
+description = "Local, supervised Calibre metadata auditing with read-only Certificate A verification and sealed evidence"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }

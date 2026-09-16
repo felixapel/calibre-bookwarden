@@ -7,26 +7,28 @@
 - Any write-path change must include tests and docs
 - No secrets, personal libraries, or copyrighted books in the repo
 
-## Dual-Forge Development Workflow
+## Forge workflow
 
-Calibre Bookwarden maintains a synchronized dual-forge topology:
+Calibre Bookwarden has a canonical development forge and a public mirror; it
+does not maintain an automatic dual-forge synchronization:
 
 1. **Gitea (Internal Primary & Hermetic CI)**:
    - URL: `http://192.168.0.122:3010/felix/calibre-bookwarden`
    - Hosts full-stack hermetic CI runners (PostgreSQL, Valkey, Tesseract, Calibre lab).
    - Core release gates and vulnerability scans run here.
 
-2. **GitHub (Public Distribution & Community)**:
+2. **GitHub (Public mirror & Community)**:
    - URL: `https://github.com/felixapel/calibre-bookwarden`
-   - Canonical open-source distribution, issues, and external contributor PRs.
-   - Mirrors releases and tags after Gitea verification.
+   - Public distribution, issues, and external contributor PRs.
+   - Does not automatically mirror commits, releases, or tags. GitHub workflow
+     results do not replace canonical Gitea release evidence.
 
 ### Contribution Workflow
 
-1. Fork the repo (on GitHub or Gitea).
+1. Fork the repository in the forge where the contribution will be reviewed.
 2. Create a feature branch: `git checkout -b feat/my-improvement`.
 3. Run formatting, linting, and local tests.
-4. Open a Pull Request on GitHub or Gitea with:
+4. Open a Pull Request in that forge with:
    - Problem statement and motivation
    - Technical approach and risk assessment
    - Test evidence and benchmark diffs
@@ -73,8 +75,11 @@ uv run ruff format --check .
 # Static Type Checking
 uv run mypy src
 
-# Unit & Integration Tests (excluding heavy services/live OCR)
-uv run pytest -m "not benchmark and not ocr_live and not network and not v2_live"
+# Deterministic backend gate (excludes service-backed suites explicitly)
+uv run pytest \
+  -m 'not benchmark and not ocr_live and not network' \
+  --ignore=tests/test_retention_postgres_valkey.py \
+  --ignore=tests/test_v2_supervised_pilot_integration.py
 
 # Frontend Build (if modifying webui/)
 cd webui && npm run build && cd ..
@@ -114,3 +119,20 @@ If the change affects:
 - backups and undo
 
 then mention it explicitly in the PR description.
+
+## Publishing an exact revision
+
+After an automatically triggered Gitea run passes for the candidate SHA, the
+repository owner records a GitHub commit status named `bookwarden/gitea-canonical`
+for that same SHA, linking its canonical Gitea run. The GitHub release workflow
+requires this owner-attested result in addition to its local checks and immutable
+image gates. This is a deliberate publication attestation because hosted GitHub
+runners cannot reach the private Gitea endpoint; it is not an automatic mirror.
+Never attest a failed, skipped, incomplete or different-revision run as successful.
+
+Promote the reviewed source to both main branches without rewriting history,
+then create the matching new version tag. Existing release tags are immutable.
+All three image matrix jobs must finish successfully before the aggregate job
+validates their receipts, emits `release-images.json`, and promotes semver image
+tags. Create matching forge release notes and attach the manifest only after the
+publication workflow succeeds. A source tag alone does not prove image delivery.
