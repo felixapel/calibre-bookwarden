@@ -1,16 +1,8 @@
-# Trivy reads Prometheus 3.13.2's embedded module as a pseudo-version ending
-# in +dirty and therefore misses the upstream version boundary. CVE-2026-42154
-# affects versions before 3.5.3 and 3.11.3; this image is the official 3.13.2
-# release and includes the fix. Keep this exception scoped to its dedicated
-# CI command; the auditor images continue to use no ignore file.
+# Scoped false-positive only: the official Prometheus 3.13.3 binary embeds
+# module v0.0.0-20260907102548-b273ae3adeb6+dirty. Trivy interprets that as
+# older than the CVE-2026-42154 fixed releases 3.5.3 / 3.11.3.
+# Source tag v0.313.3 maps to b273ae3adeb64ad630d65ef7f16440df95658410.
+# References: https://prometheus.io/download/ and
+# https://pkg.go.dev/vuln/GO-2026-5264
+# Do not suppress embedded Go/gRPC findings: these block release.
 CVE-2026-42154
-CVE-2026-33818
-CVE-2026-39821
-CVE-2026-46600
-CVE-2026-56853
-CVE-2026-56854
-CVE-2026-56858
-CVE-2026-56859
-CVE-2026-56860
-CVE-2026-56862
-CVE-2026-84304

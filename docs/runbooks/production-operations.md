@@ -319,11 +319,17 @@ Alertmanager or an external receiver; it evaluates and exposes alerts locally.
 External notification delivery remains an operator integration and must not be
 claimed until a reviewed receiver is configured and tested.
 
-The pinned Prometheus image is the official 3.13.2 release. Its dedicated
+The pinned Prometheus image is the official 3.13.3 LTS release. Its dedicated
 Trivy invocation ignores only `CVE-2026-42154`: Trivy reports the embedded
 Prometheus module as a `+dirty` pseudo-version even though the upstream fix is
 present in releases 3.5.3, 3.11.3, and later. Do not reuse that ignore file for
 the auditor images or add another entry without a new documented review.
+
+Release is currently blocked: this official LTS image still embeds gRPC 1.82.1.
+Its real dependency findings are not ignored. Per the explicit release decision,
+wait for an official stable image with the gRPC fixes, update all three image
+pins, and require a fresh exact-commit Gitea scan and monitoring smoke. Do not
+substitute a release candidate or custom build to bypass this hold.
 
 ## Incident response
 

@@ -124,7 +124,7 @@ def test_prometheus_is_an_isolated_opt_in_certificate_a_service() -> None:
 
     assert prometheus["profiles"] == ["monitoring"]
     assert prometheus["image"] == (
-        "prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69"
+        "prom/prometheus:v3.13.3@sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7"
     )
     assert prometheus["user"] == "${UID:-1000}:${GID:-1000}"
     assert prometheus["read_only"] is True
@@ -648,13 +648,20 @@ def test_release_images_embed_the_exact_source_revision() -> None:
 def test_edge_image_build_is_dependency_locked_and_patched() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     module = (ROOT / "deploy" / "caddy" / "module" / "go.mod").read_text()
+    caddy_ignore = (ROOT / "deploy" / "caddy" / ".trivyignore").read_text()
 
-    assert "golang@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2" in dockerfile
+    assert (
+        "golang:1.26.8-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81"
+    ) in dockerfile
     assert "alpine@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40" in dockerfile
+    assert "go version" in dockerfile
     assert "go build -mod=readonly" in dockerfile
+    assert "go 1.26.8" in module
     assert "github.com/caddyserver/caddy/v2 v2.11.4" in module
-    assert "golang.org/x/text v0.39.0" in module
-    assert "google.golang.org/grpc v1.82.1" in module
+    assert "golang.org/x/crypto v0.55.0" in module
+    assert "golang.org/x/text v0.41.0" in module
+    assert "google.golang.org/grpc v1.83.2" in module
+    assert not any(line.strip().startswith("CVE-") for line in caddy_ignore.splitlines())
 
 
 def test_default_image_excludes_quarantined_packages_and_calibre() -> None:
@@ -841,19 +848,7 @@ def test_monitoring_is_certificate_a_only_and_uses_a_secret_file() -> None:
         for line in (ROOT / "ops" / "monitoring" / ".trivyignore").read_text().splitlines()
         if line and not line.startswith("#")
     ]
-    assert ignored == [
-        "CVE-2026-42154",
-        "CVE-2026-33818",
-        "CVE-2026-39821",
-        "CVE-2026-46600",
-        "CVE-2026-56853",
-        "CVE-2026-56854",
-        "CVE-2026-56858",
-        "CVE-2026-56859",
-        "CVE-2026-56860",
-        "CVE-2026-56862",
-        "CVE-2026-84304",
-    ]
+    assert ignored == ["CVE-2026-42154"]
     assert "--ignorefile /tmp/bookaudit-prometheus.trivyignore" in workflow
 
 

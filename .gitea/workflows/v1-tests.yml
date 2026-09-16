@@ -294,7 +294,10 @@ jobs:
           POSTGRES_WRITER_PASSWORD: ci-writer-password
           POSTGRES_MIGRATOR_PASSWORD: ci-migrator-password
         run: |
-          trap 'docker compose down --volumes >/dev/null 2>&1 || true; rm -f .env' EXIT
+          source ./scripts/ci_compose_smoke.sh
+          ci_compose_set_project_from_run_id
+          ci_compose_validate_project
+          trap 'ci_compose_smoke_cleanup' EXIT
           install -m 0600 /dev/null .env
           docker compose config -q
           test "$(docker compose --profile maintenance --profile writer --profile writer-maintenance config --services | sort | tr '\n' ' ')" = "app migrate postgres provision-roles retention valkey verifier writer "
@@ -419,7 +422,7 @@ jobs:
             --format table --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
             --ignorefile /tmp/bookaudit-prometheus.trivyignore \
             --scanners vuln,secret \
-            prom/prometheus@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69
+            prom/prometheus:v3.13.3@sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7
           docker cp ops/monitoring/.trivyignore \
             bookaudit-prometheus-trivy:/tmp/bookaudit-prometheus.trivyignore
           docker start --attach bookaudit-prometheus-trivy

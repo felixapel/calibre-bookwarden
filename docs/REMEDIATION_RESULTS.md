@@ -94,3 +94,50 @@ Run #102 (ID 5675), commit `47720c70ffbc8f4b8270638b850b5bfb7c35c461`: `real-ser
 The pilot uses real disposable PostgreSQL, Valkey, Calibre and Tesseract, production identity/seal/authorization/writer code, and the real FastAPI middleware. External catalog evidence, release digest and heartbeat are test fixtures; processing is invoked in-process. It does not validate a deployed writer daemon, TLS edge, external-writer exclusion, a real corpus/provider lookup or a whole-library restore. Metadata undo restores the tested title/OPF, not an entire library.
 
 A narrow follow-up adds explicit one-format and SHA-256 equality checks after both apply and undo, resolving the current Calibre-reported file path after each operation so title-driven renames are handled. It changes only assertions, not application code. Ruff, formatting, collection and independent review passed locally; its strengthened live acceptance must pass on the next exact revision before being claimed.
+
+### Run 103: pilot integrity approved; container vulnerability gate blocked
+
+Run #103 (ID 5676), commit `0e2f29241946e7e2c559a0d0a286cfa22bb8038d`, passed backend, all required real-service suites (27 tests, no required skips), WebUI and benchmarks. The live supervised pilot passed its explicit unchanged-EPUB checks after apply and undo in 9.04 seconds. This closes the disposable-pilot acceptance described above.
+
+The container job progressed beyond the previous PostgreSQL failure: image builds, runtime boundaries, Compose persistence, monitoring and Caddy validation passed. The previously suggested fresh-volume ownership explanation remains unproven and must not justify weakening PostgreSQL security. The current blocker is Trivy's HIGH `CVE-2026-84445` in `google.golang.org/grpc v1.82.1` inside the Caddy binary. Application and writer image scans reported zero HIGH/CRITICAL findings under their configured policy; Caddy's scan failed before the Prometheus scan ran.
+
+The official [GO-2026-6443 advisory](https://pkg.go.dev/vuln/GO-2026-6443) identifies fixed versions 1.82.2 and 1.83.2. The targeted update uses 1.83.2 because [GO-2026-6441](https://pkg.go.dev/vuln/GO-2026-6441) and [GO-2026-6348](https://pkg.go.dev/vuln/GO-2026-6348) also require at least 1.83.1. A passing scan must not be described as zero vulnerabilities without acknowledging the existing scoped ignore files and `--ignore-unfixed` policy. Existing exceptions are reviewed separately; no new exception is being used to hide this failure.
+
+CI also needs a validated run-specific Compose project and visible failure diagnostics/cleanup. The changes remain limited to generated disposable CI resources; production Compose privileges and the live library remain unchanged.
+
+### Reviewed image remediation and explicit release hold
+
+The Caddy builder is pinned to Go 1.26.8 by the verified official OCI index digest;
+its locked module graph uses gRPC 1.83.2 and x/crypto 0.55.0. The Caddy ignore file
+now contains no active exceptions. Local Go checksum verification and Linux amd64
+CGO-disabled readonly-module compilation passed. Image-level acceptance still
+requires the automatically triggered exact-commit Gitea scan.
+
+The Compose persistence smoke now derives its project from the numeric run ID
+and binds cleanup to an immutable expected project. Failure diagnostics precede
+cleanup, the original failure status is preserved, and cleanup errors are visible.
+Eleven no-daemon tests cover invalid IDs, ambient project replacement, failure
+status propagation and rejection of a different valid run project.
+
+The official [Prometheus LTS 3.13.3](https://prometheus.io/download/) image is pinned
+to OCI index `sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7`.
+Both Linux amd64 binaries were extracted from digest-verified registry layers and
+inspected without execution using `go version -m`: Go 1.26.8, x/crypto 0.55.0,
+x/net 0.57.0, but **gRPC 1.82.1 remains**. All monitoring vulnerability exceptions
+were removed except the documented Prometheus pseudo-version false positive
+CVE-2026-42154. Fixable HIGH/CRITICAL embedded dependency findings not listed in the scoped
+ignore file must fail CI.
+
+The user explicitly chose to retain the official LTS image and block release
+until an official stable version corrects the gRPC findings. Do not substitute a
+release candidate, custom rebuild, vulnerability suppression, deployment or merge
+as a workaround. The next CI can establish Caddy and functional results while the
+Prometheus security gate remains an expected release blocker. The whole-library
+restore, production canary and other earlier release limits remain outstanding.
+
+Local final checks: Ruff check/format and mypy passed; Bash syntax passed.
+The combined deployment/helper test invocation reported 35 passed and 15 failures
+because Windows cannot directly execute the existing POSIX `.sh` wrappers
+(`WinError 193`). Those tests remain enabled unchanged in Linux CI; this is not a
+local full-suite pass. The 11 new helper tests passed using Git Bash and simulated
+Docker calls. Independent review found and verified the exact-run cleanup fix.

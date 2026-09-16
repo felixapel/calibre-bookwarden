@@ -64,10 +64,11 @@ COPY LICENSE /app/LICENSE
 # Build the reviewed edge with patched Go and dependency versions while the
 # upstream Caddy image catches up. The runtime contains only Caddy, trust roots,
 # and media types; it has no third-party proxy plugins.
-FROM golang@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS caddy-edge-builder
+FROM golang:1.26.8-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS caddy-edge-builder
 WORKDIR /build
 COPY deploy/caddy/module/go.mod deploy/caddy/module/go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download \
+RUN --mount=type=cache,target=/go/pkg/mod go version \
+    && go mod download \
     && CGO_ENABLED=0 go build -mod=readonly -trimpath \
       -ldflags='-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=v2.11.4-bookaudit-patched' \
       -o /usr/local/bin/caddy github.com/caddyserver/caddy/v2/cmd/caddy

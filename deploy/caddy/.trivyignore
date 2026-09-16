@@ -1,13 +1,4 @@
-# Upstream Go stdlib and Caddy v2.11.4 dependency CVEs tracked until upstream release updates.
-# Edge proxy runs isolated in a read-only container with dropped capabilities and no-new-privileges.
-CVE-2026-14456
-CVE-2026-33818
-CVE-2026-39821
-CVE-2026-46600
-CVE-2026-56853
-CVE-2026-56854
-CVE-2026-56858
-CVE-2026-56859
-CVE-2026-56860
-CVE-2026-56862
-CVE-2026-84304
+# No explicit CVE exceptions for the Caddy edge image.
+# CI still applies its HIGH/CRITICAL and --ignore-unfixed scan policy.
+# The builder and modules are patched; the exact-image CI scan is required
+# evidence and must not be described as proof of zero vulnerabilities.
