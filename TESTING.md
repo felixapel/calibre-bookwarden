@@ -98,6 +98,13 @@ produced by the same bounded EPUB extractor used in production; Tesseract
 remains a separate non-authoritative observation and a deterministic
 structured-catalog fixture provides the independent external root.
 
+The Certificate A and writer suites retain the job's minimal locked test
+environment. The supervised V2 pilot runs in a separate
+`/tmp/bookaudit-v2-pilot-venv`, synchronised from the same lock with the
+existing `legacy` extra. This keeps legacy router dependencies out of the
+minimal Certificate A profile while exercising the unchanged pilot against the
+same disposable services.
+
 The deterministic local gate excludes benchmarks, live OCR, network tests, and
 the two suites that require disposable PostgreSQL/Valkey/Calibre services:
 
@@ -264,7 +271,7 @@ that simulate real LLM responses. No API calls in CI.
 | Job | What it does |
 |---|---|
 | `backend` | Locked Python quality, PostgreSQL/Valkey integration, coverage, 50k metadata and dependency gates |
-| `v2-pilot-integration` | Required, no-skip real Calibre/Tesseract/PostgreSQL/Valkey apply/readback/undo round trip |
+| `real-services` | Required, no-skip real Calibre/Tesseract/PostgreSQL/Valkey apply/readback/undo round trip; the V2 pilot uses a separate locked legacy-extra environment |
 | `webui` | Isolated backend bootstrap plus npm lint/build/audit and desktop/mobile Playwright |
 | `benchmarks` | Push-only benchmark suite |
 | `container` | Production image, runtime, Compose, Prometheus and vulnerability contracts after backend/frontend pass |

@@ -176,11 +176,23 @@ jobs:
           uv run --no-sync pytest tests/test_v2_apply_coordinator.py -q -rs \
             | tee -a "$required_log"
           test "${PIPESTATUS[0]}" -eq 0
-          uv run --no-sync pytest tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs \
-            | tee -a "$required_log"
-          test "${PIPESTATUS[0]}" -eq 0
           ! grep -Eq "[0-9]+ skipped|SKIPPED" "$required_log"
           grep -Eq "[1-9][0-9]* passed" "$required_log"
+      - name: Prove supervised V2 pilot in an isolated locked legacy environment
+        env:
+          UV_PROJECT_ENVIRONMENT: /tmp/bookaudit-v2-pilot-venv
+          TEST_POSTGRES_DSN: postgresql+psycopg://bookaudit:gitea-certificate-a-required-password@postgres:5432/bookaudit_certificate_a_test
+          TEST_VALKEY_URL: redis://valkey:6379/0
+        run: |
+          set -o pipefail
+          pilot_log=/tmp/v2-supervised-pilot-pytest.log
+          : > "$pilot_log"
+          uv sync --python "$PYTHON_VERSION" --frozen --no-dev --group test --extra legacy
+          uv run --no-sync pytest tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs \
+            | tee "$pilot_log"
+          test "${PIPESTATUS[0]}" -eq 0
+          ! grep -Eq "[0-9]+ skipped|SKIPPED" "$pilot_log"
+          grep -Eq "[1-9][0-9]* passed" "$pilot_log"
 
   webui:
     name: Certificate A WebUI contract

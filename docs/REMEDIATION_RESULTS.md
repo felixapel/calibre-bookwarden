@@ -68,3 +68,21 @@ The existing `certificate-a-production-gates` workflow now accepts pushes to the
 Gitea run #100 (run ID 5671), commit `5dbfdfcf63e086b38f3d6035711a0e193dce9318`, completed with failure: **689 passed, 2 failed, 7 skipped, 46 deselected** in the hermetic backend suite. The two failures were test portability/contract defects: a Windows UNC fixture was represented as a Linux `Path`, and the workflow contract still counted four locked commands after four required writer suites were added. Ruff, formatting and types passed before pytest. Later backend steps and dependent jobs did not run; no real-service success is inferred.
 
 The follow-up uses `PureWindowsPath` for the simulated UNC URI and verifies all six exact required pytest commands, their pipeline exit checks and the no-skip guard. The URI remains read-only with exactly one SQLite connection attempt. Targeted local validation: 9 passed, Ruff/format/diff checks passed. A new commit must receive its own automatic Gitea result; the failed run is not manually rerun.
+
+### Second Linux runner result
+
+Gitea run #101 (run ID 5673), commit `7c91e713f27976a3048e3f196e30340d53c07a4c`, completed with overall failure, with substantial gates now passing:
+
+| Gate | Observed result |
+| --- | --- |
+| Backend | Passed: 691 hermetic tests, 7 service-dependent skips, 46 deselected; locked style/types, migrations, PostgreSQL/Valkey tests, dependency audit and scoped metadata benchmark passed |
+| WebUI | Passed: build/lint/audit and 17 desktop/mobile browser contracts |
+| Benchmarks | Passed: 30 benchmark tests; 707 non-benchmark tests intentionally skipped by benchmark-only execution, 10 deselected |
+| Real services | Verifier claim/fencing 1 passed, real Calibre/OCR 2 passed, PostgreSQL writer 2 passed, crash recovery 1 passed, V2 coordinator 20 passed; final supervised-pilot test failed at collection |
+| Container/image/security | Skipped because real-services failed; image scans and runtime/Compose checks are not yet validated for this branch |
+
+The remaining observed failure is `ModuleNotFoundError: openai`: the supervised-pilot test imports the generic development web application, whereas the preceding Certificate A suites deliberately install only the minimal production closure. It is a CI dependency-profile mismatch; this run did not execute the final API-to-writer/readback/undo round trip. The correction must use the existing locked `legacy` extra in a separate pilot environment and preserve the minimal Certificate A environment and all authorization/middleware checks.
+
+At this review, the remote remediation branch matches the reviewed commit, `main` remains `20de0f2c599891d76c7313a3c8d7e6c81fff8d38`, and no deployment or live-library write has occurred. Remaining release work is still the completed supervised round trip, container/image gates, verified whole-library restoration, and a separately authorized release/canary. Passing benchmarks only characterize their tested workloads, not full-library accuracy or throughput.
+
+The follow-up now places the pilot in its own locked legacy-extra virtual environment. Local isolated-environment collection selected the live test successfully (1 selected, 1 deselected); the workflow contract, YAML parsing and Ruff checks passed. Independent review confirmed profile isolation and unchanged authorization and no-skip checks. This proves the import issue is resolved in the tested profile, not that the live round trip has passed.

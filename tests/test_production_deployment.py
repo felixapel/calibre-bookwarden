@@ -691,22 +691,36 @@ def test_canonical_gitea_pipeline_proves_the_exact_release_boundary() -> None:
     assert "uv run --no-sync ocrmypdf --version" in content
     assert "command -v ocrmypdf" not in content
     real_services = content.split("\n  real-services:\n", 1)[1].split("\n  webui:\n", 1)[0]
-    assert 'uv sync --python "$PYTHON_VERSION" --frozen --no-dev --group test' in real_services
+    minimal_real_services = real_services.split(
+        "\n      - name: Prove supervised V2 pilot in an isolated locked legacy environment\n", 1
+    )[0]
+    assert 'uv sync --python "$PYTHON_VERSION" --frozen --no-dev --group test' in minimal_real_services
     required_pytest_commands = (
         "tests/test_certificate_a_worker_postgres.py -q -rs",
         "tests/test_certificate_a_real_boundaries.py -m ocr_live -q -rs",
         "tests/test_writer_postgres.py -q -rs",
         "tests/test_writer_crash_postgres_calibre.py -q -rs",
         "tests/test_v2_apply_coordinator.py -q -rs",
-        "tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs",
     )
     # The version probe and migration are also required to use the locked environment.
-    assert real_services.count("uv run --no-sync") == len(required_pytest_commands) + 2
+    assert minimal_real_services.count("uv run --no-sync") == len(required_pytest_commands) + 2
     for command in required_pytest_commands:
-        assert f"uv run --no-sync pytest {command}" in real_services
-    assert "set -o pipefail" in real_services
-    assert real_services.count('test "${PIPESTATUS[0]}" -eq 0') == len(required_pytest_commands)
-    assert '! grep -Eq "[0-9]+ skipped|SKIPPED" "$required_log"' in real_services
+        assert f"uv run --no-sync pytest {command}" in minimal_real_services
+    assert "set -o pipefail" in minimal_real_services
+    assert minimal_real_services.count('test "${PIPESTATUS[0]}" -eq 0') == len(required_pytest_commands)
+    assert '! grep -Eq "[0-9]+ skipped|SKIPPED" "$required_log"' in minimal_real_services
+    assert "--extra legacy" not in minimal_real_services
+    pilot_step = content.split(
+        "\n      - name: Prove supervised V2 pilot in an isolated locked legacy environment\n", 1
+    )[1].split("\n  webui:\n", 1)[0]
+    assert "UV_PROJECT_ENVIRONMENT: /tmp/bookaudit-v2-pilot-venv" in pilot_step
+    assert 'uv sync --python "$PYTHON_VERSION" --frozen --no-dev --group test --extra legacy' in pilot_step
+    pilot_command = "tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs"
+    assert f"uv run --no-sync pytest {pilot_command}" in pilot_step
+    assert "set -o pipefail" in pilot_step
+    assert pilot_step.count('test "${PIPESTATUS[0]}" -eq 0') == 1
+    assert '! grep -Eq "[0-9]+ skipped|SKIPPED" "$pilot_log"' in pilot_step
+    assert 'grep -Eq "[1-9][0-9]* passed" "$pilot_log"' in pilot_step
     assert "uv run ocrmypdf" not in real_services
     assert "uv run bookaudit-certificate-a" not in real_services
     assert "uv run pytest" not in real_services
