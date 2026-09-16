@@ -26,7 +26,7 @@ from calibre_ai_auditor.storage.models import (
     utc_now,
 )
 from calibre_ai_auditor.verification.pipeline_v2 import EvidencePackageV2
-from tests.v2_fixtures import as_remote_package, build_exact_tier_a_package
+from tests.v2_fixtures import as_remote_package, build_exact_tier_a_package, canonical_fixture_path
 
 
 def _v2_package(*, calibre_book_id: int = 8, suffix: str = "") -> EvidencePackageV2:
@@ -34,8 +34,8 @@ def _v2_package(*, calibre_book_id: int = 8, suffix: str = "") -> EvidencePackag
         evidence_id=f"evidence-v2-apply{suffix}",
         run_id=f"run-v2-apply{suffix}",
         book_id=calibre_book_id,
-        library_root="/library",
-        files=[f"/library/book-{calibre_book_id}.epub"],
+        library_root=canonical_fixture_path("/library"),
+        files=[canonical_fixture_path(f"/library/book-{calibre_book_id}.epub")],
         current_metadata={"title": "Old title", "#edition": "First edition"},
         resolved_patch={"title": "Exact title", "edition_statement": "Second edition"},
     )
@@ -80,12 +80,33 @@ def _pilot_guard(
     return PilotGuard(
         enabled=True,
         pilot_id=pilot_id,
-        library_root="/library",
+        library_root=canonical_fixture_path("/library"),
         release_digest=f"sha256:{'a' * 64}",
         alembic_revision=expected_schema_revision(),
         max_operations=5,
         writer_ready=writer_ready,
     )
+
+
+def test_exact_tier_a_fixture_canonicalizes_paths_before_hashing_without_rekeying_hashes() -> None:
+    original_file = "/library/fixtures/../book-8.epub"
+    package = build_exact_tier_a_package(
+        evidence_id="fixture-canonical-path",
+        run_id="fixture-canonical-run",
+        book_id=8,
+        library_root="/library/fixtures/..",
+        files=[original_file],
+        file_sha256={original_file: "d" * 64},
+        current_metadata={"title": "Old title"},
+        resolved_patch={"title": "Exact title"},
+    )
+
+    expected_file = canonical_fixture_path(original_file)
+    assert package.snapshot.library_root == canonical_fixture_path("/library/fixtures/..")
+    assert package.snapshot.files == [expected_file]
+    assert package.formats[0].path == expected_file
+    assert package.formats[0].sha256 == "d" * 64
+    assert package.verify_seal() is True
 
 
 def test_v2_queue_is_bound_to_sealed_evidence_patch_and_manual_authorization() -> None:
@@ -684,7 +705,7 @@ def test_even_a_forged_acknowledgement_cannot_clear_a_failed_open_pilot(next_pil
         session.add(
             PilotSession(
                 pilot_id=failed_pilot_id,
-                library_root_sha256=library_root_sha256("/library"),
+                library_root_sha256=library_root_sha256(canonical_fixture_path("/library")),
                 release_digest=f"sha256:{'a' * 64}",
                 alembic_revision=expected_schema_revision(),
                 max_operations=5,

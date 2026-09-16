@@ -89,12 +89,14 @@ TEST_VALKEY_URL=redis://... \
 pytest tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs
 ```
 
-The Gitea job `Manifestation V2 required integration` installs and proves every
-dependency, migrates a disposable database, and fails if this test skips or
-does not report exactly one pass. Its internal identity root is produced by the
-same bounded EPUB extractor used in production; Tesseract remains a separate
-non-authoritative observation and a deterministic structured-catalog fixture
-provides the independent external root.
+The Gitea job `Real Certificate A writer, V2, Calibre, OCR, and PostgreSQL
+boundaries` installs and proves every dependency, migrates a disposable
+database, and fails if any required real-service suite skips. It includes the
+writer PostgreSQL and crash-recovery suites, the PostgreSQL V2 coordinator
+test, and the supervised V2 pilot round trip. Its internal identity root is
+produced by the same bounded EPUB extractor used in production; Tesseract
+remains a separate non-authoritative observation and a deterministic
+structured-catalog fixture provides the independent external root.
 
 The deterministic local gate excludes benchmarks, live OCR, network tests, and
 the two suites that require disposable PostgreSQL/Valkey/Calibre services:

@@ -29,6 +29,15 @@ def get_engine(settings: Settings = Depends(get_settings)) -> DirectCalibreEngin
         raise HTTPException(status_code=404, detail=str(e)) from e
 
 
+def _reject_legacy_direct_write(settings: Settings) -> None:
+    if settings.library.read_only:
+        raise HTTPException(status_code=403, detail="Operation rejected: library is in read-only mode.")
+    raise HTTPException(
+        status_code=409,
+        detail="Direct library writes are retired; submit the change through the supervised writer workflow.",
+    )
+
+
 @router.get("/360", response_model=APIResponse)
 async def get_library_360_audit(
     engine: DirectCalibreEngine = Depends(get_engine),
@@ -47,26 +56,8 @@ async def sync_author_sorts(
     engine: DirectCalibreEngine = Depends(get_engine),
     settings: Settings = Depends(get_settings),
 ) -> Any:
-    """Creates a hot snapshot and synchronizes canonical author sorts across metadata.db."""
-    if settings.library.read_only:
-        raise HTTPException(
-            status_code=403,
-            detail="Operation rejected: library is in read-only mode.",
-        )
-    try:
-        snapshot = engine.create_snapshot()
-        updated_count = engine.sync_all_author_sorts()
-        return {
-            "status": "success",
-            "data": {
-                "updated_count": updated_count,
-                "snapshot_path": str(snapshot),
-                "message": f"Successfully synchronized author_sort for {updated_count} books.",
-            },
-        }
-    except Exception as exc:
-        logger.exception("Failed to sync author sorts: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Author sort sync failed: {exc}") from exc
+    """Reject the retired direct metadata write endpoint."""
+    _reject_legacy_direct_write(settings)
 
 
 @router.post("/purge-orphan-fks", response_model=APIResponse)
@@ -74,23 +65,5 @@ async def purge_orphan_foreign_keys(
     engine: DirectCalibreEngine = Depends(get_engine),
     settings: Settings = Depends(get_settings),
 ) -> Any:
-    """Purges orphaned junction rows and unused tags/authors after taking an atomic snapshot."""
-    if settings.library.read_only:
-        raise HTTPException(
-            status_code=403,
-            detail="Operation rejected: library is in read-only mode.",
-        )
-    try:
-        snapshot = engine.create_snapshot()
-        purged = engine.purge_orphan_foreign_keys()
-        return {
-            "status": "success",
-            "data": {
-                "purged_records": purged,
-                "snapshot_path": str(snapshot),
-                "message": "Orphan foreign keys successfully purged.",
-            },
-        }
-    except Exception as exc:
-        logger.exception("Failed to purge orphan foreign keys: %s", exc)
-        raise HTTPException(status_code=500, detail=f"FK purge failed: {exc}") from exc
+    """Reject the retired direct metadata cleanup endpoint."""
+    _reject_legacy_direct_write(settings)

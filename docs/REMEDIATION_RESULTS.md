@@ -1,0 +1,64 @@
+# Local remediation results — 2026-09-16
+
+Status: local remediation implemented; release validation remains incomplete. This document does not certify a production release.
+
+## Implemented scope
+
+- Direct SQLite access is enforced read-only by SQLite, including after disabling `query_only`. UNC errors cannot trigger a writable fallback.
+- Database snapshots use SQLite backup, include committed WAL data, verify integrity after reopening, and remain outside the library. They are database-only.
+- Four legacy mutation commands, direct API writes, prototype ledger/schema/rollback, JSON writer lock and in-place optimizer/bridge mutations reject explicitly. The existing supervised V2 writer remains the only correction architecture.
+- Duplicate classification requires complete matching SHA-256 maps throughout each cluster; uncertain editions remain review candidates. Provider consensus cannot auto-apply or grant Tier A.
+- Archive and optional vision analysis handle uncertainty explicitly; SVG cover extraction and compound-author sorting have targeted regression coverage.
+- Development CoverDeck uses server-rendered read-only review with a monotonic cursor, safe current-image reads, no invented cover candidates and no simulated apply/undo controls.
+- V2 fixtures normalize valid host paths before sealing; malicious-path fixtures and production assertions retain their original protections. Calibration reports use the existing rooted atomic replacement helper.
+- Public documentation now distinguishes experimental diagnostics, the production read-only profile, and the supervised writer gates.
+
+## Observed local validation
+
+Initial Windows baseline: 63 failed, 574 passed, 13 skipped, 46 deselected. The final integration run reported **649 passed, 36 failed, 13 skipped and 46 deselected** (43.04 seconds). The final corrupt-cover redaction/cleanup regression is included in that run; its focused API/UI suite also passed all 17 tests. Independent read-only review closed its reported archive, author, TOCTOU and error-disclosure findings with no further findings in the reviewed changes. No additional skips were introduced to hide failing checks.
+
+The 36 remaining failures are: 15 Linux shell execution failures (`WinError 193`), 9 symlink-privilege failures (`WinError 1314`), 10 POSIX private-permission mismatches (9 environment checks plus inventory output), 1 `/proc/self/fd` expectation and 1 POSIX OCR process-group expectation. They require the supported Linux validation environment; they do not establish that those security gates pass there.
+
+Observed checks:
+
+| Check | Observed result | Scope/limit |
+| --- | --- | --- |
+| Backend Ruff | Passed | Full repository |
+| Backend format | Passed | 283 files; 17 formatting fixes verified AST-identical |
+| Backend mypy | Passed | 155 source files |
+| Frontend locked install | Passed, 182 packages | `npm ci --ignore-scripts --no-audit --no-fund` |
+| Frontend lint/build | Passed | Production SPA unchanged by remediation |
+| Playwright Chromium and mobile Chromium | 17 passed | API contract mocks; not real Calibre integration |
+| npm dependency audit | 0 known vulnerabilities | Registry audit at execution time |
+| Python production dependency audit | No known vulnerabilities | Frozen export, no development dependencies; pip-audit 2.10.1 |
+| Recovery archive | 418 restored hashes verified | Source recovery only |
+| Local documentation links | Passed | Changed documentation, relative targets |
+
+A repeated synthetic metadata benchmark using the existing verification engine processed 50,000 inputs in 7.176 seconds (6,967.21/s), with a 43.42 MiB peak process working set on Windows/Python 3.13.5. It excludes filesystem scanning, OCR, network and persistence. It is neither a measured full-library throughput nor the canonical Linux benchmark gate; it does not justify further optimization or a production performance promise.
+
+Logs are local and ignored under `scratch/remediation-20260916/`: `baseline-pytest.log`, `playwright.log`, `npm-audit.json`, `pip-audit.json`, `benchmark-local.json`, plus final integration logs. `final-ruff.log`, `final-format.log` and `final-mypy.log` record passing checks on the final code. `final-static-verification.txt` additionally records the formatting-only AST comparison. Dependency audits cover known advisories, not all application vulnerabilities.
+
+## Recovery and scope
+
+The pre-change working tree included modified and untracked user work. It was preserved in `scratch/remediation-20260916/pre-change.zip` with a SHA-256 manifest. All 418 archived files were extracted into `restore-verification` and their hashes verified. This protects the original source state, not a real Calibre library.
+
+During the local remediation, no real library mutation, production deployment, restart, push, commit or manual CI rerun was performed. The user subsequently authorized committing and pushing the remediation to Gitea for automatic runner validation; that follow-up uses `codex/bookwarden-remediation`, without updating `main` or deploying production. `final-source-manifest.json` records the final local source hashes, including preserved pre-existing untracked work. It is not a committed release identity. Recover individual source files from the archive only after checking for subsequent user edits; do not reset the entire checkout.
+
+## Platform limitation
+
+On Windows, the legacy DirectEngine file/cover inspection and CoverDeck image reads are unavailable (`UNSUPPORTED_SECURE_FILE_READ` / unavailable image). They fail closed because the current secure-file implementation cannot guarantee descriptor-anchored containment there. SQLite metadata-only inspection remains read-only. Run file/cover inspection in the supported Linux environment; this remediation does not claim Windows feature parity.
+
+## Release evidence still required
+
+1. Run required Linux backend and security tests without weakening POSIX, symlink, permission or process-group assertions. This host has no installed WSL distribution or Docker executable.
+2. Run PostgreSQL/Valkey migrations, roles, fencing, writer crash/recovery and actual Calibre/OCR tests in the disposable environment.
+3. Validate the final committed revision through canonical Gitea backend, real-services, webui, container and benchmark jobs. Check image vulnerabilities and deployment mounts/privileges.
+4. Calibrate analysis against a representative human-reviewed book corpus. Synthetic fixtures do not establish real-world accuracy; optional ONNX needs a matching documented model contract.
+5. Perform and verify a whole-library restore on a disposable copy. A database snapshot cannot restore missing book files or covers.
+6. Only after these gates and separate exact-action authorization: deploy a pinned release and run a bounded supervised canary with external writers excluded.
+
+UNC shares require SQLite URI-authority support; unsupported builds fail closed. No live share was tested. Reference: [SQLite URI filenames](https://www.sqlite.org/uri.html).
+
+## Gitea follow-up
+
+The existing `certificate-a-production-gates` workflow now accepts pushes to the exact remediation branch. Its backend, real-services, webui, container and benchmark jobs provide Linux evidence for the pushed revision. Results must be verified against that revision before claiming success. Local Windows limitations are not evidence that Linux tests passed. Whole-library restoration and any live write pilot remain separate gates.

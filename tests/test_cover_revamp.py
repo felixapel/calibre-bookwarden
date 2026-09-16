@@ -1,6 +1,7 @@
 import zipfile
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from calibre_ai_auditor.covers.extractor import extract_cover_from_epub
@@ -28,15 +29,12 @@ def test_cover_optimizer_bomb_detection(tmp_path: Path):
     assert is_bomb is True
     assert info["pixels"] == 36_000_000
 
-    # 3. Optimize the bomb
-    success, before, after = optimizer.optimize_cover(bomb_cov, backup=True)
-    assert success is True
-    assert (tmp_path / "bomb_cover.orig_bak").exists()
-
-    with Image.open(bomb_cov) as optimized_im:
-        ow, oh = optimized_im.size
-        assert ow <= 1200
-        assert oh <= 1800
+    # 3. The retired optimizer must preserve the original bytes.
+    original_bytes = bomb_cov.read_bytes()
+    with pytest.raises(PermissionError, match="retired"):
+        optimizer.optimize_cover(bomb_cov, backup=True)
+    assert bomb_cov.read_bytes() == original_bytes
+    assert not (tmp_path / "bomb_cover.orig_bak").exists()
 
 
 def test_extract_cover_from_epub(tmp_path: Path):

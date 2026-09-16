@@ -1,7 +1,7 @@
 # ADR-009: DirectCalibreEngine SQLite Access for Homelab Forensics
 
 ## Status
-Accepted
+Superseded by [ADR-010](ADR-010-retire-direct-mutations.md). The performance figures and mutation guarantees below are historical assertions, not verified current guarantees.
 
 ## Date
 2026-09-01

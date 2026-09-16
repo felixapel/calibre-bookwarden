@@ -10,7 +10,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from calibre_ai_auditor.config.settings import Settings
 from calibre_ai_auditor.storage.models import EvidencePackage, VerificationRun
-from tests.v2_fixtures import build_exact_tier_a_package
+from tests.v2_fixtures import build_exact_tier_a_package, canonical_fixture_path
 
 API_KEY = "certificate-a-review-key-with-32-characters-9Z"
 AUTH = {"X-API-Key": API_KEY}
@@ -65,8 +65,8 @@ def _store_package(engine: Engine, *, evidence_id: str = "certificate-a-evidence
         evidence_id=evidence_id,
         run_id="certificate-a-run",
         book_id=1,
-        library_root="/library",
-        files=["/library/book.epub"],
+        library_root=canonical_fixture_path("/library"),
+        files=[canonical_fixture_path("/library/book.epub")],
         current_metadata={"title": "Current title", "authors": ["Current Author"]},
         resolved_patch={"title": "Exact title"},
     )

@@ -86,17 +86,13 @@ Important boundaries:
 See [ADR-002](docs/decisions/ADR-002-exact-manifestation-v2.md) for the tier,
 provenance, privacy, and rollback invariants.
 
-### High-Speed SQLite Forensics: DirectCalibreEngine (v1.3.0)
+### Direct forensic inspection boundary
 
-For homelab sidecars, CLI auditing, and interactive cover curation, Calibre Bookwarden includes `DirectCalibreEngine` (`calibre/direct_engine.py`):
-- **Direct SQLite Invariants**: Bypasses `calibredb` subprocess latency (~200ms) by querying `metadata.db` directly, achieving **up to 6,090 books/second**.
-- **Keyset Streaming**: Uses `WHERE id > last_id ORDER BY id LIMIT 500` keyset pagination, guaranteeing constant `<32 MB RAM` overhead even on 100,000+ volume libraries.
-- **Python-Emulated Triggers**: Registers custom SQLite functions (`title_sort`, `author_sort`) to match Calibre's native trigger logic without SQLite extension dependency.
-- **Atomic Pre-flight Snapshots**: Uses `VACUUM INTO` to create atomic, verified backup snapshots (`metadata.db.bak_<timestamp>`) prior to any remediation.
-- **Cover Quality Scoring (CQS 0-100)**: Evaluates pixel dimensions, 2:3 golden ratio adherence, Laplacian edge variance (sharpness), and Shannon entropy (`covers/scorer.py`).
-- **Zero-Downtime Calibre-Web Sync**: Dispatches HTTP `/reconnect` to `calibre-web-automated` and purges physical thumbnail files (`/thumbnails/<bid>.*`), reflecting changes instantly without service restarts.
+`DirectCalibreEngine` is a read-only diagnostic helper with keyset iteration. Writable connections and direct mutators reject. Database-only snapshots use SQLite backup, validate the resulting database and never fall back to copying an active main file.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [ADR-009](docs/decisions/ADR-009-direct-calibre-engine-forensics.md).
+The experimental consensus, ledger and JSON lock do not provide a parallel identity or write authority. Cover replacement, duplicate merging and Calibre-Web mutation are not enabled by the development inspection UI. The established V2 writer remains separately gated and is absent from Certificate A.
+
+See [ADR-010](docs/decisions/ADR-010-retire-direct-mutations.md), which supersedes the mutation and unsupported performance claims in ADR-009.
 
 ### Read-only Content Server source
 

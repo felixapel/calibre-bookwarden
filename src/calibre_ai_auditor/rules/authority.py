@@ -8,10 +8,29 @@ delimiters (' & ').
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Sequence
 
-# Noble particles preserved with surname in sorting
-NOBLE_PARTICLES = {"von", "van", "de", "del", "della", "de la", "de los", "da", "di", "du", "des"}
+# Noble particles preserved with surname in sorting.
+NOBLE_PARTICLES = {
+    "von",
+    "van",
+    "de",
+    "del",
+    "della",
+    "da",
+    "di",
+    "du",
+    "des",
+    "der",
+    "den",
+    "el",
+    "al",
+    "fitz",
+    "mac",
+    "mc",
+}
+MULTIWORD_NOBLE_PARTICLES = {"de la", "de las", "de los", "van der"}
 
 # Known corporate/periodical entities
 CORPORATE_ENTITIES: dict[str, str] = {
@@ -25,6 +44,19 @@ CORPORATE_ENTITIES: dict[str, str] = {
     "lonely planet": "Lonely Planet",
     "harvard business review": "Harvard Business Review",
 }
+
+# Only these documented names receive compound-surname treatment. A generic
+# last-two-words rule corrupts legitimate names from many naming traditions.
+COMPOUND_SURNAME_AUTHORITY: dict[str, str] = {
+    "mario vargas llosa": "Vargas Llosa",
+    "gabriel garcia marquez": "García Márquez",
+}
+
+
+def _authority_key(name: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", name)
+    without_marks = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", without_marks).strip().casefold()
 
 
 def normalize_author_display(name: str) -> str:
@@ -81,15 +113,25 @@ def compute_author_sort(name: str) -> str:
     if len(words) == 1:
         return words[0]
 
-    # 4. Particles in surname (e.g. Ludwig von Mises -> von Mises, Ludwig)
-    if len(words) >= 3 and words[-2].lower() in NOBLE_PARTICLES:
-        surname = f"{words[-2]} {words[-1]}"
-        given = " ".join(words[:-2])
-        return f"{surname}, {given}"
-    if len(words) >= 4 and f"{words[-3].lower()} {words[-2].lower()}" in NOBLE_PARTICLES:
-        surname = f"{words[-3]} {words[-2]} {words[-1]}"
-        given = " ".join(words[:-3])
-        return f"{surname}, {given}"
+    compound_surname = COMPOUND_SURNAME_AUTHORITY.get(_authority_key(n))
+    if compound_surname:
+        surname_words = compound_surname.split()
+        given = " ".join(words[: -len(surname_words)])
+        if given:
+            return f"{compound_surname}, {given}"
+
+    # 4. Particles in surname (e.g. Ludwig van der Waals -> van der Waals, Ludwig)
+    for particle_words in (2, 1):
+        # A leading token such as "Al" or "Van" is a given name unless at
+        # least one preceding given-name token establishes a surname particle.
+        if len(words) < particle_words + 2:
+            continue
+        particle = " ".join(words[-(particle_words + 1) : -1]).casefold()
+        known_particle = particle in MULTIWORD_NOBLE_PARTICLES if particle_words == 2 else particle in NOBLE_PARTICLES
+        if known_particle:
+            surname = " ".join(words[-(particle_words + 1) :])
+            given = " ".join(words[: -(particle_words + 1)])
+            return f"{surname}, {given}"
 
     surname = words[-1]
     given = " ".join(words[:-1])

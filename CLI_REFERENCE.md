@@ -20,7 +20,7 @@
 
 ## 1. 360° Forensic & Library Curation Suite (v1.3.0)
 
-High-speed direct SQLite engine (`DirectCalibreEngine`) operating at **up to 6,090 books/second** with zero N+1 queries and constant memory footprint (<32 MB RAM).
+The direct SQLite engine is read-only. Performance depends on the library and host; no fixed throughput or memory guarantee is established.
 
 ### `bookwarden audit-360`
 Performs a deep forensic inspection of the Calibre SQLite database, disk format parity, covers, and author sort consistency without modifying any data.
@@ -44,58 +44,11 @@ bookwarden audit-360 [--library PATH] [--json]
 
 ---
 
-### `bookwarden optimize-covers`
-Scans for oversized cover images and decompression bombs, converting and normalizing them into optimized high-resolution JPEG files.
+### Retired direct mutation commands
 
-```bash
-bookwarden optimize-covers [--library PATH]
-```
+`optimize-covers`, `sync-library`, `curate-periodicals` and `full-audit-run` remain recognized for compatibility but fail before touching the library, even when read-only configuration is disabled. Their former flags do not restore write access. Use read-only inspection and the existing, separately gated Manifestation V2 supervised workflow; there is no unattended maintenance replacement.
 
-| Flag | Short | Default | Description |
-|---|---|---|---|
-| `--library` | `-l` | `config` | Path to Calibre library directory. |
-
----
-
-### `bookwarden sync-library`
-Synchronizes author sort keys, cleans orphaned foreign keys, and optionally purges empty format records.
-
-```bash
-bookwarden sync-library [--library PATH] [--purge-empty]
-```
-
-| Flag | Short | Default | Description |
-|---|---|---|---|
-| `--library` | `-l` | `config` | Path to Calibre library directory. |
-| `--purge-empty` | | `False` | Permanently deletes database book records that have no physical book files on disk. |
-
----
-
-### `bookwarden curate-periodicals`
-Identifies automated news and periodical downloads (*The Economist*, *Financial Times*, *Der Spiegel*, etc.), assigning canonical publishers, tags, and standard 5-star ratings.
-
-```bash
-bookwarden curate-periodicals [--library PATH]
-```
-
-| Flag | Short | Default | Description |
-|---|---|---|---|
-| `--library` | `-l` | `config` | Path to Calibre library directory. |
-
----
-
-### `bookwarden full-audit-run`
-Executes the master unattended maintenance pipeline: creates an atomic snapshot (`metadata.db.bak_<timestamp>`), runs a 360° audit, optimizes oversized covers, synchronizes author sorts, cleans foreign keys, and optionally purges the Calibre-Web thumbnail cache.
-
-```bash
-bookwarden full-audit-run [--library PATH] [--purge-web] [--yes]
-```
-
-| Flag | Short | Default | Description |
-|---|---|---|---|
-| `--library` | `-l` | `config` | Path to Calibre library directory. |
-| `--purge-web` | | `False` | Triggers cache invalidation and hot reload on connected `calibre-web-automated`. |
-| `--yes` | `-y` | `False` | Bypass interactive confirmation prompt. |
+The experimental `CryptographicLedger` is not the implementation of `bookwarden undo`. Do not use its prototype change IDs with the CLI. Production direct CLI undo remains disabled.
 
 ---
 

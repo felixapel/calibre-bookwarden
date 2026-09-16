@@ -52,6 +52,20 @@ def test_legacy_direct_apply_is_disabled_in_every_profile() -> None:
     assert "Legacy direct apply is disabled" in result.stdout
 
 
+@pytest.mark.parametrize("command", ["optimize-covers", "sync-library", "curate-periodicals", "full-audit-run"])
+@pytest.mark.parametrize("profile", ["default", "production"])
+def test_legacy_direct_library_commands_are_disabled_before_helpers(tmp_path: Path, command: str, profile: str) -> None:
+    config = tmp_path / "config.yml"
+    config.write_text(f"profile: {profile}\nlibrary:\n  read_only: false\n")
+
+    with patch("calibre_ai_auditor.cli.main.DirectCalibreEngine") as direct_engine:
+        result = runner.invoke(app, ["--config", str(config), command])
+
+    assert result.exit_code == 2
+    assert "supervised writer workflow" in result.stdout
+    direct_engine.assert_not_called()
+
+
 def test_calibrate_v2_writes_a_sealed_report_from_reviewed_labels(tmp_path: Path) -> None:
     from calibre_ai_auditor.verification.calibration_v2 import CalibrationReportV2
 
@@ -555,6 +569,8 @@ def test_ingest_paperless_success() -> None:
     import tempfile
     from unittest.mock import AsyncMock, MagicMock, patch
 
+    from calibre_ai_auditor.storage.db import dispose_engines
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         config_content = f"""
 storage:
@@ -577,14 +593,17 @@ paperless:
         # Create dummy file to simulate downloaded book
         (Path(tmp_dir) / "scanned_novel.pdf").write_bytes(b"dummy pdf bytes")
 
-        with (
-            patch(
-                "calibre_ai_auditor.integrations.paperless.PaperlessBridge",
-                return_value=mock_bridge,
-            ),
-            patch.dict(os.environ, {"PAPERLESS_TOKEN": "secret"}),
-        ):
-            result = runner.invoke(app, ["-c", str(config_path), "ingest-paperless"])
-            assert result.exit_code == 0
-            assert "Ingestion complete." in result.stdout
-            assert "Ingesting document 42: Scanned Novel..." in result.stdout
+        try:
+            with (
+                patch(
+                    "calibre_ai_auditor.integrations.paperless.PaperlessBridge",
+                    return_value=mock_bridge,
+                ),
+                patch.dict(os.environ, {"PAPERLESS_TOKEN": "secret"}),
+            ):
+                result = runner.invoke(app, ["-c", str(config_path), "ingest-paperless"])
+                assert result.exit_code == 0
+                assert "Ingestion complete." in result.stdout
+                assert "Ingesting document 42: Scanned Novel..." in result.stdout
+        finally:
+            dispose_engines()

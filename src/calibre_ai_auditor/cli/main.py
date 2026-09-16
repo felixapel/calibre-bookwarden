@@ -22,11 +22,8 @@ from calibre_ai_auditor.calibre.cli import CalibreCLI
 from calibre_ai_auditor.calibre.content_server import ContentServerError, ContentServerSource, aggregate_inventory
 from calibre_ai_auditor.calibre.direct_engine import DirectCalibreEngine
 from calibre_ai_auditor.config.settings import Settings, load_settings
-from calibre_ai_auditor.covers.optimizer import CoverOptimizer
 from calibre_ai_auditor.extractors.heuristics import extract_heuristics
 from calibre_ai_auditor.extractors.text import extract_snippets
-from calibre_ai_auditor.integrations.calibre_web import CalibreWebIntegration
-from calibre_ai_auditor.rules.periodicals import match_periodical
 from calibre_ai_auditor.security.files import SecurePathError, ensure_secure_directory, write_bytes_beneath
 from calibre_ai_auditor.storage.db import expected_schema_revision, get_engine, init_db
 from calibre_ai_auditor.storage.models import (
@@ -39,6 +36,16 @@ from calibre_ai_auditor.storage.models import (
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 logger = logging.getLogger(__name__)
+
+
+def _reject_legacy_direct_write_command() -> None:
+    """Stop retired direct-write commands before they inspect or mutate a library."""
+    typer.secho(
+        "This legacy command is disabled because direct Calibre writes are unsafe. "
+        "Use the supervised writer workflow with an exact human-authorized change instead.",
+        fg=typer.colors.RED,
+    )
+    raise typer.Exit(2)
 
 
 def _require_current_schema(engine: Any) -> None:
@@ -1480,21 +1487,8 @@ def optimize_covers_cmd(
     ctx: typer.Context,
     library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
 ) -> None:
-    """Neutralize decompression bomb covers (>30MP or >10MB) and downscale to standard HD JPEGs."""
-    settings: Settings = ctx.obj
-    lib_path = library or settings.library.path
-    if not lib_path:
-        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    optimizer = CoverOptimizer(lib_path)
-    typer.echo(f"Scanning for oversized covers in: {lib_path}")
-    res = optimizer.scan_and_optimize_all()
-
-    typer.secho("\nOptimization complete!", fg=typer.colors.GREEN, bold=True)
-    typer.echo(f"Oversized covers found: {len(res['bombs_detected'])}")
-    typer.echo(f"Covers optimized:       {res['optimized_count']}")
-    typer.echo(f"Total disk space saved: {res['saved_mb']} MB")
+    """Reject the retired direct cover-mutation command."""
+    _reject_legacy_direct_write_command()
 
 
 @app.command("sync-library")
@@ -1505,28 +1499,8 @@ def sync_library_cmd(
         bool, typer.Option("--purge-empty", help="Purge empty book records without formats")
     ] = False,
 ) -> None:
-    """Synchronize author sort keys, purge orphaned foreign keys, and clean empty records."""
-    settings: Settings = ctx.obj
-    lib_path = library or settings.library.path
-    if not lib_path:
-        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    engine = DirectCalibreEngine(lib_path)
-    typer.echo(f"Synchronizing library at: {lib_path}")
-
-    # 1. Author sort synchronization
-    updated = engine.sync_all_author_sorts()
-    typer.secho(f"Synchronized {updated} author_sort keys.", fg=typer.colors.GREEN)
-
-    # 2. Foreign keys saneamiento
-    purged_fk = engine.purge_orphan_foreign_keys()
-    typer.echo(f"Cleaned orphan foreign key references: {purged_fk}")
-
-    # 3. Purge empty format records if requested
-    if purge_empty:
-        deleted = engine.delete_empty_format_records(delete_folders=True)
-        typer.secho(f"Purged {deleted} empty format records.", fg=typer.colors.YELLOW)
+    """Reject the retired direct metadata-mutation command."""
+    _reject_legacy_direct_write_command()
 
 
 @app.command("curate-periodicals")
@@ -1534,80 +1508,8 @@ def curate_periodicals_cmd(
     ctx: typer.Context,
     library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to Calibre library directory")] = None,
 ) -> None:
-    """Curate automated recipe periodicals (The Economist, Financial Times, Der Spiegel, etc.)."""
-    settings: Settings = ctx.obj
-    lib_path = library or settings.library.path
-    if not lib_path:
-        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    engine = DirectCalibreEngine(lib_path)
-    conn = engine.get_connection()
-    c = conn.cursor()
-
-    c.execute("""
-        SELECT b.id, b.title,
-               (SELECT GROUP_CONCAT(a.name, ' & ')
-                FROM books_authors_link bal
-                JOIN authors a ON a.id = bal.author
-                WHERE bal.book = b.id) as authors
-        FROM books b
-    """)
-    all_books = c.fetchall()
-    curated_count = 0
-
-    for b in all_books:
-        bid = b["id"]
-        title = b["title"] or ""
-        curr_author = b["authors"] or ""
-        rule = match_periodical(title, curr_author)
-        if rule and curr_author.lower() in ("calibre", "unknown", ""):
-            # 1. Author
-            c.execute("SELECT id FROM authors WHERE name = ?", (rule.canonical_author,))
-            a_row = c.fetchone()
-            if a_row:
-                aid = a_row[0]
-            else:
-                c.execute(
-                    "INSERT INTO authors (name, sort, link) VALUES (?, ?, '')",
-                    (rule.canonical_author, rule.canonical_sort),
-                )
-                aid = c.lastrowid
-            c.execute("DELETE FROM books_authors_link WHERE book = ?", (bid,))
-            c.execute("INSERT INTO books_authors_link (book, author) VALUES (?, ?)", (bid, aid))
-            c.execute("UPDATE books SET author_sort = ? WHERE id = ?", (rule.canonical_sort, bid))
-
-            # 2. Rating
-            c.execute("SELECT id FROM ratings WHERE rating = ?", (rule.default_rating,))
-            r_row = c.fetchone()
-            rid = r_row[0] if r_row else None
-            if not rid:
-                c.execute("INSERT INTO ratings (rating) VALUES (?)", (rule.default_rating,))
-                rid = c.lastrowid
-            c.execute("DELETE FROM books_ratings_link WHERE book = ?", (bid,))
-            c.execute("INSERT INTO books_ratings_link (book, rating) VALUES (?, ?)", (bid, rid))
-
-            # 3. Tags
-            for tname in rule.tags:
-                c.execute("SELECT id FROM tags WHERE name = ?", (tname,))
-                t_row = c.fetchone()
-                tid = t_row[0] if t_row else None
-                if not tid:
-                    c.execute("INSERT INTO tags (name) VALUES (?)", (tname,))
-                    tid = c.lastrowid
-                c.execute("SELECT 1 FROM books_tags_link WHERE book = ? AND tag = ?", (bid, tid))
-                if not c.fetchone():
-                    c.execute("INSERT INTO books_tags_link (book, tag) VALUES (?, ?)", (bid, tid))
-
-            curated_count += 1
-            typer.echo(
-                f"  [ID {bid}] '{title[:30]}' -> Author: '{rule.canonical_author}', "
-                f"Rating: {rule.default_rating / 2:.1f}"
-            )
-
-    conn.commit()
-    conn.close()
-    typer.secho(f"\nCurated {curated_count} periodical issues successfully.", fg=typer.colors.GREEN)
+    """Reject the retired direct periodical-mutation command."""
+    _reject_legacy_direct_write_command()
 
 
 @app.command("full-audit-run")
@@ -1617,54 +1519,8 @@ def full_audit_run_cmd(
     purge_calibre_web: Annotated[bool, typer.Option("--purge-web", help="Purge Calibre-Web thumbnail cache")] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
 ) -> None:
-    """Master production pipeline: Snapshot -> Audit -> Optimize Covers -> Sync Authorities -> Curate Periodicals."""
-    settings: Settings = ctx.obj
-    lib_path = library or settings.library.path
-    if not lib_path:
-        typer.secho("Error: Library path must be specified via --library or config.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    engine = DirectCalibreEngine(lib_path)
-    if not yes:
-        typer.confirm(f"Execute full master audit and saneamiento on '{lib_path}'?", abort=True)
-
-    # 1. Atomic pre-flight snapshot
-    snapshot_path = engine.create_snapshot()
-    typer.secho(f"1. Pre-flight snapshot created: {snapshot_path.name}", fg=typer.colors.GREEN)
-
-    # 2. 360 Audit
-    report = engine.audit_library()
-    typer.secho(
-        f"2. Audit completed: {report['total_books']} books, "
-        f"{report['huge_covers_count']} oversized covers, "
-        f"{report['author_desyncs_count']} sort desyncs.",
-        fg=typer.colors.CYAN,
-    )
-
-    # 3. Optimize covers
-    optimizer = CoverOptimizer(lib_path)
-    opt_res = optimizer.scan_and_optimize_all()
-    typer.secho(
-        f"3. Cover optimization: {opt_res['optimized_count']} oversized covers normalized "
-        f"({opt_res['saved_mb']} MB saved).",
-        fg=typer.colors.GREEN,
-    )
-
-    # 4. Synchronize author sort and purge orphan FKs
-    updated = engine.sync_all_author_sorts()
-    purged_fk = engine.purge_orphan_foreign_keys()
-    typer.secho(
-        f"4. Authorities synchronized: {updated} author_sorts updated, {purged_fk} orphan FKs cleaned.",
-        fg=typer.colors.GREEN,
-    )
-
-    # 5. Purge Calibre-Web thumbnail cache if requested
-    if purge_calibre_web:
-        cweb = CalibreWebIntegration()
-        cweb.purge_and_reload_remote()
-        typer.secho("5. Calibre-Web thumbnail cache purged and service reloaded.", fg=typer.colors.GREEN)
-
-    typer.secho("\nMaster production audit & saneamiento completed successfully!", fg=typer.colors.GREEN, bold=True)
+    """Reject the retired direct mutation pipeline."""
+    _reject_legacy_direct_write_command()
 
 
 if __name__ == "__main__":

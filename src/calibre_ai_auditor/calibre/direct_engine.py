@@ -1,9 +1,9 @@
 """High-performance direct SQLite engine for Calibre libraries.
 
-Directly operates on metadata.db with full emulation of Calibre custom SQLite
-functions (title_sort, author_sort) so triggers execute without errors.
-Provides 360-degree library audits, atomic snapshots, file integrity checks,
-author-sort synchronization, and foreign key saneamiento.
+Provides read-only metadata and filesystem audits plus database-only snapshots.
+Direct library mutations are disabled in favor of the supervised writer. On
+Windows, filesystem inspection fails closed because the available path reader
+cannot anchor every parent directory against junction swaps.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import shutil
 import sqlite3
 from collections import defaultdict
 from collections.abc import Iterator
@@ -19,26 +18,17 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from PIL import Image
 
 from calibre_ai_auditor.rules.authority import compute_author_sort
+from calibre_ai_auditor.security.files import SecurePathError, open_file_beneath
 
 logger = logging.getLogger(__name__)
 
 # Configure maximum pixels for cover processing once at module load
 Image.MAX_IMAGE_PIXELS = 60_000_000
-
-
-def _safe_path(p: Path) -> Path:
-    """Normalize path on Windows with extended path prefix to support paths > 260 chars."""
-    s = str(p)
-    if os.name == "nt" and not s.startswith("\\\\?\\"):
-        if s.startswith("\\\\"):
-            return Path("\\\\?\\UNC" + s[1:])
-        elif len(s) >= 2 and s[1] == ":":
-            return Path("\\\\?\\" + s)
-    return p
 
 
 # Canonical leading articles to invert for sorting (English, Spanish, German, French, Italian)
@@ -138,15 +128,12 @@ def _inspect_single_book(
             "broken_cover": broken_cover,
         }
 
-    folder = _safe_path(library_path / path)
-    try:
-        entries: dict[str, os.DirEntry[str]] = {}
-        with os.scandir(folder) as it:
-            for d_entry in it:
-                entries[d_entry.name.lower()] = d_entry
-    except (FileNotFoundError, NotADirectoryError):
+    if os.name == "nt":
         if dfiles:
-            missing_data.append({"book_id": bid, "title": title, "reason": "FOLDER_NOT_FOUND", "path": str(path)})
+            missing_data.append(
+                {"book_id": bid, "title": title, "reason": "UNSUPPORTED_SECURE_FILE_READ", "path": str(path)}
+            )
+        broken_cover = {"book_id": bid, "title": title, "error": "UNSUPPORTED_SECURE_FILE_READ"}
         return {
             "bad_title": bad_title,
             "empty_format": empty_format,
@@ -156,9 +143,14 @@ def _inspect_single_book(
             "huge_cover": huge_cover,
             "broken_cover": broken_cover,
         }
-    except OSError as e:
+
+    folder = library_path / Path(path)
+    try:
+        folder.resolve().relative_to(library_path)
+    except (ValueError, OSError, RuntimeError):
         if dfiles:
-            missing_data.append({"book_id": bid, "title": title, "reason": f"OS_ERROR: {e}", "path": str(path)})
+            missing_data.append({"book_id": bid, "title": title, "reason": "UNSAFE_BOOK_PATH", "path": str(path)})
+        broken_cover = {"book_id": bid, "title": title, "error": "UNSAFE_BOOK_PATH"}
         return {
             "bad_title": bad_title,
             "empty_format": empty_format,
@@ -172,22 +164,20 @@ def _inspect_single_book(
     # Format files on disk check
     for df in dfiles:
         fname = f"{df['name']}.{df['format'].lower()}"
-        file_entry = entries.get(fname.lower())
-        if file_entry is None or not file_entry.is_file():
+        try:
+            with open_file_beneath(library_path, folder / fname):
+                pass
+        except SecurePathError:
             missing_data.append({"book_id": bid, "title": title, "file": fname, "reason": "FILE_MISSING_ON_DISK"})
 
     # Cover checks
-    cov_entry = entries.get("cover.jpg")
-    if cov_entry is None or not cov_entry.is_file():
-        missing_cover = {"book_id": bid, "title": title}
-    else:
-        try:
-            size_bytes = cov_entry.stat().st_size
+    try:
+        with open_file_beneath(library_path, folder / "cover.jpg") as descriptor:
+            size_bytes = os.fstat(descriptor).st_size
             if size_bytes < 4000:
                 tiny_cover = {"book_id": bid, "title": title, "size_bytes": size_bytes}
             else:
-                cov_path = _safe_path(Path(cov_entry.path))
-                with Image.open(cov_path) as im:
+                with os.fdopen(os.dup(descriptor), "rb") as cover_stream, Image.open(cover_stream) as im:
                     w, h = im.size
                     pixels = w * h
                     if pixels > max_image_pixels or size_bytes > 15_000_000:
@@ -205,16 +195,21 @@ def _inspect_single_book(
                             "dimensions": f"{w}x{h}",
                             "size_bytes": size_bytes,
                         }
-        except Image.DecompressionBombError as e:
-            huge_cover = {
-                "book_id": bid,
-                "title": title,
-                "dimensions": "exceeds_max_pixels",
-                "size_bytes": size_bytes if "size_bytes" in locals() else 0,
-                "error": str(e),
-            }
-        except Exception as e:
-            broken_cover = {"book_id": bid, "title": title, "error": str(e)}
+    except SecurePathError as e:
+        if any(marker in str(e) for marker in ("not a regular file", "No such file", "Errno 2")):
+            missing_cover = {"book_id": bid, "title": title}
+        else:
+            broken_cover = {"book_id": bid, "title": title, "error": "UNSAFE_COVER_PATH"}
+    except Image.DecompressionBombError as e:
+        huge_cover = {
+            "book_id": bid,
+            "title": title,
+            "dimensions": "exceeds_max_pixels",
+            "size_bytes": size_bytes if "size_bytes" in locals() else 0,
+            "error": str(e),
+        }
+    except Exception as e:
+        broken_cover = {"book_id": bid, "title": title, "error": str(e)}
 
     return {
         "bad_title": bad_title,
@@ -234,46 +229,77 @@ class DirectCalibreEngine:
         if not self.db_path.exists():
             raise FileNotFoundError(f"Calibre metadata.db not found at: {self.db_path}")
 
-    def get_connection(self, read_only: bool = False) -> sqlite3.Connection:
-        """Returns an optimized connection with custom functions registered for Calibre triggers."""
-        # Windows UNC network paths (e.g. \\server\share) cannot use standard file: URI syntax
-        is_unc = str(self.db_path).startswith(r"\\") or str(self.db_path).startswith("//")
-        if read_only and not is_unc:
-            uri = f"file:{self.db_path.as_posix()}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True, timeout=30.0)
-        else:
-            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+    def get_connection(self, read_only: bool = True) -> sqlite3.Connection:
+        """Return a read-only connection for direct inspection only.
+
+        Direct library mutation is deliberately unavailable.  The supervised writer
+        is the sole supported authority for changes to a Calibre library.
+        """
+        if read_only is not True:
+            raise PermissionError(
+                "Direct Calibre writes are disabled; submit the change through the supervised writer workflow."
+            )
+        # `mode=ro` is enforced by SQLite itself, unlike `query_only`, which
+        # callers can reverse. Path.as_uri() escapes reserved path characters
+        # and retains a UNC authority when the SQLite build supports it. Builds
+        # without URI-authority support fail closed; never retry as read-write.
+        uri = f"{self.db_path.as_uri()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.create_function("title_sort", 1, calibre_title_sort)
         conn.create_function("author_sort", 1, calibre_author_sort)
         c = conn.cursor()
         c.execute("PRAGMA busy_timeout = 30000;")
-        if read_only:
-            c.execute("PRAGMA query_only = ON;")
-        else:
-            c.execute("PRAGMA synchronous = NORMAL;")
         c.execute("PRAGMA cache_size = -64000;")
         c.execute("PRAGMA temp_store = MEMORY;")
         return conn
 
     def create_snapshot(self, backup_dir: Path | None = None) -> Path:
-        """Creates an atomic timestamped snapshot of metadata.db via VACUUM INTO."""
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target_dir = Path(backup_dir) if backup_dir else self.library_path
-        target_dir.mkdir(parents=True, exist_ok=True)
-        backup_path = target_dir / f"metadata.db.bak_{ts}"
-        try:
-            conn = self.get_connection(read_only=True)
-            try:
-                escaped = str(backup_path).replace("'", "''")
-                conn.execute(f"VACUUM INTO '{escaped}'")
-            finally:
-                conn.close()
-        except Exception as exc:
-            logger.warning(f"VACUUM INTO snapshot failed ({exc}), falling back to file copy.")
-            shutil.copyfile(self.db_path, backup_path)
+        """Create a verified database-only SQLite backup outside the library.
 
-        logger.info(f"Created metadata.db snapshot at: {backup_path}")
+        This snapshot is limited to ``metadata.db``.  It is not a full-library
+        rollback point for book files or other Calibre-managed artifacts.
+        """
+        target_dir = (
+            Path(backup_dir).resolve()
+            if backup_dir is not None
+            else self.library_path.parent / ".calibre-ai-auditor-snapshots"
+        )
+        if target_dir == self.library_path or target_dir.is_relative_to(self.library_path):
+            raise ValueError("Snapshot backup_dir must be outside the configured Calibre library")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup_path = target_dir / f"metadata.db.snapshot_{ts}_{uuid4().hex}.sqlite"
+        try:
+            source: sqlite3.Connection | None = None
+            destination: sqlite3.Connection | None = None
+            try:
+                source = self.get_connection()
+                destination = sqlite3.connect(str(backup_path), timeout=30.0)
+                # SQLite's backup API copies a coherent view, including a source
+                # database whose latest pages are still in its WAL.
+                source.backup(destination)
+                integrity = destination.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise RuntimeError("SQLite snapshot integrity check failed")
+            finally:
+                if destination is not None:
+                    destination.close()
+                if source is not None:
+                    source.close()
+
+            verification = sqlite3.connect(f"{backup_path.as_uri()}?mode=ro", uri=True, timeout=30.0)
+            try:
+                verification.execute("SELECT name FROM sqlite_schema LIMIT 1").fetchone()
+                if verification.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise RuntimeError("SQLite snapshot reopen verification failed")
+            finally:
+                verification.close()
+        except Exception:
+            backup_path.unlink(missing_ok=True)
+            raise
+
+        logger.info("Created verified database-only metadata snapshot at: %s", backup_path)
         return backup_path
 
     def stream_books(self, batch_size: int = 500) -> Iterator[dict[str, Any]]:
@@ -497,147 +523,19 @@ class DirectCalibreEngine:
         }
 
     def sync_all_author_sorts(self) -> int:
-        """Synchronizes all authors.sort and books.author_sort across the library."""
-        conn = self.get_connection()
-        try:
-            c = conn.cursor()
-
-            # 1. Update authors.sort where NULL or unformatted
-            c.execute("SELECT id, name, sort FROM authors")
-            authors = c.fetchall()
-            for a in authors:
-                aid = a["id"]
-                name = a["name"]
-                curr_sort = a["sort"]
-                canon_sort = calibre_author_sort(name)
-                if not curr_sort or curr_sort != canon_sort:
-                    c.execute("UPDATE authors SET sort = ? WHERE id = ?", (canon_sort, aid))
-
-            # 2. Sync books.author_sort with deterministic ordering
-            c.execute("""
-                SELECT 
-                    b.id,
-                    (
-                        SELECT GROUP_CONCAT(sort_val, ' & ')
-                        FROM (
-                            SELECT a.sort AS sort_val
-                            FROM books_authors_link bal
-                            JOIN authors a ON a.id = bal.author
-                            WHERE bal.book = b.id
-                            ORDER BY bal.id ASC
-                        )
-                    ) AS canonical_sort
-                FROM books b
-            """)
-            updated_count = 0
-            for bid, csort in c.fetchall():
-                if csort:
-                    c.execute(
-                        "UPDATE books SET author_sort = ? WHERE id = ? AND (author_sort != ? OR author_sort IS NULL)",
-                        (csort, bid, csort),
-                    )
-                    if c.rowcount > 0:
-                        updated_count += 1
-
-            conn.commit()
-            logger.info(f"Synchronized author_sort for {updated_count} books.")
-            return updated_count
-        finally:
-            conn.close()
+        """Reject legacy direct metadata synchronization."""
+        raise PermissionError(
+            "Direct Calibre writes are disabled; submit author-sort changes through the supervised writer workflow."
+        )
 
     def purge_orphan_foreign_keys(self) -> dict[str, int]:
-        """Cleans orphan rows in junction tables and unused entities."""
-        conn = self.get_connection()
-        try:
-            c = conn.cursor()
-
-            c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            existing_tables = {row[0] for row in c.fetchall()}
-
-            purged = {}
-            for table, col in [
-                ("books_authors_link", "book"),
-                ("books_ratings_link", "book"),
-                ("books_tags_link", "book"),
-                ("books_series_link", "book"),
-                ("books_publishers_link", "book"),
-                ("books_languages_link", "book"),
-                ("comments", "book"),
-                ("identifiers", "book"),
-                ("data", "book"),
-            ]:
-                if table in existing_tables:
-                    c.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM books)")
-                    purged[table] = c.rowcount
-
-            # Clean unused tags, series, publishers, authors
-            cleanup_entities = [
-                ("authors", "books_authors_link", "author"),
-                ("tags", "books_tags_link", "tag"),
-                ("series", "books_series_link", "series"),
-                ("publishers", "books_publishers_link", "publisher"),
-            ]
-            for entity_table, link_table, link_col in cleanup_entities:
-                if entity_table in existing_tables and link_table in existing_tables:
-                    c.execute(
-                        f"DELETE FROM {entity_table} WHERE id NOT IN (SELECT DISTINCT {link_col} FROM {link_table})"
-                    )
-                    purged[f"unused_{entity_table}"] = c.rowcount
-
-            conn.commit()
-            return purged
-        finally:
-            conn.close()
+        """Reject legacy direct foreign-key cleanup."""
+        raise PermissionError(
+            "Direct Calibre writes are disabled; submit cleanup changes through the supervised writer workflow."
+        )
 
     def delete_empty_format_records(self, delete_folders: bool = True) -> int:
-        """Removes book records that have no format files associated."""
-        conn = self.get_connection()
-        try:
-            c = conn.cursor()
-
-            c.execute("""
-                SELECT b.id, b.title, b.path
-                FROM books b
-                WHERE NOT EXISTS (SELECT 1 FROM data d WHERE d.book = b.id)
-            """)
-            empty_books = c.fetchall()
-            count = len(empty_books)
-
-            c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            existing_tables = {row[0] for row in c.fetchall()}
-
-            link_tables = [
-                "books_authors_link",
-                "books_ratings_link",
-                "books_tags_link",
-                "books_series_link",
-                "books_publishers_link",
-                "books_languages_link",
-                "comments",
-                "identifiers",
-                "data",
-            ]
-            # Identify any custom column link tables (e.g. books_custom_column_1_link)
-            custom_link_tables = [
-                tbl for tbl in existing_tables if tbl.startswith("books_custom_column_") and tbl.endswith("_link")
-            ]
-            all_link_tables = link_tables + custom_link_tables
-
-            for b in empty_books:
-                bid = b["id"]
-                path = b["path"]
-                if delete_folders and path:
-                    folder = self.library_path / path
-                    if folder.exists():
-                        shutil.rmtree(folder, ignore_errors=True)
-
-                for tbl in all_link_tables:
-                    if tbl in existing_tables:
-                        c.execute(f"DELETE FROM {tbl} WHERE book = ?", (bid,))
-                c.execute("DELETE FROM books WHERE id = ?", (bid,))
-
-            conn.commit()
-            logger.info(f"Deleted {count} empty book records.")
-            return count
-        finally:
-            conn.close()
+        """Reject legacy direct record and folder deletion."""
+        raise PermissionError(
+            "Direct Calibre writes are disabled; submit deletion changes through the supervised writer workflow."
+        )

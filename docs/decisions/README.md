@@ -11,5 +11,6 @@ This directory documents the key architectural, safety, and operational decision
 | [ADR-005](ADR-005-certificate-a-production-boundary.md) | Certificate A Production Boundary (Read-Only Aisle) | 2026-08-08 | Accepted |
 | [ADR-006](ADR-006-bounded-provider-lru-cache.md) | Bounded In-Memory LRU/TTL Cache for Metadata Providers | 2026-08-20 | Accepted |
 | [ADR-007](ADR-007-mathematical-cover-quality-scoring.md) | Mathematical Cover Quality Scoring (CQS 0-100) & Defect Detection | 2026-08-25 | Accepted |
-| [ADR-008](ADR-008-interactive-cover-deck-triage.md) | Interactive Cover Deck Triage Workflow (HTMX + React) | 2026-08-28 | Accepted |
-| [ADR-009](ADR-009-direct-calibre-engine-forensics.md) | DirectCalibreEngine SQLite Access for Homelab Forensics | 2026-09-01 | Accepted |
+| [ADR-008](ADR-008-interactive-cover-deck-triage.md) | Interactive Cover Deck Triage Workflow (HTMX + React) | 2026-08-28 | Superseded by ADR-010 |
+| [ADR-009](ADR-009-direct-calibre-engine-forensics.md) | DirectCalibreEngine SQLite Access for Homelab Forensics | 2026-09-01 | Superseded by ADR-010 |
+| [ADR-010](ADR-010-retire-direct-mutations.md) | Retire Direct Mutations and Preserve the Supervised Writer | 2026-09-16 | Accepted |

@@ -1,7 +1,7 @@
 # ADR-008: Interactive Cover Deck Triage Workflow (HTMX + React)
 
 ## Status
-Accepted
+Superseded by [ADR-010](ADR-010-retire-direct-mutations.md). The text below records an unfulfilled historical design, not current behavior. The development Deck now provides server-rendered read-only cursor review. Candidate replacement, keyboard apply, rollback and Calibre-Web notifications are unavailable; earlier throughput and zero-risk statements were not validated.
 
 ## Date
 2026-08-28

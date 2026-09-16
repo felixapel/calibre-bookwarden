@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,11 @@ from calibre_ai_auditor.verification.pipeline_v2 import (
 ISBN = "9780306406157"
 
 
+def canonical_fixture_path(path: str) -> str:
+    """Return a native absolute path for valid local V2 fixture inputs."""
+    return os.path.normpath(os.path.abspath(path))
+
+
 def build_exact_tier_a_package(
     *,
     evidence_id: str,
@@ -40,6 +46,8 @@ def build_exact_tier_a_package(
     """Build a Tier A package only by satisfying the real deterministic resolver."""
     if not files:
         raise ValueError("an exact-manifestation fixture requires at least one format")
+    canonical_library_root = canonical_fixture_path(library_root)
+    canonical_files = [canonical_fixture_path(path) for path in files]
     fixture_current = dict(current_metadata)
     current_identifiers = dict(fixture_current.get("identifiers") or {})
     current_identifiers.setdefault("isbn", ISBN)
@@ -130,7 +138,7 @@ def build_exact_tier_a_package(
 
     formats = [
         FormatEvidence(
-            path=path,
+            path=canonical_path,
             format=Path(path).suffix.removeprefix(".") or "EPUB",
             sha256=file_sha256[path] if isinstance(file_sha256, dict) else file_sha256,
             status=FormatEvidenceStatus.readable,
@@ -140,7 +148,7 @@ def build_exact_tier_a_package(
             languages=target_languages,
             evidence_ids=[item.evidence_id for item in sources if item.root_id == content_root],
         )
-        for path in files
+        for path, canonical_path in zip(files, canonical_files, strict=True)
     ]
     identity = resolve_manifestation(
         formats=formats,
@@ -154,8 +162,8 @@ def build_exact_tier_a_package(
         book_key=f"calibre:{book_id}",
         calibre_book_id=book_id,
         current_metadata=fixture_current,
-        files=files,
-        library_root=library_root,
+        files=canonical_files,
+        library_root=canonical_library_root,
         snapshot_sha256="0" * 64,
     )
     snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})

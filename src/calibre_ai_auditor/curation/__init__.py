@@ -6,6 +6,15 @@ Includes:
 """
 
 from calibre_ai_auditor.curation.duplicates import DuplicateCluster, DuplicateConsolidator
+from calibre_ai_auditor.curation.entity_cleanser import AuthorIdentity, EntityCleanser, TitleIdentity
 from calibre_ai_auditor.curation.series import SeriesGap, SeriesGapHunter
 
-__all__ = ["SeriesGap", "SeriesGapHunter", "DuplicateCluster", "DuplicateConsolidator"]
+__all__ = [
+    "AuthorIdentity",
+    "DuplicateCluster",
+    "DuplicateConsolidator",
+    "EntityCleanser",
+    "SeriesGap",
+    "SeriesGapHunter",
+    "TitleIdentity",
+]

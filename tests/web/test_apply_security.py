@@ -17,7 +17,7 @@ from calibre_ai_auditor.verification.verdict import BookVerdict
 from calibre_ai_auditor.web.api import apply as apply_module
 from calibre_ai_auditor.web.api.apply import V2ApplyRequest
 from calibre_ai_auditor.web.schemas import ApplyRequest, ManualAuthorizationRequest
-from tests.v2_fixtures import build_exact_tier_a_package
+from tests.v2_fixtures import build_exact_tier_a_package, canonical_fixture_path
 
 
 def _sealed_v2_package() -> Any:
@@ -25,8 +25,8 @@ def _sealed_v2_package() -> Any:
         evidence_id="evidence-v2-api",
         run_id="run-v2-api",
         book_id=9,
-        library_root="/library",
-        files=["/library/book-9.epub"],
+        library_root=canonical_fixture_path("/library"),
+        files=[canonical_fixture_path("/library/book-9.epub")],
         current_metadata={"title": "Wrong"},
         created_at=datetime.now(UTC),
         resolved_patch={"title": "Exact"},
@@ -79,13 +79,13 @@ async def test_v2_api_authorizes_and_queues_only_the_exact_sealed_package(
                 "timestamp": datetime.now(UTC).isoformat(),
                 "release_digest": f"sha256:{'b' * 64}",
                 "alembic_revision": expected_schema_revision(),
-                "library_root_sha256": library_root_sha256("/library"),
+                "library_root_sha256": library_root_sha256(canonical_fixture_path("/library")),
                 "pilot_id": "api-pilot",
                 "max_operations": 5,
             },
         )
         settings = Settings(
-            library={"path": "/library", "read_only": False},
+            library={"path": canonical_fixture_path("/library"), "read_only": False},
             manifestation_v2={
                 "supervised_pilot": {
                     "enabled": True,

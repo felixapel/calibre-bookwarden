@@ -25,7 +25,7 @@ from calibre_ai_auditor.verification.pipeline_v2 import BookAuditState, BookSnap
 from calibre_ai_auditor.web.api import review_v2 as review_v2_module
 from calibre_ai_auditor.web.api.review_v2 import get_session
 from calibre_ai_auditor.web.app import app
-from tests.v2_fixtures import build_exact_tier_a_package
+from tests.v2_fixtures import build_exact_tier_a_package, canonical_fixture_path
 
 
 def _package(
@@ -52,8 +52,8 @@ def _package(
         book_key=f"calibre:{book_id}",
         calibre_book_id=book_id,
         current_metadata={"title": f"Current {book_id}", "authors": ["Current Author"]},
-        files=[f"/library/book-{book_id}.epub"],
-        library_root="/library",
+        files=[canonical_fixture_path(f"/library/book-{book_id}.epub")],
+        library_root=canonical_fixture_path("/library"),
         snapshot_sha256="0" * 64,
     )
     snapshot = snapshot.model_copy(update={"snapshot_sha256": snapshot.calculated_sha256()})
@@ -66,7 +66,7 @@ def _package(
         snapshot=snapshot,
         formats=[
             FormatEvidence(
-                path=f"/library/book-{book_id}.epub",
+                path=canonical_fixture_path(f"/library/book-{book_id}.epub"),
                 format="EPUB",
                 sha256="c" * 64,
                 status=FormatEvidenceStatus.readable,
@@ -251,7 +251,7 @@ def test_review_v2_detail_includes_exact_authorization_and_operation(client: Tes
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["package"]["package_sha256"] == package.package_sha256
-    assert data["package"]["snapshot"]["files"] == ["/library/book-4.epub"]
+    assert data["package"]["snapshot"]["files"] == [canonical_fixture_path("/library/book-4.epub")]
     assert data["authorization"]["authorization_id"] == authorization_id
     assert data["operation"] == {
         "operation_id": "operation-detail",

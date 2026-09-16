@@ -1,8 +1,12 @@
+import os
 import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import pytest
 from PIL import Image
 
+import calibre_ai_auditor.calibre.direct_engine as direct_engine_module
 from calibre_ai_auditor.calibre.direct_engine import (
     DirectCalibreEngine,
     calibre_author_sort,
@@ -219,37 +223,129 @@ def test_direct_engine_audit(tmp_path: Path):
     assert report["foreign_key_issues"] == 1  # Orphan book 999
 
 
-def test_direct_engine_sync_and_cleanup(tmp_path: Path):
+def test_direct_engine_snapshot_uses_sqlite_backup_and_includes_wal_changes(tmp_path: Path):
+    lib_dir = _setup_mock_calibre_library(tmp_path)
+    engine = DirectCalibreEngine(lib_dir)
+    backup_dir = tmp_path / "metadata snapshots # 100%"
+
+    # Keep the source writer open so the committed table is still represented
+    # by WAL pages when the snapshot is requested.
+    writer = sqlite3.connect(lib_dir / "metadata.db")
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("PRAGMA wal_autocheckpoint=0")
+    writer.execute("CREATE TABLE snapshot_probe (value TEXT)")
+    writer.execute("INSERT INTO snapshot_probe VALUES ('committed-in-wal')")
+    writer.commit()
+
+    snap = engine.create_snapshot(backup_dir)
+    writer.close()
+
+    assert snap.exists()
+    assert snap.parent == backup_dir
+    assert snap.name.startswith("metadata.db.snapshot_")
+    assert snap.suffix == ".sqlite"
+    assert not snap.is_relative_to(lib_dir)
+
+    snapshot = sqlite3.connect(snap)
+    assert snapshot.execute("SELECT value FROM snapshot_probe").fetchone()[0] == "committed-in-wal"
+    assert snapshot.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    snapshot.close()
+
+
+def test_direct_engine_snapshot_rejects_library_target_and_cleans_incomplete_backup(tmp_path: Path):
+    lib_dir = _setup_mock_calibre_library(tmp_path)
+    engine = DirectCalibreEngine(lib_dir)
+    backup_dir = tmp_path / "metadata-snapshots"
+
+    with pytest.raises(ValueError, match="outside"):
+        engine.create_snapshot(lib_dir)
+
+    failing_source = MagicMock()
+    failing_source.backup.side_effect = sqlite3.Error("backup failed")
+    with (
+        patch.object(engine, "get_connection", return_value=failing_source),
+        pytest.raises(sqlite3.Error, match="backup failed"),
+    ):
+        engine.create_snapshot(backup_dir)
+
+    assert not list(backup_dir.glob("*.sqlite"))
+    failing_source.close.assert_called_once()
+
+
+def test_direct_engine_rejects_direct_writes(tmp_path: Path):
     lib_dir = _setup_mock_calibre_library(tmp_path)
     engine = DirectCalibreEngine(lib_dir)
 
-    # 1. Snapshot
-    snap = engine.create_snapshot()
-    assert snap.exists()
-    assert snap.name.startswith("metadata.db.bak_")
+    connection = engine.get_connection()
+    connection.execute("PRAGMA query_only = OFF")
+    with pytest.raises(sqlite3.OperationalError):
+        connection.execute("UPDATE books SET title = 'must not persist' WHERE id = 1")
+    connection.close()
+    with pytest.raises(PermissionError, match="supervised writer"):
+        engine.get_connection(read_only=False)
 
-    # 2. Sync author sort
-    updated = engine.sync_all_author_sorts()
-    assert updated >= 1
+    for method, args in (
+        (engine.sync_all_author_sorts, ()),
+        (engine.purge_orphan_foreign_keys, ()),
+        (engine.delete_empty_format_records, ()),
+    ):
+        with pytest.raises(PermissionError, match="supervised writer"):
+            method(*args)
 
-    # 3. Purge foreign keys
-    purged = engine.purge_orphan_foreign_keys()
-    assert purged["books_ratings_link"] == 1
+    report = engine.audit_library()
+    assert report["total_books"] == 3
+    assert report["foreign_key_issues"] == 1
 
-    # 4. Delete empty records
-    deleted = engine.delete_empty_format_records(delete_folders=True)
-    assert deleted == 1
 
-    # Verify custom column link was also purged
-    conn = engine.get_connection(read_only=True)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM books_custom_column_1_link WHERE book = 3")
-    assert c.fetchone()[0] == 0
-    conn.close()
+def test_direct_engine_unc_connection_is_uri_read_only_and_never_falls_back(tmp_path: Path):
+    engine = DirectCalibreEngine(_setup_mock_calibre_library(tmp_path))
+    engine.db_path = Path(r"\\server\share\metadata.db")
 
-    # Re-audit: empty format and foreign key issues should be zero!
-    post_report = engine.audit_library()
-    assert post_report["total_books"] == 2
-    assert post_report["empty_format_records_count"] == 0
-    assert post_report["foreign_key_issues"] == 0
-    assert post_report["author_desyncs_count"] == 0
+    with (
+        patch(
+            "calibre_ai_auditor.calibre.direct_engine.sqlite3.connect",
+            side_effect=sqlite3.OperationalError("URI authority unsupported"),
+        ) as connect,
+        pytest.raises(sqlite3.OperationalError, match="authority unsupported"),
+    ):
+        engine.get_connection()
+
+    assert connect.call_count == 1
+    uri = connect.call_args.args[0]
+    assert uri.startswith("file://server/share/")
+    assert uri.endswith("metadata.db?mode=ro")
+    assert connect.call_args.kwargs["uri"] is True
+
+
+def test_direct_engine_audit_rejects_malicious_stored_book_path(tmp_path: Path):
+    lib_dir = _setup_mock_calibre_library(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "cover.jpg").write_bytes(b"not a library cover")
+
+    writer = sqlite3.connect(lib_dir / "metadata.db")
+    writer.execute("UPDATE books SET path = '../outside' WHERE id = 1")
+    writer.commit()
+    writer.close()
+
+    report = DirectCalibreEngine(lib_dir).audit_library()
+
+    expected_reason = "UNSUPPORTED_SECURE_FILE_READ" if os.name == "nt" else "UNSAFE_BOOK_PATH"
+    assert {entry["reason"] for entry in report["missing_data_files"]} >= {expected_reason}
+    assert any(entry["error"] == expected_reason for entry in report["broken_covers"])
+
+
+def test_direct_engine_windows_audit_fails_closed_before_opening_stored_files(tmp_path: Path):
+    lib_dir = _setup_mock_calibre_library(tmp_path)
+    book = {"id": 1, "title": "Unsafe on Windows", "path": "Author/Tiny One"}
+    data_files = [{"name": "Book", "format": "EPUB"}]
+
+    with (
+        patch("calibre_ai_auditor.calibre.direct_engine.os.name", "nt"),
+        patch("calibre_ai_auditor.calibre.direct_engine.open_file_beneath") as open_beneath,
+    ):
+        result = direct_engine_module._inspect_single_book(book, lib_dir, data_files, 30_000_000, [])
+
+    open_beneath.assert_not_called()
+    assert result["missing_data"][0]["reason"] == "UNSUPPORTED_SECURE_FILE_READ"
+    assert result["broken_cover"]["error"] == "UNSUPPORTED_SECURE_FILE_READ"

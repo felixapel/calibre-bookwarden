@@ -17,6 +17,8 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from calibre_ai_auditor.covers.forensics import CoverForensicsEngine
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +35,7 @@ class SpuriousCoverDetector:
     def __init__(self, white_threshold: int = 240, text_density_threshold: float = 0.65):
         self.white_threshold = white_threshold
         self.text_density_threshold = text_density_threshold
+        self._forensics = CoverForensicsEngine()
 
     def inspect(self, image_path: Path | str, ocr_text: str | None = None) -> SpuriousCoverResult:
         path = Path(image_path)
@@ -94,11 +97,37 @@ class SpuriousCoverDetector:
                         entropy=entropy,
                     )
 
+                # 4. Advanced Visual Forensics (HPP, FFT Harmonic Energy Ratio, Autocorrelation)
+                forensics = self._forensics.analyze(path, ocr_text)
+                if forensics.is_reading_page:
+                    return SpuriousCoverResult(
+                        is_spurious=True,
+                        defect_type="interior_page_scan",
+                        confidence=forensics.defect_confidence,
+                        details={
+                            "her_score": forensics.her_score,
+                            "acf_prominence": forensics.acf_prominence,
+                            "line_spacing_period": forensics.line_spacing_period,
+                            "folio_detected": forensics.folio_detected,
+                            "reason": forensics.defect_reason,
+                        },
+                        entropy=entropy,
+                    )
+
+                if forensics.is_monochrome_placeholder:
+                    return SpuriousCoverResult(
+                        is_spurious=True,
+                        defect_type="blank_canvas",
+                        confidence=forensics.defect_confidence,
+                        details={"reason": forensics.defect_reason},
+                        entropy=entropy,
+                    )
+
                 return SpuriousCoverResult(
                     is_spurious=False,
                     defect_type=None,
                     confidence=0.0,
-                    details={"dimensions": (w, h)},
+                    details={"dimensions": (w, h), "forensics_her": forensics.her_score},
                     entropy=entropy,
                 )
         except Exception as exc:

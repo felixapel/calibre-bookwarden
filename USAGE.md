@@ -1,89 +1,20 @@
 # Usage Guide: Calibre Bookwarden
 
-**Calibre Bookwarden** (invoked via `bookwarden` or the backward-compatible `bookaudit` alias) provides a comprehensive suite of tools spanning high-speed 360° forensic auditing, interactive visual cover triage, deterministic bibliographic authority synchronization, and Manifestation V2 exact-edition verification.
+Certificate A is a stopped-library, read-only auditor. The development application contains additional research tools and does not establish production readiness.
 
----
+## 1. Read-only diagnostics
 
-## 1. 360° Forensic Auditing & Homelab Curation (v1.3.0)
-
-For homelabs and power users, the v1.3.0 forensic engine operates directly against the Calibre SQLite database (`DirectCalibreEngine`) at speeds exceeding **6,000 books per second** without running heavy LLM calls or writing unverified metadata.
-
-### 1.1 Deep Read-Only Forensic Health Check
-Run a non-destructive audit of the entire library:
-
-```bash
-# Terminal formatted visual summary
-bookwarden audit-360 --library "/mnt/user/MEDIA/Books/Calibre Library"
-
-# Or output full JSON data for automated monitoring
-bookwarden audit-360 --library "/mnt/user/MEDIA/Books/Calibre Library" --json > audit_360_report.json
+```sh
+uv run bookwarden audit-360 --library "/path/to/stopped-or-restored-library"
 ```
 
-**Key issues diagnosed:**
-- SQLite database corruption or index desync (`PRAGMA integrity_check`).
-- Broken foreign keys in junction tables (`books_authors_link`, `books_tags_link`, `data`).
-- Ebook files registered in Calibre but missing from disk (`FILE_MISSING_ON_DISK`).
-- Empty book records with no formats attached.
-- Oversized cover decompression bombs (>30MP, >10MB) or tiny thumbnail stubs (<200px).
-- Inverted or non-standard author sort strings.
+This reports database integrity, missing formats and cover/metadata diagnostics. Treat classifications as review proposals. Keep reports local because they may contain private library metadata.
 
----
+The development Cover Deck is an inspection view. It has no supported apply or undo action. The production SPA remains the supported verification and sealed-evidence review interface.
 
-### 1.2 Cover Optimization & "Cover Deck" Visual Triage
+Legacy `optimize-covers`, `sync-library`, `curate-periodicals` and `full-audit-run` commands are retired and reject before writing. No flag, including `--yes` or disabling read-only configuration, bypasses this boundary. There is no automatic duplicate merge or cache/reconnect operation.
 
-#### A. Command-Line Cover Optimization:
-Neutralize oversized covers and compress them into optimized, high-resolution JPEGs:
-
-```bash
-bookwarden optimize-covers --library "/mnt/user/MEDIA/Books/Calibre Library"
-```
-
-#### B. Interactive Cover Deck Triage (Web UI):
-For fast, keyboard-driven cover review, launch the Web UI:
-
-```bash
-bookwarden web --port 8080
-```
-
-1. Open your browser at `http://localhost:8080/api/covers/ui/deck` (or via the **Cover Studio** in the WebUI).
-2. The interface presents a swipeable card stack of books with low CQS scores (Tier C/D) or spurious covers.
-3. Use keyboard shortcuts:
-   - **Left Arrow (`←`)**: Skip / Keep current cover.
-   - **Right Arrow (`→`)**: Accept high-res candidate fetched from OpenLibrary or Hardcover.
-   - **Spacebar**: Preview cover at full resolution.
-
----
-
-### 1.3 Bibliographic Authority & Author Sort Synchronization
-Enforce canonical "Last, First" conventions for authors, handling complex nobility particles (`von Goethe`, `de Saint-Exupéry`, `de Beauvoir`), titles (`Thomas Aquinas, Saint`), and corporate publishers:
-
-```bash
-# Synchronize authors and clean orphan junction rows
-bookwarden sync-library --library "/mnt/user/MEDIA/Books/Calibre Library"
-
-# Also purge empty book records that have no physical files
-bookwarden sync-library --library "/mnt/user/MEDIA/Books/Calibre Library" --purge-empty
-```
-
----
-
-### 1.4 Curate Automated News & Periodicals
-Clean up Calibre automated recipe downloads (*Financial Times*, *The Economist*, *Der Spiegel*), assigning canonical publishers, tags, and 5-star ratings:
-
-```bash
-bookwarden curate-periodicals --library "/mnt/user/MEDIA/Books/Calibre Library"
-```
-
----
-
-### 1.5 The Master Unattended Maintenance Pipeline (`full-audit-run`)
-Execute an end-to-end maintenance run safely. This command creates an atomic pre-flight snapshot (`metadata.db.bak_<timestamp>`), audits the library, optimizes oversized covers, synchronizes author sorts, cleans foreign keys, and notifies `calibre-web-automated` to reload:
-
-```bash
-bookwarden full-audit-run --library "/mnt/user/MEDIA/Books/Calibre Library" --purge-web --yes
-```
-
----
+A database snapshot is not a full-library backup. Before any separately authorized supervised pilot, verify restoration of the complete library and exclude other writers. See [the remediation plan](docs/REMEDIATION_PLAN.md) and [production operations](docs/runbooks/production-operations.md).
 
 ## 2. Manifestation V2 Verification (Exact-Edition Evidence)
 

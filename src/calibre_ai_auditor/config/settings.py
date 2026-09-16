@@ -255,9 +255,7 @@ class Settings(BaseSettings):
     library_path_env: Path | None = Field(
         None, validation_alias=AliasChoices("BOOKAUDIT_LIBRARY_PATH", "BOOKWARDEN_LIBRARY_PATH")
     )
-    db_path_env: Path | None = Field(
-        None, validation_alias=AliasChoices("BOOKAUDIT_DB_PATH", "BOOKWARDEN_DB_PATH")
-    )
+    db_path_env: Path | None = Field(None, validation_alias=AliasChoices("BOOKAUDIT_DB_PATH", "BOOKWARDEN_DB_PATH"))
     artifacts_dir_env: Path | None = Field(
         None, validation_alias=AliasChoices("BOOKAUDIT_ARTIFACTS_DIR", "BOOKWARDEN_ARTIFACTS_DIR")
     )

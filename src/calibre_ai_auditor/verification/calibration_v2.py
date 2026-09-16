@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -18,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.security.files import replace_bytes_beneath
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 MAX_REPORT_BYTES = 1024 * 1024
@@ -200,23 +199,7 @@ def write_calibration_report(report: CalibrationReportV2, output_path: Path) -> 
     if not parent.is_dir() or parent.is_symlink() or output.is_symlink():
         raise ValueError("calibration report output path is unsafe")
     payload = json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True).encode() + b"\n"
-    temporary_name: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(prefix=".calibration-", dir=parent, delete=False) as stream:
-            temporary_name = stream.name
-            os.chmod(temporary_name, 0o600)
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_name, output)
-        directory_fd = os.open(parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    finally:
-        if temporary_name is not None:
-            Path(temporary_name).unlink(missing_ok=True)
+    replace_bytes_beneath(parent, output, payload, mode=0o600)
 
 
 def calibration_gate_from_settings(

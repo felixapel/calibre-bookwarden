@@ -1,221 +1,52 @@
 # Calibre Bookwarden
 
-<p align="center">
-  <img src="assets/hero-banner.jpg" alt="Calibre Bookwarden: The Forensic Guardian for your Calibre Vault" width="100%">
-</p>
+A local Calibre metadata auditor that compares records with ebook contents, records evidence and explains uncertainty.
 
-<p align="center">
-  <strong>The Content-Grounded Metadata, Cover Forensics & Curation Guardian for Calibre Libraries.</strong><br>
-  <em>"The book file is the ground truth. LLMs and OCR are witnesses."</em>
-</p>
+## Current safety boundary
 
-<p align="center">
-  <a href="https://github.com/felixapel/calibre-bookwarden/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/felixapel/calibre-bookwarden/ci.yml?branch=main&label=GitHub%20CI&logo=github" alt="CI Status"></a>
-  <a href="http://192.168.0.122:3010/felix/calibre-bookwarden"><img src="https://img.shields.io/badge/Gitea-Internal%20Forge-609926.svg?logo=gitea&logoColor=white" alt="Gitea Forge"></a>
-  <a href="https://github.com/felixapel/calibre-bookwarden/releases"><img src="https://img.shields.io/badge/Release-v1.3.0-blue.svg?logo=semantic-release" alt="Release Version"></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB.svg?logo=python&logoColor=white" alt="Python Versions"></a>
-  <a href="https://github.com/felixapel/calibre-bookwarden/pkgs/container/calibre-bookwarden"><img src="https://img.shields.io/badge/Docker-calibre--bookwarden-2496ED.svg?logo=docker&logoColor=white" alt="Docker Multi-Arch"></a>
-  <a href="deploy/unraid/calibre-bookwarden.xml"><img src="https://img.shields.io/badge/unRAID-CA%20Template-F15A24.svg?logo=unraid&logoColor=white" alt="unRAID Support"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/sponsors/felixapel"><img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-EA4AAA.svg?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
-  <a href="https://ko-fi.com/felixapel"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B.svg?logo=kofi&logoColor=white" alt="Support on Ko-fi"></a>
-</p>
+The supported production profile is **Certificate A: stopped-library, read-only verification**. The development application has a larger historical surface; it is not a substitute for the production entrypoint. Gitea is the canonical development and validation pipeline.
 
-<p align="center">
-  <strong>Dual-Forge Topology:</strong>
-  <a href="https://github.com/felixapel/calibre-bookwarden">GitHub (Public Distribution & Issues)</a>
-  &nbsp;•&nbsp;
-  <a href="http://192.168.0.122:3010/felix/calibre-bookwarden">Gitea (Hermetic CI & Hardware Rig)</a>
-</p>
+Local remediation is tracked in [the plan](docs/REMEDIATION_PLAN.md) and [validation results](docs/REMEDIATION_RESULTS.md). This working tree has not been promoted by exact-revision Linux/service/image gates. No zero-risk, perfect-accuracy or production-readiness claim is made.
 
----
+## Available inspection
 
-## 🎯 What is Calibre Bookwarden?
+- Manifestation V2 inspects attached formats, resolves identity from evidence and seals its findings.
+- Direct SQLite auditing reports integrity issues, missing files, suspicious titles, author-sort differences and cover diagnostics. It cannot write to the library.
+- Cover scores and optional vision output are review evidence, not authority to replace images.
+- Duplicate analysis distinguishes verified byte matches from possible editions; matching titles or complementary formats do not authorize merging.
+- The production SPA exposes verification and sealed evidence review. The development Cover Deck is read-only and does not apply covers.
 
-> [!NOTE]
-> **Evolution to Calibre Bookwarden:** Formerly titled *Calibre AI Auditor*, the project evolved and was rebranded to **Calibre Bookwarden** to honor its true calling: acting as an incorruptible custodian and guardian of your digital book vault. We eliminated the corporate "AI auditor" jargon because our foundation is **deterministic mathematics, container forensics, and zero-risk invariant checking**—never stochastic hallucinations.
+The legacy commands `optimize-covers`, `sync-library`, `curate-periodicals` and `full-audit-run` are retired and reject before mutation. The direct mutation endpoints, experimental ledger, JSON writer lock and prototype cache/reconnect actions are also disabled. Setting `read_only=false` does not re-enable them.
 
-Music collections have **Beets**, document archives have **Paperless-ngx**, and home cinema has **Sonarr/Radarr**. Yet digital book collectors have spent over 15 years trapped in desktop PyQt interfaces or wrestling with fragile SQLite lockups, corrupted thumbnails, missing series volumes, and AI plugins that hallucinate synopses.
+## Local inspection
 
-**Calibre Bookwarden** is a headless, high-performance forensic curation engine built for modern homelabs, power readers, and digital archivists. It verifies metadata and covers directly against the authentic container contents (EPUB OCF container, PDF XMP dictionary, CBZ/CBR comics) with zero-risk read-only audits, deterministic bibliographic authority rules, Shannon entropy vision scoring, and surgical atomic rollbacks.
+From an already checked-out, trusted repository with its locked environment:
 
-```
-                  ┌──────────────────────────────────────────────┐
-                  │            THE BOOK CONTAINER                │
-                  │   EPUB (OCF/OPF) • PDF (XMP) • CBZ (Archive) │
-                  │            [ GROUND TRUTH ]                  │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                   Deterministic Forensic Inspection (No AI)
-                                         │
-                                         ▼
-┌───────────────────────┐      ┌──────────────────┐      ┌─────────────────────────┐
-│     Gemini 3.8        │      │    Calibre DB    │      │    Local Tesseract      │
-│   Multimodal API      ├─────►│   metadata.db    │◄─────┤      OCR Engine         │
-│   [ WITNESS ONLY ]    │      │  [ FAIL-CLOSED ] │      │    [ WITNESS ONLY ]     │
-└───────────────────────┘      └──────────────────┘      └─────────────────────────┘
+```sh
+uv run bookwarden audit-360 --library "/path/to/stopped-or-restored-library"
 ```
 
----
+Audit output can contain titles, paths and other private metadata; keep it local. A successful SQLite integrity check is not proof of correct metadata, complete ebook contents or a recoverable whole-library backup.
 
-## ✨ Key Capabilities
+For isolated mechanism checks, use the [disposable Calibre lab](docs/runbooks/disposable-calibre-lab.md). Production setup and supported entrypoints are described in the [operations runbook](docs/runbooks/production-operations.md); do not deploy an unreviewed development web command in their place.
 
-### 🔍 360° Forensic Audit Engine
-* **Instant Integrity Check**: Directly audits SQLite schema, table invariants, and foreign key junction tables (`books_authors_link`, `books_tags_link`, `data`).
-* **Physical vs. Database Parity**: Detects missing format files on disk (`FILE_MISSING_ON_DISK`), empty format records, and orphaned book directories.
-* **Junk Title & Extension Strip**: Identifies and flags scraper residue like `[welib.org]`, `(z-library)`, `_print`, and filename leaks (`.pdf`, `.epub`) in titles.
+## Supervised corrections
 
-### 🖼️ Cover Quality Scoring (CQS 0–100) & Defect Detection
-* **Mathematical Quality Evaluation**: Scores covers using pixel density, 1:1.5 golden aspect ratio adherence, Laplacian sharpness, and color contrast.
-* **Spurious Cover Detector**: Flags solid monochrome stubs, blank scanner pages, internal body text pages, and Calibre default brown generated templates.
-* **Image Safety & Decompression Guard**: Limits image parsing to 60 MP to neutralize decompression bomb exploits (`Image.DecompressionBombError`).
+The existing Manifestation V2 coordinator and sole writer retain exact manual authorization, sealed artifacts, serialization, before/after verification and recovery checks. Certificate A does not enable that writer. A supported write pilot requires its dedicated real-service gates, exclusion of external writers, a tested whole-library restore and explicit operator authorization.
 
-### 🃏 "Cover Deck" Swipeable Review UI
-* **Tinder-Style Cover Triage**: Modern, ultra-lightweight HTMX + Tailwind CSS interface.
-* **Keyboard-Driven Workflow**: Review low-quality (Tier C/D) or spurious covers with left/right arrow keys, compare against high-res candidates from OpenLibrary and Hardcover, and approve upgrades with a single keystroke.
+The experimental candidate scorer cannot promote itself to Tier A or auto-apply. The authoritative resolver remains `verification/identity_v2.py`. An ISBN match, OCR result or attractive cover alone is insufficient.
 
-<p align="center">
-  <img src="assets/cover-deck-showcase.jpg" alt="Calibre Bookwarden Cover Deck UI" width="95%">
-</p>
+Database snapshots use SQLite's consistent backup mechanism and are **database-only**. They do not back up ebook formats, covers or OPFs, and never authorize a mutation. No fallback copies only a live main database while ignoring its WAL.
 
-### 📚 Series Gap Hunter & Multi-Format Consolidator
-* **Series Gap Hunter**: Scans collections and multi-volume sagas to detect missing intermediate and leading books (e.g. owning Volumes 1, 2, and 4; flagging missing Volume 3). Includes runaway span guards (`MAX_GAP_SPAN = 200`).
-* **FRBR Multi-Format Consolidator**: Detects books duplicated across separate records (e.g. Book ID 100 has EPUB, Book ID 101 has PDF of the same work) and identifies shared ISBN collisions with modulo-10/11 check-digit verification.
+SQLite paths are opened with an escaped URI and `mode=ro`. UNC shares require a SQLite build supporting `SQLITE_ALLOW_URI_AUTHORITY`; unsupported builds fail closed without a writable fallback. No live UNC share was verified. See the [SQLite URI documentation](https://www.sqlite.org/uri.html).
 
-### ⚡ Extreme Performance & O(1) Streaming
-* **Zero N+1 Query Antipattern**: Custom atomic SQL queries with `GROUP_CONCAT` and compound `JOIN`s.
-* **Blazing Fast SMB Scans**: Audits **3,180 books over local network shares in 45 seconds** with <30 MB RAM consumption.
-* **Keyset Pagination**: Streams 100,000+ books with constant memory footprint.
+On Windows, the legacy DirectEngine file/cover inspection and CoverDeck image reads are unavailable (`UNSUPPORTED_SECURE_FILE_READ` / unavailable image). They fail closed because the current secure-file implementation cannot guarantee descriptor-anchored containment there. SQLite metadata-only inspection remains read-only. Run file/cover inspection in the supported Linux environment; this remediation does not claim Windows feature parity.
 
-### 🏛️ Bibliographic Authority Rules & Sort Synchronization
-* **Standardized Author Sorting**: Enforces canonical "Last, First" conventions for complex names, nobility, popes, patristic saints, and classical authors (e.g. *Jerome K. Jerome*, *Toni Morrison*).
-* **Periodicals & Feeds**: Automatically classifies news feeds (*Financial Times*, *The Economist Espresso*, *Nature*) into `Periodical` and `News` categories.
+## Performance and validation
 
----
+Performance depends on corpus, storage, formats, OCR and providers. Earlier unverified throughput/RAM figures are not release guarantees. The metadata-only benchmark excludes scan I/O, OCR, network and persistence; report its scope with any result.
 
-## 🏗️ Architecture
-
-```mermaid
-flowchart TD
-    subgraph ClientLayer["🖥️ Client & Access Layer"]
-        WebUI["WebUI / Cover Deck (HTMX + Tailwind)"]
-        CLI["CLI (uvx / typer)"]
-        MCP["MCP Server (Model Context Protocol)"]
-    end
-
-    subgraph SecurityBoundary["🛡️ Safe Isolation Boundary (Certificate A)"]
-        Edge["Caddy Edge (TLS + Tailscale / Loopback Auth)"]
-        App["App Service (UID 10001 / Non-Root / Read-Only RootFS)"]
-        Queue["PostgreSQL Queue & Lease Store"]
-        Verifier["Verifier Worker (Offline Read-Only Mount)"]
-    end
-
-    subgraph StorageLayer["💾 Storage & Calibre State"]
-        CalibreDB[("Calibre metadata.db (SQLite WAL)")]
-        DiskStorage["Ebook Filesystem (EPUB, PDF, CBZ)"]
-        CalibreWeb["Calibre-Web Automated (Hot Reload / SIGHUP)"]
-    end
-
-    subgraph Witnesses["👁️ Multimodal & External Witnesses"]
-        Gemini["Gemini 3.8 Flash API"]
-        OCR["Local Tesseract OCR"]
-        Hardcover["Hardcover GraphQL / OpenLibrary"]
-    end
-
-    WebUI --> Edge
-    Edge --> App
-    CLI --> App
-    App --> Queue
-    Queue --> Verifier
-    Verifier --> CalibreDB
-    Verifier --> DiskStorage
-    Verifier --> Witnesses
-    Verifier -.->|"Zero Downtime Reload"| CalibreWeb
-```
-
----
-
-## 🚀 Quickstart
-
-### Option A: Run via `uvx` (No Installation Required)
-
-If you have [`uv`](https://docs.astral.sh/uv/) installed, run a comprehensive 360° read-only audit in one command:
-
-```bash
-# Run a 360° forensic audit without modifying any files (using new bookwarden CLI)
-uvx --from git+https://github.com/felixapel/calibre-bookwarden.git bookwarden audit-360 --library "/path/to/Calibre Library"
-
-# Synchronize author sort keys to canonical bibliographic standards
-uvx --from git+https://github.com/felixapel/calibre-bookwarden.git bookwarden sync-library --library "/path/to/Calibre Library"
-
-# (Note: `bookaudit` remains fully supported as a transparent backwards-compatible alias)
-```
-
-### Option B: Docker Compose (Sidecar Pattern for Homelabs)
-
-Run **Calibre Bookwarden** as a companion sidecar alongside your existing `linuxserver/calibre` and `calibre-web-automated` containers:
-
-```yaml
-services:
-  calibre-bookwarden:
-    image: ghcr.io/felixapel/calibre-bookwarden:latest
-    container_name: calibre-bookwarden
-    restart: unless-stopped
-    ports:
-      - "8084:8080"  # WebUI (mapped to 8084 on host to prevent port collisions)
-    volumes:
-      - /mnt/user/MEDIA/Books/Calibre Library:/calibre:ro
-      - /mnt/user/appdata/calibre-bookwarden:/config
-    environment:
-      - BOOKAUDIT_DATABASE__BACKEND=sqlite
-      - BOOKAUDIT_DB_PATH=/config/bookaudit.db
-      - BOOKAUDIT_ARTIFACTS_DIR=/config/artifacts
-      - BOOKAUDIT_QUEUE__BACKEND=memory
-      - BOOKAUDIT_RATE_LIMITS__BACKEND=memory
-      - BOOKAUDIT_READ_ONLY=true
-      - BOOKAUDIT_LIBRARY_PATH=/calibre
-      - CALIBRE_WEB_CONTAINER=calibre-web-automated
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-```
-
-### Option C: unRAID Community Applications
-
-Install directly from the unRAID web UI using the pre-configured template:
-* **Template URL**: `https://raw.githubusercontent.com/felixapel/calibre-bookwarden/main/deploy/unraid/calibre-bookwarden.xml`
-* **Volume Mount**: Set `/calibre` to your Calibre library share (e.g. `/mnt/user/MEDIA/Books/Calibre Library`).
-
----
-
-## 📊 Live Library Performance
-
-<p align="center">
-  <img src="assets/terminal-audit-showcase.jpg" alt="Calibre Bookwarden 360° Terminal Audit" width="95%">
-</p>
-
-Benchmarked against a production library of **3,180 books** over SMB network storage:
-
-| Metric | Before (Legacy) | Calibre Bookwarden v1.3.0 | Improvement |
-| :--- | :---: | :---: | :---: |
-| **Audit Duration (3,180 books)** | 14m 20s | **44.72 seconds** | **19.2x faster** ⚡ |
-| **Direct SQLite Peak Throughput** | ~200 ms / book | **6,090 books / sec** | **DirectCalibreEngine** 🚀 |
-| **SQL Queries Executed** | 3,177 individual SELECTs | **1 atomic compound query** | **Zero N+1 overhead** |
-| **RAM Consumption** | ~480 MB | **< 32 MB** | **93% reduction** |
-| **Author Sort Desyncs** | 13 unformatted | **0 (100% canonical)** | **Clean database** |
-| **Defective / Tiny Covers** | 12 spurious | **0 (All upgraded to HD)** | **Perfect covers** |
-| **SQLite DB Integrity** | Unchecked | **Verified clean (`ok`)** | **Zero corruption risk** |
-
----
-
-## 🛡️ Safety Invariants (Certificate A)
-
-Calibre Bookwarden operates under strict cryptographic and database constraints:
-1. **Offline & Read-Only Guarantees**: Core auditing strictly mounts `/calibre` as `:ro`.
-2. **Atomic Snapshots**: Any write or remediation requires an instant `VACUUM INTO` backup (`metadata.db.bak_<timestamp>`) verified on disk before any table modification.
-3. **Non-Root Execution**: Container images run as unprivileged user `10001:10001` with `read-only rootfs` and `CapDrop: ALL`.
-4. **Trigger Preservation**: Database triggers (`title_sort`, `author_sort`) are registered in Python so SQLite triggers execute cleanly without throwing constraint errors.
-5. **Human-in-the-Loop Triage**: High-impact actions (cover replacement, format merges) support staged dry-runs with preview manifests and reversible rollback journals.
-
----
+Follow [AGENTS.md](AGENTS.md) and [TESTING.md](TESTING.md). Linux, real Calibre/OCR, PostgreSQL/Valkey, browser and image gates remain distinct. Mocked browser tests and dependency audits cannot substitute for them.
 
 ## 💖 Supporting & Sponsoring
 
@@ -240,38 +71,19 @@ If this project saved your library from corruption, upgraded your covers, or sav
 
 ---
 
-## 📖 Documentation Index
+## Documentation
 
-* 💻 [CLI Reference Guide](CLI_REFERENCE.md)
-* 📖 [User Workflow & Usage Guide](USAGE.md)
-* 📘 [Architecture Specification](docs/ARCHITECTURE.md)
-* 🔒 [Safety Model & Threat Boundaries](docs/SAFETY.md)
-* 🌐 [API Reference](docs/API.md)
-* 🏠 [Homelab Integration Guide](docs/HOMELAB.md)
-* 🚀 [Production Operations Runbook](docs/runbooks/production-operations.md)
-* 📑 [Database Schema & Migration Docs](docs/DATABASE.md)
-* 🧪 [Testing & Verification Guide](TESTING.md)
-* 📜 [Architecture Decision Records (ADRs)](docs/decisions/)
-* 📦 [Changelog](CHANGELOG.md)
-* 🗺️ [Roadmap](ROADMAP.md)
+- [CLI reference](CLI_REFERENCE.md)
+- [Usage](USAGE.md)
+- [Architecture](ARCHITECTURE.md)
+- [Production operations](docs/runbooks/production-operations.md)
+- [Disposable Calibre lab](docs/runbooks/disposable-calibre-lab.md)
+- [Remediation plan](docs/REMEDIATION_PLAN.md)
+- [Validation results](docs/REMEDIATION_RESULTS.md)
+- [Architecture decisions](docs/decisions/)
+- [Roadmap](ROADMAP.md)
+- [Contributing](CONTRIBUTING.md)
 
----
+## License
 
-## 🤝 Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, coding standards, and testing requirements before opening a PR.
-
-```bash
-# Run local quality gates
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src
-uv run pytest -m "not benchmark and not ocr_live and not network"
-```
-
----
-
-## 📄 License
-
-Licensed under the [GNU General Public License v3.0 or later (GPL-3.0-or-later)](LICENSE).  
-Copyright © 2026 Felix Apel and contributors.
+GNU General Public License v3.0 or later. See [LICENSE](LICENSE).

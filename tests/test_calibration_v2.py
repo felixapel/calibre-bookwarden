@@ -4,11 +4,15 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from calibre_ai_auditor.config.settings import Settings
+from calibre_ai_auditor.verification import calibration_v2
 from calibre_ai_auditor.verification.calibration_v2 import (
     CalibrationReportV2,
     calibration_gate_from_settings,
     create_report_from_labeled_corpus,
+    write_calibration_report,
 )
 
 LEGACY_V2_KEYS = ("observations_with_timing", "total_review_seconds", "total_egress_bytes")
@@ -69,6 +73,40 @@ def test_valid_sealed_calibration_report_opens_the_gate(tmp_path: Path) -> None:
     assert decision.valid is True
     assert decision.report_sha256 is not None
     assert decision.reasons == []
+
+
+def test_write_calibration_report_round_trips_and_replaces_existing_report(tmp_path: Path) -> None:
+    path = tmp_path / "calibration.json"
+    first = _report()
+    replacement = _report(expires_delta=timedelta(days=31))
+
+    write_calibration_report(first, path)
+    write_calibration_report(replacement, path)
+
+    payload = json.loads(path.read_text())
+    assert CalibrationReportV2.model_validate(payload) == replacement
+    assert calibration_gate_from_settings(_settings(path)).valid is True
+
+
+def test_write_calibration_report_rejects_mocked_symlink_before_replacing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "calibration.json"
+    outside = tmp_path / "outside.json"
+    outside.write_text("outside must remain untouched")
+    monkeypatch.setattr(Path, "is_symlink", lambda candidate: candidate.name == path.name)
+    monkeypatch.setattr(
+        calibration_v2,
+        "replace_bytes_beneath",
+        lambda *_args, **_kwargs: pytest.fail("unsafe output reached rooted replacement"),
+    )
+
+    with pytest.raises(ValueError, match="unsafe"):
+        write_calibration_report(_report(), path)
+
+    assert outside.read_text() == "outside must remain untouched"
+    assert not path.exists()
 
 
 def test_tampered_or_false_auto_apply_report_fails_closed(tmp_path: Path) -> None:

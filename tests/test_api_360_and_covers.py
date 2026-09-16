@@ -122,10 +122,57 @@ def test_sync_author_sorts_api(tmp_path: Path):
     with patch("calibre_ai_auditor.web.api.audit_360.load_settings", return_value=test_settings):
         client = TestClient(app)
         response = client.post("/api/audit/sync-author-sorts")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "success"
-        assert "updated_count" in data["data"]
+        assert response.status_code == 409
+        assert "supervised writer" in response.json()["detail"]
+
+
+def test_legacy_audit_write_endpoints_reject_read_only_before_engine_mutation(tmp_path: Path):
+    lib_dir, _ = _setup_test_library(tmp_path)
+    test_settings = Settings()
+    test_settings.library.path = lib_dir
+    test_settings.library.read_only = True
+
+    with patch("calibre_ai_auditor.web.api.audit_360.load_settings", return_value=test_settings):
+        client = TestClient(app)
+        for endpoint in ("/api/audit/sync-author-sorts", "/api/audit/purge-orphan-fks"):
+            response = client.post(endpoint)
+            assert response.status_code == 403
+            assert "read-only" in response.json()["detail"]
+
+
+def test_extract_native_cover_is_rejected_before_reading_or_writing(tmp_path: Path):
+    lib_dir, _ = _setup_test_library(tmp_path)
+    target = lib_dir / "Ludwig von Mises/Human Action (1)/new-cover.jpg"
+    test_settings = Settings()
+    test_settings.library.path = lib_dir
+    test_settings.library.read_only = False
+
+    with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=test_settings):
+        client = TestClient(app)
+        response = client.post(
+            "/api/covers/extract-native",
+            json={"book_file_path": str(lib_dir / "missing.epub"), "target_cover_path": str(target)},
+        )
+
+    assert response.status_code == 409
+    assert "supervised writer" in response.json()["detail"]
+    assert not target.exists()
+
+
+def test_extract_native_cover_returns_read_only_rejection(tmp_path: Path):
+    lib_dir, _ = _setup_test_library(tmp_path)
+    test_settings = Settings()
+    test_settings.library.path = lib_dir
+    test_settings.library.read_only = True
+
+    with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=test_settings):
+        response = TestClient(app).post(
+            "/api/covers/extract-native",
+            json={"book_file_path": "ignored.epub", "target_cover_path": "ignored.jpg"},
+        )
+
+    assert response.status_code == 403
+    assert "read-only" in response.json()["detail"]
 
 
 def test_covers_score_api(tmp_path: Path):
@@ -174,6 +221,25 @@ def test_covers_score_rejects_path_traversal(tmp_path: Path):
         response = client.post("/api/covers/score", json={"cover_path": str(outside_img)})
         assert response.status_code == 403
         assert "Access denied" in response.json()["detail"]
+
+
+def test_book_cover_image_rejects_malicious_stored_library_path(tmp_path: Path):
+    lib_dir, _ = _setup_test_library(tmp_path)
+    outside_cover = tmp_path / "outside" / "cover.jpg"
+    outside_cover.parent.mkdir()
+    Image.new("RGB", (300, 450), color="red").save(outside_cover, format="JPEG")
+
+    conn = sqlite3.connect(lib_dir / "metadata.db")
+    conn.execute("UPDATE books SET path = '../outside' WHERE id = 1")
+    conn.commit()
+    conn.close()
+
+    test_settings = Settings()
+    test_settings.library.path = lib_dir
+    with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=test_settings):
+        response = TestClient(app).get("/api/covers/book/1/image")
+
+    assert response.status_code == 404
 
 
 def test_covers_score_upload_windows_safety(tmp_path: Path):
