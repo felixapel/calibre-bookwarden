@@ -692,7 +692,21 @@ def test_canonical_gitea_pipeline_proves_the_exact_release_boundary() -> None:
     assert "command -v ocrmypdf" not in content
     real_services = content.split("\n  real-services:\n", 1)[1].split("\n  webui:\n", 1)[0]
     assert 'uv sync --python "$PYTHON_VERSION" --frozen --no-dev --group test' in real_services
-    assert real_services.count("uv run --no-sync") == 4
+    required_pytest_commands = (
+        "tests/test_certificate_a_worker_postgres.py -q -rs",
+        "tests/test_certificate_a_real_boundaries.py -m ocr_live -q -rs",
+        "tests/test_writer_postgres.py -q -rs",
+        "tests/test_writer_crash_postgres_calibre.py -q -rs",
+        "tests/test_v2_apply_coordinator.py -q -rs",
+        "tests/test_v2_supervised_pilot_integration.py -m v2_live -q -rs",
+    )
+    # The version probe and migration are also required to use the locked environment.
+    assert real_services.count("uv run --no-sync") == len(required_pytest_commands) + 2
+    for command in required_pytest_commands:
+        assert f"uv run --no-sync pytest {command}" in real_services
+    assert "set -o pipefail" in real_services
+    assert real_services.count('test "${PIPESTATUS[0]}" -eq 0') == len(required_pytest_commands)
+    assert '! grep -Eq "[0-9]+ skipped|SKIPPED" "$required_log"' in real_services
     assert "uv run ocrmypdf" not in real_services
     assert "uv run bookaudit-certificate-a" not in real_services
     assert "uv run pytest" not in real_services

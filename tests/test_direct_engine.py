@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -299,9 +299,10 @@ def test_direct_engine_rejects_direct_writes(tmp_path: Path):
 
 def test_direct_engine_unc_connection_is_uri_read_only_and_never_falls_back(tmp_path: Path):
     engine = DirectCalibreEngine(_setup_mock_calibre_library(tmp_path))
-    engine.db_path = Path(r"\\server\share\metadata.db")
+    unc_path = PureWindowsPath(r"\\server\share\metadata.db")
 
     with (
+        patch.object(engine, "db_path", unc_path),
         patch(
             "calibre_ai_auditor.calibre.direct_engine.sqlite3.connect",
             side_effect=sqlite3.OperationalError("URI authority unsupported"),

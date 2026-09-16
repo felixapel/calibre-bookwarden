@@ -62,3 +62,9 @@ UNC shares require SQLite URI-authority support; unsupported builds fail closed.
 ## Gitea follow-up
 
 The existing `certificate-a-production-gates` workflow now accepts pushes to the exact remediation branch. Its backend, real-services, webui, container and benchmark jobs provide Linux evidence for the pushed revision. Results must be verified against that revision before claiming success. Local Windows limitations are not evidence that Linux tests passed. Whole-library restoration and any live write pilot remain separate gates.
+
+### First Linux runner result
+
+Gitea run #100 (run ID 5671), commit `5dbfdfcf63e086b38f3d6035711a0e193dce9318`, completed with failure: **689 passed, 2 failed, 7 skipped, 46 deselected** in the hermetic backend suite. The two failures were test portability/contract defects: a Windows UNC fixture was represented as a Linux `Path`, and the workflow contract still counted four locked commands after four required writer suites were added. Ruff, formatting and types passed before pytest. Later backend steps and dependent jobs did not run; no real-service success is inferred.
+
+The follow-up uses `PureWindowsPath` for the simulated UNC URI and verifies all six exact required pytest commands, their pipeline exit checks and the no-skip guard. The URI remains read-only with exactly one SQLite connection attempt. Targeted local validation: 9 passed, Ruff/format/diff checks passed. A new commit must receive its own automatic Gitea result; the failed run is not manually rerun.
