@@ -47,8 +47,12 @@ class KeysetStreamingEngine:
             raise FileNotFoundError(f"Calibre metadata.db not found at: {self.db_path}")
 
         # Do not change journaling mode: that PRAGMA mutates database state.
-        uri_path = quote(self.db_path.resolve().as_posix(), safe="/:")
-        uri = f"file:///{uri_path}?mode=ro"
+        posix_path = self.db_path.resolve().as_posix()
+        quoted_path = quote(posix_path, safe="/:")
+        if quoted_path.startswith("/"):
+            uri = f"file://{quoted_path}?mode=ro"
+        else:
+            uri = f"file:///{quoted_path}?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=30.0)
         conn.execute("PRAGMA busy_timeout = 30000;")
         conn.execute("PRAGMA query_only = ON;")

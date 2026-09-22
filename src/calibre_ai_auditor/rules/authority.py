@@ -26,11 +26,16 @@ NOBLE_PARTICLES = {
     "den",
     "el",
     "al",
+    "le",
+    "la",
     "fitz",
     "mac",
     "mc",
 }
 MULTIWORD_NOBLE_PARTICLES = {"de la", "de las", "de los", "van der"}
+GENERATIONAL_SUFFIXES = frozenset({
+    "jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v", "ph.d.", "phd", "md",
+})
 
 # Known corporate/periodical entities
 CORPORATE_ENTITIES: dict[str, str] = {
@@ -97,8 +102,12 @@ def compute_author_sort(name: str) -> str:
     if n_lower in CORPORATE_ENTITIES:
         return CORPORATE_ENTITIES[n_lower]
 
-    # 2. Already inverted
+    # 2. Comma handling (inversion and suffixes)
     if "," in n:
+        parts = [p.strip() for p in n.split(",") if p.strip()]
+        if len(parts) == 2 and parts[1].lower() in GENERATIONAL_SUFFIXES:
+            base_sort = compute_author_sort(parts[0])
+            return f"{base_sort}, {parts[1]}"
         return n
 
     # 3. Saints and Popes

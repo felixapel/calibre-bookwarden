@@ -28,16 +28,20 @@ def validate_combined_status(payload: dict[str, Any], *, sha: str) -> None:
 
 def validate_statuses(statuses: list[Any], *, creator: str) -> dict[str, Any]:
     """Return the latest full status record for the canonical context."""
-    candidates = [status for status in statuses if isinstance(status, dict) and status.get("context") == CONTEXT]
+    candidates = [
+        status
+        for status in statuses
+        if isinstance(status, dict)
+        and status.get("context") == CONTEXT
+        and isinstance(status.get("creator"), dict)
+        and status["creator"].get("login") == creator
+    ]
     if not candidates:
-        raise StatusValidationError(f"missing required GitHub status context {CONTEXT!r}")
+        raise StatusValidationError(f"missing owner-attested GitHub status context {CONTEXT!r}")
 
     latest = max(candidates, key=lambda status: (str(status.get("updated_at", "")), int(status.get("id", 0))))
     if latest.get("state") != "success":
         raise StatusValidationError("latest canonical Gitea status is not successful")
-    status_creator = latest.get("creator")
-    if not isinstance(status_creator, dict) or status_creator.get("login") != creator:
-        raise StatusValidationError("canonical Gitea status was not created by the repository owner")
     target_url = latest.get("target_url")
     if not isinstance(target_url, str) or not CANONICAL_TARGET_URL.fullmatch(target_url):
         raise StatusValidationError("canonical Gitea status target URL is not an anchored canonical run URL")

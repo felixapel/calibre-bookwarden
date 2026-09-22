@@ -47,15 +47,8 @@ def _reject_legacy_direct_write(settings: Settings) -> None:
 
 
 def _read_book_cover_bytes(library_root: Path, stored_book_path: object) -> bytes | None:
-    """Read one stored cover through a rooted descriptor without reopening its path.
-
-    The existing Windows fallback cannot anchor all parent directories against
-    junction swaps, so this UI fails closed there until a handle-anchored reader
-    is available.
-    """
+    """Read one stored cover through a rooted descriptor without reopening its path."""
     if not isinstance(stored_book_path, str) or not stored_book_path:
-        return None
-    if os.name == "nt":
         return None
     try:
         return read_file_beneath(
@@ -63,7 +56,7 @@ def _read_book_cover_bytes(library_root: Path, stored_book_path: object) -> byte
             library_root / Path(stored_book_path) / "cover.jpg",
             max_bytes=25 * 1024 * 1024,
         )
-    except SecurePathError:
+    except (SecurePathError, OSError):
         return None
 
 

@@ -259,6 +259,8 @@ class MobiPalmDocParser:
 
         self.num_records = struct.unpack(">H", header[76:78])[0]
         record_list_data = self.stream.read(self.num_records * 8)
+        if len(record_list_data) < self.num_records * 8:
+            raise ValueError("Truncated PalmDB record list header")
         self.record_offsets = []
         for i in range(self.num_records):
             rec_offset = struct.unpack(">I", record_list_data[i * 8 : i * 8 + 4])[0]
@@ -270,6 +272,8 @@ class MobiPalmDocParser:
 
         rec0_start = self.record_offsets[0]
         rec0_len = self.record_offsets[1] - rec0_start
+        if rec0_len <= 0 or rec0_start < 0:
+            return None, {}
         self.stream.seek(rec0_start)
         rec0_data = self.stream.read(min(rec0_len, 1024 * 1024))
 
@@ -332,6 +336,8 @@ class MobiPalmDocParser:
                     if target_record_idx + 1 < self.num_records
                     else file_size
                 )
+                if next_offset <= img_offset or img_offset < 0:
+                    return None, exth_metadata
                 img_len = min(next_offset - img_offset, 15 * 1024 * 1024)
                 self.stream.seek(img_offset)
                 raw_img = self.stream.read(img_len)
@@ -719,8 +725,10 @@ class ContainerArchaeologyPipeline:
 
                     # Fallback to rasterization if native XObject missing or complex composite
                     if cover is None:
-                        zoom = 2.0
-                        pix = page0.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                        rect = page0.rect
+                        max_page_dim = max(float(rect.width), float(rect.height), 1.0)
+                        scale = min(2.0, 2048.0 / max_page_dim)
+                        pix = page0.get_pixmap(matrix=fitz.Matrix(scale, scale))
                         cover = ExtractedCover(
                             data=pix.tobytes("jpeg"),
                             mime_type="image/jpeg",

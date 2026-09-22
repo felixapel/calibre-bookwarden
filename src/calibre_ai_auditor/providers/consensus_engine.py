@@ -193,17 +193,19 @@ class SemanticTripwire:
             FuzzyMatcher.token_set_ratio(local_title, candidate_title),
         )
 
+        is_unknown_author = not local_author or local_author.lower() in ("unknown", "desconocido", "none", "")
         author_sim = 0.0
-        if candidate_authors and local_author and local_author.lower() != "unknown":
+        if candidate_authors and not is_unknown_author:
             author_sim = max(
                 max(FuzzyMatcher.ratio(local_author, ca), FuzzyMatcher.token_set_ratio(local_author, ca))
                 for ca in candidate_authors
             )
-        elif not local_author or local_author.lower() == "unknown":
-            author_sim = 0.50
 
         # TRIPWIRE FIRED: Poisoned ISBN detected (e.g. Atomic Habits ISBN on a different book)
-        if title_sim < 0.40 and author_sim < 0.35:
+        # If author is known, require both low title and author similarity.
+        # If author is unknown, low title similarity (< 0.40) is sufficient to fire the tripwire.
+        tripwire_fired = (title_sim < 0.40 and author_sim < 0.35) if not is_unknown_author else (title_sim < 0.40)
+        if tripwire_fired:
             reason = (
                 f"Poisoned ISBN detected: Local '{local_title}' by '{local_author}' "
                 f"conflicts with candidate '{candidate_title}' by '{', '.join(candidate_authors)}' "

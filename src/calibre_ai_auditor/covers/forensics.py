@@ -247,10 +247,10 @@ class CoverForensicsEngine:
         best_lag = min_lag + max_idx
         acf_prominence = float(acf_search[max_idx])
 
-        power_spec = np.abs(fft_res[: n // 2]) ** 2
-        total_power = np.sum(power_spec) + 1e-9
+        power_spec = np.abs(fft_res[:n]) ** 2
+        total_power = float(np.sum(power_spec)) + 1e-9
 
-        freq_bin = int(round(n / best_lag))
+        freq_bin = int(round(2 * n / best_lag))
         harmonic_power = 0.0
         for mult in (1, 2, 3):
             bin_idx = freq_bin * mult
@@ -258,8 +258,9 @@ class CoverForensicsEngine:
                 window = power_spec[max(0, bin_idx - 1) : min(len(power_spec), bin_idx + 2)]
                 harmonic_power += float(np.sum(window))
 
-        her_score = (harmonic_power / (total_power - harmonic_power + 1e-9)) * 10.0
-        return float(her_score), float(acf_prominence), float(best_lag)
+        denominator = max(1e-9, total_power - harmonic_power)
+        her_score = (harmonic_power / denominator) * 10.0
+        return max(0.0, float(her_score)), float(acf_prominence), float(best_lag)
 
     def _detect_marginal_folio(self, gray: Image.Image, ocr_text: str | None) -> bool:
         w, h = gray.size

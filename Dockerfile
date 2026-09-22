@@ -76,8 +76,13 @@ RUN --mount=type=cache,target=/go/pkg/mod go version \
 FROM alpine@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40 AS caddy-edge
 ARG BOOKAUDIT_BUILD_REVISION=unknown
 LABEL org.opencontainers.image.revision="$BOOKAUDIT_BUILD_REVISION"
-RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates mailcap
+RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates mailcap \
+    && addgroup -g 10001 -S caddy \
+    && adduser -u 10001 -D -S -G caddy caddy \
+    && mkdir -p /config/caddy /data/caddy \
+    && chown -R caddy:caddy /config/caddy /data/caddy
 COPY --from=caddy-edge-builder /usr/local/bin/caddy /usr/bin/caddy
+USER 10001:10001
 ENTRYPOINT ["caddy"]
 CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
 
