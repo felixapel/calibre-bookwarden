@@ -13,6 +13,39 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.3.2] - 2026-09-23
+
+### Changed
+
+- Rebuilt the public README around the supported Certificate A workflow, with
+  reproducible screenshots of the actual UI using synthetic data, and added a
+  security reporting policy and an accurate homelab guide.
+- Restricted default production navigation to Overview, Verify, and Review;
+  experimental screens now require a development-only build flag.
+- Retired the unsupported one-click Unraid template from the companion template
+  repository. This release still requires the Certificate A Compose/runbook
+  deployment and does not by itself migrate a running homelab.
+
+### Fixed
+
+- Kept legacy cover reads fail-closed on Windows without reporting every cover
+  as missing.
+- Tightened the GitHub publication gate so the latest canonical status for the
+  exact source revision must be owner-attested and successful.
+- Corrected generational author suffix handling and cross-platform read-only
+  SQLite URI formatting.
+
+### Security and evidence
+
+- The optional Prometheus 3.13.3 LTS image retains the narrowly documented
+  gRPC exception through 2026-10-16; see ADR-011. The exception does not imply
+  that the Bookwarden runtime or any live homelab deployment is vulnerability-free.
+- Use the exact-revision Gitea and GitHub workflow results and the immutable
+  `release-images.json` asset from this tag to evaluate publication. A tag or
+  source commit alone is not a passed release or a deployed Certificate A stack.
+
+---
+
 ## [1.3.1] - 2026-09-16
 
 ### Changed
@@ -46,7 +79,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 The 1.3.0 entry below preserves the prior project narrative. Its direct
 mutation, autonomous-maintenance, deployment-template, performance, test-count,
-and readiness assertions are historical and unsupported as current v1.3.1
+and readiness assertions are historical and unsupported as current releases'
 claims. Current supported behavior is defined by README, ADR-003, ADR-005,
 ADR-010, and ADR-011.
 

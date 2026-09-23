@@ -1,113 +1,110 @@
 # Calibre Bookwarden
 
-A local Calibre metadata auditor that compares records with ebook contents, records evidence and explains uncertainty.
+![Bookwarden banner showing a protected book and an evidence trail](docs/assets/readme-banner.svg)
 
-## v1.3.1 release state
+**Find uncertain Calibre metadata before you change it.** Bookwarden inspects the
+formats attached to a book, compares evidence from the files and exact-ISBN
+sources, and records why a proposed identity is strong, weak, or unresolved.
+It is self-hosted and designed to keep the operator in control.
 
-v1.3.1 records a remediation retrospective and the documented validation
-baseline for `b02eac4c85f4c487609d11ee979c19e856a4d157`: canonical Gitea run
-104 (ID `5678`). That evidence belongs only to that revision; it does not prove
-a later release commit, image digest, tag, deployment, or whole-library restore.
-Gitea is the canonical development and validation forge. GitHub is the public
-mirror and does not mirror automatically.
+[GitHub mirror CI](https://github.com/felixapel/calibre-bookwarden/actions/workflows/ci.yml) ·
+[Latest release](https://github.com/felixapel/calibre-bookwarden/releases/latest) ·
+[Documentation](#documentation) ·
+[Contributing](CONTRIBUTING.md) ·
+[GPL-3.0-or-later](LICENSE)
 
-## Current safety boundary
+> [!IMPORTANT]
+> The supported production profile is **Certificate A**: verification and
+> evidence review against a **stopped Calibre library**, mounted read-only
+> into a separate verifier. It does not apply metadata or cover changes.
+> Publishing an image does not mean a homelab installation has passed the
+> [deployment gates](docs/production-readiness.md).
 
-The supported production profile is **Certificate A: stopped-library, read-only verification**. The development application has a larger historical surface; it is not a substitute for the production entrypoint. Gitea is the canonical development and validation pipeline.
+## See the interface
 
-Local remediation is tracked in [the plan](docs/REMEDIATION_PLAN.md) and [validation results](docs/REMEDIATION_RESULTS.md). Verify publication using the matching release tag, `release-images.json` asset and exact-revision pipeline results; historical test counts do not certify another revision. No zero-risk, perfect-accuracy or production-readiness claim is made.
+These are captures of the actual Certificate A web UI with **synthetic example
+data**, not results from a private library or a production deployment.
 
-## Available inspection
+| Overview | Bounded verification |
+| :--- | :--- |
+| [![Certificate A overview showing read-only status and the safe run sequence](docs/assets/certificate-a-overview.png)](docs/assets/certificate-a-overview.png) | [![Certificate A verification view showing stopped-library confirmation and an example sealed run](docs/assets/certificate-a-verify.png)](docs/assets/certificate-a-verify.png) |
 
-- Manifestation V2 inspects attached formats, resolves identity from evidence and seals its findings.
-- Direct SQLite auditing reports integrity issues, missing files, suspicious titles, author-sort differences and cover diagnostics. It cannot write to the library.
-- Cover scores and optional vision output are review evidence, not authority to replace images.
-- Duplicate analysis distinguishes verified byte matches from possible editions; matching titles or complementary formats do not authorize merging.
-- The production SPA exposes verification and sealed evidence review. The development Cover Deck is read-only and does not apply covers.
+The screenshots can be regenerated from the static UI with
+`webui/scripts/capture-readme-screenshots.mjs`; its API data is deliberately
+synthetic.
 
-The legacy commands `optimize-covers`, `sync-library`, `curate-periodicals` and `full-audit-run` are retired and reject before mutation. The direct mutation endpoints, experimental ledger, JSON writer lock and prototype cache/reconnect actions are also disabled. Setting `read_only=false` does not re-enable them.
+## What it does
 
-## Local inspection
+- **Inspect formats and identity evidence.** Manifestation V2 hashes attached
+  formats, checks readable content, and separates exact-ISBN evidence from
+  weaker hints. OCR and provider results can inform a review but cannot
+  authorize a correction by themselves.
+- **Explain uncertainty.** Sealed evidence records source details, conflicting
+  claims, identity tiers, and proposed shadow differences for human review.
+- **Audit a stopped library locally.** The CLI reports SQLite integrity,
+  missing files, title and author-sort anomalies, duplicate candidates, and
+  cover diagnostics without changing the library.
+- **Keep production writes outside the boundary.** Certificate A has no Calibre
+  writer, file upload, auto-apply, or remote text/image disclosure. Experimental
+  and historical code in this repository is not a production entrypoint.
 
-From an already checked-out, trusted repository with its locked environment:
+## Try a local read-only audit
+
+Use a trusted checkout and a **stopped library or disposable restored copy**.
+Do not point the development CLI at a live Calibre or Calibre-Web library.
 
 ```sh
+uv sync --frozen
 uv run bookwarden audit-360 --library "/path/to/stopped-or-restored-library"
 ```
 
-Audit output can contain titles, paths and other private metadata; keep it local. A successful SQLite integrity check is not proof of correct metadata, complete ebook contents or a recoverable whole-library backup.
+The output may contain private titles and paths; keep it local. Full file and
+cover inspection needs the supported Linux secure-file path. Windows currently
+supports metadata-only inspection and fails closed for legacy file/cover reads.
+See [installation](INSTALL.md), the [CLI reference](CLI_REFERENCE.md), and the
+[disposable Calibre lab](docs/runbooks/disposable-calibre-lab.md).
 
-For isolated mechanism checks, use the [disposable Calibre lab](docs/runbooks/disposable-calibre-lab.md). Production setup and supported entrypoints are described in the [operations runbook](docs/runbooks/production-operations.md); do not deploy an unreviewed development web command in their place.
+## Deploy Certificate A
 
-## Supervised corrections
+The supported Linux/Docker Compose deployment runs a separate verifier,
+PostgreSQL, Valkey, and a minimal web/API image. Only the verifier mounts the
+stopped library, read-only. Images must be selected by the **immutable digest**
+from the matching release's `release-images.json`, then validated against the
+same source revision and environment.
 
-The existing Manifestation V2 coordinator and sole writer retain exact manual authorization, sealed artifacts, serialization, before/after verification and recovery checks. Certificate A does not enable that writer. A supported write pilot requires its dedicated real-service gates, exclusion of external writers, a tested whole-library restore and explicit operator authorization.
+Follow [installation](INSTALL.md) and the
+[production operations runbook](docs/runbooks/production-operations.md). There
+is currently **no validated one-click Unraid or TrueNAS template** for this
+profile. Do not use a single-container legacy template as Certificate A.
 
-The experimental candidate scorer cannot promote itself to Tier A or auto-apply. The authoritative resolver remains `verification/identity_v2.py`. An ISBN match, OCR result or attractive cover alone is insufficient.
+## Release and security status
 
-Database snapshots use SQLite's consistent backup mechanism and are **database-only**. They do not back up ebook formats, covers or OPFs, and never authorize a mutation. No fallback copies only a live main database while ignoring its WAL.
+Gitea is the canonical development and integration forge; GitHub is the public
+mirror and image publisher. The [v1.3.2 release record](docs/releases/v1.3.2.md)
+defines its exact-revision evidence and residual risks. A green CI badge or an
+older run does not certify a later commit, an image, or a homelab deployment.
 
-SQLite paths are opened with an escaped URI and `mode=ro`. UNC shares require a SQLite build supporting `SQLITE_ALLOW_URI_AUTHORITY`; unsupported builds fail closed without a writable fallback. No live UNC share was verified. See the [SQLite URI documentation](https://www.sqlite.org/uri.html).
+The optional Prometheus 3.13.3 LTS monitoring image retains two known HIGH
+gRPC findings under a **time-bounded, image-specific exception**. Its review
+deadline is 2026-10-16; see [ADR-011](docs/decisions/ADR-011-prometheus-lts-publication-exception.md).
+No zero-risk or perfect-accuracy claim is made.
 
-On Windows, the legacy DirectEngine file/cover inspection and CoverDeck image reads are unavailable (`UNSUPPORTED_SECURE_FILE_READ` / unavailable image). They fail closed because the current secure-file implementation cannot guarantee descriptor-anchored containment there. SQLite metadata-only inspection remains read-only. Run file/cover inspection in the supported Linux environment; this remediation does not claim Windows feature parity.
-
-## Performance and validation
-
-Performance depends on corpus, storage, formats, OCR and providers. Earlier unverified throughput/RAM figures are not release guarantees. The metadata-only benchmark excludes scan I/O, OCR, network and persistence; report its scope with any result.
-
-Follow [AGENTS.md](AGENTS.md) and [TESTING.md](TESTING.md). Linux, real Calibre/OCR, PostgreSQL/Valkey, browser and image gates remain distinct. Mocked browser tests and dependency audits cannot substitute for them.
-
-| Gate | Run 104 result for `b02eac4` |
-| --- | --- |
-| Backend | 702 passed, 7 service-dependent skipped, 46 deselected |
-| Real services | 27 passed, no required skips; apply/readback/undo checked EPUB SHA-256 equality in 8.39 s |
-| WebUI | 17 passed |
-| Benchmarks | 30 passed; 718 intentional non-benchmark skips and 10 deselected |
-| Image and Compose | image builds, runtime boundaries, Compose persistence, monitoring, and Caddy checks passed |
-| Scanner policy | app, writer, and Caddy scans reported zero HIGH/CRITICAL under the configured policy; Prometheus failed the run with two gRPC HIGH findings; the later publication decision accepts a documented, time-bounded exception |
-
-The Prometheus exception is not a clean-scan claim and does not remove the
-remaining whole-library restore, calibrated corpus, external-writer exclusion,
-or separately authorized deployment requirements. See
-[ADR-011](docs/decisions/ADR-011-prometheus-lts-publication-exception.md).
-
-## 💖 Supporting & Sponsoring
-
-Calibre Bookwarden is an independent open-source project dedicated to digital preservation, content-grounded media verification, and homelab sovereignty.
-
-If this project helps you inspect your library and review evidence, please consider supporting continued development:
-
-<p align="center">
-  <a href="https://github.com/sponsors/felixapel">
-    <img src="https://img.shields.io/badge/Sponsor%20on-GitHub%20Sponsors-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors">
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://ko-fi.com/felixapel">
-    <img src="https://img.shields.io/badge/Support%20on-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Support on Ko-fi">
-  </a>
-</p>
-
-### Where does funding go?
-- 🖥️ **Homelab Test Hardware**: Maintaining real unRAID, TrueNAS, and multi-GPU testing rigs for local OCR and vision models.
-- 🔬 **Ebook Forensics Research**: Adding deep container parsers for obscure formats (MOBI PalmDOC, DjVu, CBZ comic metadata).
-- ☕ **Open Source Sustainability**: Keeping the project 100% telemetry-free, ad-free, and GPLv3 licensed.
-
----
+Please report security issues privately through the repository's
+[security policy](SECURITY.md). Do not attach real library databases, book
+files, credentials, or unredacted audit output to public issues.
 
 ## Documentation
 
-- [CLI reference](CLI_REFERENCE.md)
-- [Usage](USAGE.md)
-- [Architecture](ARCHITECTURE.md)
-- [Production operations](docs/runbooks/production-operations.md)
-- [Disposable Calibre lab](docs/runbooks/disposable-calibre-lab.md)
-- [Remediation plan](docs/REMEDIATION_PLAN.md)
-- [Validation results](docs/REMEDIATION_RESULTS.md)
-- [v1.3.1 release notes](docs/releases/v1.3.1.md)
-- [Architecture decisions](docs/decisions/)
+- [Installation and prerequisites](INSTALL.md)
+- [Usage](USAGE.md) and [CLI reference](CLI_REFERENCE.md)
+- [Architecture](ARCHITECTURE.md) and [decisions](docs/decisions/)
+- [Production operations](docs/runbooks/production-operations.md) and
+  [readiness gates](docs/production-readiness.md)
+- [Testing](TESTING.md) and [contributing](CONTRIBUTING.md)
 - [Roadmap](ROADMAP.md)
-- [Contributing](CONTRIBUTING.md)
 
-## License
+## Support and license
 
-GNU General Public License v3.0 or later. See [LICENSE](LICENSE).
+Development is supported through [GitHub Sponsors](https://github.com/sponsors/felixapel)
+and [Ko-fi](https://ko-fi.com/felixapel). Bookwarden is licensed under
+[GPL-3.0-or-later](LICENSE).

@@ -1,5 +1,4 @@
 import hashlib
-import os
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -68,7 +67,10 @@ def test_cover_deck_cursor_skip_is_stable_and_read_only(tmp_path: Path):
     lib_dir = _setup_deck_test_library(tmp_path)
     settings = _settings(lib_dir)
 
-    with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=settings):
+    with (
+        patch("calibre_ai_auditor.web.api.covers_api._legacy_cover_reads_supported", return_value=True),
+        patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=settings),
+    ):
         client = TestClient(app)
         first = client.get("/api/covers/ui/deck?after_book_id=0")
         refresh = client.get("/api/covers/ui/deck?after_book_id=0")
@@ -134,7 +136,10 @@ def test_cover_deck_rejects_malformed_cursor_and_unsafe_stored_path(tmp_path: Pa
     conn.close()
     settings = _settings(lib_dir)
 
-    with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=settings):
+    with (
+        patch("calibre_ai_auditor.web.api.covers_api._legacy_cover_reads_supported", return_value=True),
+        patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=settings),
+    ):
         client = TestClient(app)
         assert client.get("/api/covers/ui/deck?after_book_id=-1").status_code == 422
         assert client.get("/api/covers/ui/deck?after_book_id=not-an-integer").status_code == 422
@@ -150,7 +155,7 @@ def test_cover_deck_rejects_malformed_cursor_and_unsafe_stored_path(tmp_path: Pa
 def test_cover_deck_rejects_a_mocked_path_swap_before_inspection(tmp_path: Path):
     lib_dir = _setup_deck_test_library(tmp_path)
     with (
-        patch("calibre_ai_auditor.web.api.covers_api.os.name", "posix"),
+        patch("calibre_ai_auditor.web.api.covers_api._legacy_cover_reads_supported", return_value=True),
         patch(
             "calibre_ai_auditor.web.api.covers_api.read_file_beneath",
             side_effect=SecurePathError("unsafe or symlinked parent during path swap"),
@@ -161,22 +166,22 @@ def test_cover_deck_rejects_a_mocked_path_swap_before_inspection(tmp_path: Path)
     secure_read.assert_called_once()
 
 
-def test_cover_deck_windows_read_is_explicitly_unavailable(tmp_path: Path):
+def test_cover_deck_windows_is_explicitly_unavailable_without_scanning_books(tmp_path: Path):
     lib_dir = _setup_deck_test_library(tmp_path)
     settings = _settings(lib_dir)
-    cover_bytes = (lib_dir / "Author/Tiny One (1)/cover.jpg").read_bytes()
 
     with (
+        patch("calibre_ai_auditor.web.api.covers_api._legacy_cover_reads_supported", return_value=False),
         patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=settings),
-        patch("calibre_ai_auditor.web.api.covers_api._read_book_cover_bytes", return_value=cover_bytes),
+        patch("calibre_ai_auditor.web.api.covers_api.DirectCalibreEngine.stream_books") as stream_books,
     ):
-        rendered = TestClient(app).get("/api/covers/ui/deck?after_book_id=0")
-    assert rendered.status_code == 200
-    assert "/api/covers/book/1/image" in rendered.text
+        api_response = TestClient(app).get("/api/covers/deck?after_book_id=0")
+        ui_response = TestClient(app).get("/api/covers/ui/deck?after_book_id=0")
 
-    if os.name == "nt":
-        with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=settings):
-            assert TestClient(app).get("/api/covers/book/1/image").status_code == 404
+    assert api_response.status_code == 503
+    assert ui_response.status_code == 503
+    assert "unavailable on Windows" in api_response.json()["detail"]
+    stream_books.assert_not_called()
 
 
 def test_cover_deck_malformed_cover_redacts_private_inspection_paths(tmp_path: Path):
@@ -202,6 +207,7 @@ def test_cover_deck_malformed_cover_redacts_private_inspection_paths(tmp_path: P
     settings = _settings(lib_dir)
 
     with (
+        patch("calibre_ai_auditor.web.api.covers_api._legacy_cover_reads_supported", return_value=True),
         patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=settings),
         patch("calibre_ai_auditor.web.api.covers_api._read_book_cover_bytes", return_value=malformed_bytes),
     ):

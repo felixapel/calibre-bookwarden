@@ -12,8 +12,8 @@
 Calibre Bookwarden has a canonical development forge and a public mirror; it
 does not maintain an automatic dual-forge synchronization:
 
-1. **Gitea (Internal Primary & Hermetic CI)**:
-   - URL: `http://192.168.0.122:3010/felix/calibre-bookwarden`
+1. **Gitea (maintainer-hosted primary & hermetic CI)**:
+   - The canonical forge is private to the maintainer's homelab.
    - Hosts full-stack hermetic CI runners (PostgreSQL, Valkey, Tesseract, Calibre lab).
    - Core release gates and vulnerability scans run here.
 

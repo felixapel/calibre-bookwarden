@@ -33,9 +33,21 @@ NOBLE_PARTICLES = {
     "mc",
 }
 MULTIWORD_NOBLE_PARTICLES = {"de la", "de las", "de los", "van der"}
-GENERATIONAL_SUFFIXES = frozenset({
-    "jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v", "ph.d.", "phd", "md",
-})
+GENERATIONAL_SUFFIXES = frozenset(
+    {
+        "jr",
+        "jr.",
+        "sr",
+        "sr.",
+        "ii",
+        "iii",
+        "iv",
+        "v",
+        "ph.d.",
+        "phd",
+        "md",
+    }
+)
 
 # Known corporate/periodical entities
 CORPORATE_ENTITIES: dict[str, str] = {
@@ -70,8 +82,16 @@ def normalize_author_display(name: str) -> str:
         return ""
     n = name.strip()
 
-    # If in inverted form 'Last, First', convert to 'First Last' (except corporate/saints)
+    # Preserve a direct generational suffix and normalize an inverted one before
+    # the ordinary 'Last, First' conversion.
     if "," in n:
+        comma_parts = [part.strip() for part in n.split(",") if part.strip()]
+        if len(comma_parts) == 2 and comma_parts[1].casefold() in GENERATIONAL_SUFFIXES:
+            return f"{comma_parts[0]}, {comma_parts[1]}"
+        if len(comma_parts) == 3 and comma_parts[2].casefold() in GENERATIONAL_SUFFIXES:
+            return f"{comma_parts[1]} {comma_parts[0]}, {comma_parts[2]}"
+
+        # If in inverted form 'Last, First', convert to 'First Last' (except corporate/saints)
         parts = [p.strip() for p in n.split(",", 1)]
         if len(parts) == 2:
             last, first = parts[0], parts[1]

@@ -12,6 +12,7 @@ perform unattended bulk writes. See
 
 | Version | Outcome | Status |
 |---|---|---|
+| `v1.3.2` | honest production UI and public docs, with tighter release attestation | Source prepared; require matching pipeline and image evidence before deployment |
 | `v1.3.1` | Remediation retrospective and bounded release evidence | Implementation complete; publication evidence is the matching release manifest and exact-revision workflows |
 | `Certificate A` | stopped-library, read-only verification and sealed-evidence review | Supported boundary; deployment remains separately authorized |
 | `Manifestation V2 writer` | exact human-authorized correction with durable evidence and rollback contracts | Implemented research boundary; pilot requires distinct authorization |
@@ -78,9 +79,9 @@ corpus establishes product value and accuracy.
 
 ---
 
-## v1.3.1 — remediation and release evidence
+## v1.3.1 — historical remediation and release evidence
 
-The current priority is [remediation](docs/REMEDIATION_PLAN.md): verified
+The v1.3.1 priority was [remediation](docs/REMEDIATION_PLAN.md): verified
 read-only diagnostics, one supervised writer boundary, bounded analysis and
 honest UI state. Run 104 (ID `5678`) passed the documented Gitea gates for
 `b02eac4c85f4c487609d11ee979c19e856a4d157`; it does not establish a future

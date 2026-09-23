@@ -1,6 +1,6 @@
 # Testing Guide
 
-`calibre-bookwarden` (v1.3.1) includes unit, integration, E2E, and benchmark suites.
+`calibre-bookwarden` (v1.3.2) includes unit, integration, E2E, and benchmark suites.
 Counts and timings are observations for a specific revision, not release
 contracts. The current documented baseline is canonical Gitea run 104 (ID
 `5678`) for `b02eac4c85f4c487609d11ee979c19e856a4d157`; it does not prove a

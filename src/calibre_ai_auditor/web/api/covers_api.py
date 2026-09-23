@@ -46,9 +46,21 @@ def _reject_legacy_direct_write(settings: Settings) -> None:
     )
 
 
+def _legacy_cover_reads_supported() -> bool:
+    """Whether the legacy UI can safely anchor a stored cover read on this platform."""
+    return os.name != "nt"
+
+
 def _read_book_cover_bytes(library_root: Path, stored_book_path: object) -> bytes | None:
-    """Read one stored cover through a rooted descriptor without reopening its path."""
+    """Read one stored cover through a rooted descriptor without reopening its path.
+
+    The legacy UI cannot anchor every Windows parent directory against a junction
+    swap, so it must not read stored covers there. Certificate A does not use
+    this legacy endpoint.
+    """
     if not isinstance(stored_book_path, str) or not stored_book_path:
+        return None
+    if not _legacy_cover_reads_supported():
         return None
     try:
         return read_file_beneath(
@@ -204,6 +216,11 @@ async def get_cover_review_deck(
             "status": "success",
             "data": {"deck": [], "message": "No Calibre library configured", "after_book_id": after_book_id},
         }
+    if not _legacy_cover_reads_supported():
+        raise HTTPException(
+            status_code=503,
+            detail="Legacy cover review is unavailable on Windows because safe rooted cover reads are unsupported.",
+        )
 
     engine = DirectCalibreEngine(lib_path)
     deck: list[dict[str, Any]] = []

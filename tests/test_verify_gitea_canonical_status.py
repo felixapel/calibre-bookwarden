@@ -35,7 +35,7 @@ def _status(**status_overrides: Any) -> dict[str, Any]:
 
 
 def _combined() -> dict[str, Any]:
-    return {"sha": SHA, "statuses": [{"context": "bookwarden/gitea-canonical", "state": "success"}]}
+    return {"sha": SHA, "state": "success", "statuses": [{"context": "bookwarden/gitea-canonical", "state": "success"}]}
 
 
 def test_accepts_actual_combined_summary_without_creator_and_full_status_record(
@@ -87,6 +87,48 @@ def test_rejects_status_created_by_anyone_except_the_repository_owner() -> None:
 def test_rejects_a_combined_summary_for_a_different_sha() -> None:
     with pytest.raises(status_gate.StatusValidationError, match="SHA"):
         status_gate.validate_combined_status({"sha": "b" * 40}, sha=SHA)
+
+
+def test_rejects_a_failed_combined_summary_for_the_exact_sha() -> None:
+    with pytest.raises(status_gate.StatusValidationError, match="not successful"):
+        status_gate.validate_combined_status({"sha": SHA, "state": "failure"}, sha=SHA)
+
+
+def test_rejects_newer_foreign_failure_for_the_canonical_context() -> None:
+    owner_success = _status(id=104, updated_at="2026-09-16T12:00:00Z")
+    foreign_failure = _status(
+        id=105,
+        updated_at="2026-09-16T12:01:00Z",
+        state="failure",
+        creator={"login": "other"},
+    )
+
+    with pytest.raises(status_gate.StatusValidationError, match="repository owner"):
+        status_gate.validate_statuses([owner_success, foreign_failure], creator="felixapel")
+
+
+def test_rejects_newer_foreign_success_for_the_canonical_context() -> None:
+    owner_success = _status(id=104, updated_at="2026-09-16T12:00:00Z")
+    foreign_success = _status(
+        id=105,
+        updated_at="2026-09-16T12:01:00Z",
+        creator={"login": "other"},
+    )
+
+    with pytest.raises(status_gate.StatusValidationError, match="repository owner"):
+        status_gate.validate_statuses([owner_success, foreign_success], creator="felixapel")
+
+
+def test_accepts_owner_success_after_an_older_foreign_failure() -> None:
+    foreign_failure = _status(
+        id=104,
+        updated_at="2026-09-16T12:00:00Z",
+        state="failure",
+        creator={"login": "other"},
+    )
+    owner_success = _status(id=105, updated_at="2026-09-16T12:01:00Z")
+
+    assert status_gate.validate_statuses([foreign_failure, owner_success], creator="felixapel") == owner_success
 
 
 def test_rejects_a_non_list_full_status_response(monkeypatch: pytest.MonkeyPatch) -> None:

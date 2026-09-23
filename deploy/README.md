@@ -12,7 +12,7 @@ The historical Unraid XML and TrueNAS YAML templates are preserved under
 `archive/` with `.disabled` extensions for provenance only. They configure
 SQLite/in-memory state, mutable image tags, and writable library defaults;
 they do not satisfy the Certificate A contract. Do not import, rename or launch
-them as v1.3.1 installers. No supported one-click Unraid/TrueNAS adapter is
+them as v1.3.2 installers. No supported one-click Unraid/TrueNAS adapter is
 included in this release. A future adapter needs its own integration validation.
 
 The images published with a release do not by themselves authorize a live

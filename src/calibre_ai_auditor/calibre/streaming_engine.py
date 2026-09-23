@@ -49,10 +49,7 @@ class KeysetStreamingEngine:
         # Do not change journaling mode: that PRAGMA mutates database state.
         posix_path = self.db_path.resolve().as_posix()
         quoted_path = quote(posix_path, safe="/:")
-        if quoted_path.startswith("/"):
-            uri = f"file://{quoted_path}?mode=ro"
-        else:
-            uri = f"file:///{quoted_path}?mode=ro"
+        uri = f"file://{quoted_path}?mode=ro" if quoted_path.startswith("/") else f"file:///{quoted_path}?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=30.0)
         conn.execute("PRAGMA busy_timeout = 30000;")
         conn.execute("PRAGMA query_only = ON;")

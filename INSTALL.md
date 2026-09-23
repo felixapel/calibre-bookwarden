@@ -1,7 +1,10 @@
 # Installation
 
 > [!NOTE]
-> **Homelab & Standalone Users:** For homelab setups (UnRAID, TrueNAS, or Docker Compose sidecar with Calibre-Web), see [docs/HOMELAB.md](docs/HOMELAB.md). For immediate local CLI auditing via `uvx` without Docker, see the [Quickstart in README.md](README.md#option-a-run-via-uvx-no-installation-required).
+> **Homelab users:** Use the supported Certificate A Compose profile and the
+> [homelab guide](docs/HOMELAB.md). There is no validated single-container
+> Unraid or TrueNAS installer. For a local read-only CLI audit, start with the
+> [README quickstart](README.md#try-a-local-read-only-audit).
 
 ## Production (Certificate A)
 

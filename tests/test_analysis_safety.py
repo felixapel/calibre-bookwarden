@@ -160,6 +160,21 @@ def test_author_authority_preserves_anonymous_and_does_not_split_spanish_y() -> 
 
 
 @pytest.mark.parametrize(
+    ("raw_author", "display_name", "author_sort"),
+    [
+        ("Martin, George R. R., Jr.", "George R. R. Martin, Jr.", "Martin, George R. R., Jr."),
+        ("George R. R. Martin, Jr.", "George R. R. Martin, Jr.", "Martin, George R. R., Jr."),
+    ],
+)
+def test_entity_cleanser_normalizes_generational_suffixes(raw_author: str, display_name: str, author_sort: str) -> None:
+    identity = EntityCleanser.resolve_author(raw_author)
+
+    assert identity.is_valid is True
+    assert identity.name == display_name
+    assert identity.author_sort == author_sort
+
+
+@pytest.mark.parametrize(
     ("name", "expected"),
     [
         ("Ludwig van der Waals", "van der Waals, Ludwig"),

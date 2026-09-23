@@ -22,6 +22,16 @@ test('dashboard has no serious accessibility violations or horizontal overflow',
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
 })
 
+test('mobile navigation exposes only supported Certificate A routes', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-chromium', 'mobile navigation is hidden on desktop')
+  await page.goto('/')
+  const navigation = page.getByRole('navigation', { name: 'Mobile navigation' })
+  await expect(navigation.getByRole('link')).toHaveText(['Overview', 'Verify', 'Review'])
+  for (const label of ['360° Audit', 'Covers', 'Curation']) {
+    await expect(navigation.getByRole('link', { name: label, exact: true })).toHaveCount(0)
+  }
+})
+
 test('dashboard stays within browser performance budgets', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()

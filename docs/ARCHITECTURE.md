@@ -4,7 +4,7 @@
 > boundary is Certificate A stopped-library, read-only verification. The
 > companion, direct-correction, active-library, Calibre-Web integration,
 > performance, and deployment claims below are historical design material, not
-> v1.3.1 support guarantees. Direct inspection remains read-only; legacy
+> v1.3.2 support guarantees. Direct inspection remains read-only; legacy
 > mutation paths are retired. See [ADR-003](decisions/ADR-003-supervised-local-auditor-scope.md),
 > [ADR-005](decisions/ADR-005-certificate-a-production-boundary.md), and
 > [ADR-010](decisions/ADR-010-retire-direct-mutations.md).

@@ -1,25 +1,23 @@
 import { useLocation, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Shield,
-  LayoutDashboard,
-  ScanSearch,
-  Sparkles,
-  Library,
-  FileCheck2,
-  Lock,
-  ExternalLink,
-} from 'lucide-react'
+import { Shield, LayoutDashboard, ScanSearch, FileCheck2, Lock, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
 
 import { fetchHealth } from '../api/client'
 
+const legacyUiEnabled = import.meta.env.VITE_ENABLE_LEGACY_UI === 'true'
+
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Command Center', badge: 'Live' },
-  { to: '/audit-360', icon: ScanSearch, label: '360° Forensic Audit' },
-  { to: '/covers', icon: Sparkles, label: 'Cover Studio & Deck', badge: 'New' },
-  { to: '/curation', icon: Library, label: 'Curation Guardian' },
-  { to: '/verify', icon: FileCheck2, label: 'Sealed Evidence' },
+  { to: '/', icon: LayoutDashboard, label: 'Overview', badge: undefined },
+  { to: '/verify', icon: FileCheck2, label: 'Verify', badge: undefined },
+  { to: '/review', icon: ScanSearch, label: 'Review', badge: undefined },
+]
+
+const legacyNavItems = [
+  { to: '/command-center', icon: LayoutDashboard, label: 'Command Center', badge: 'Live' },
+  { to: '/audit-360', icon: ScanSearch, label: '360° Forensic Audit', badge: undefined },
+  { to: '/covers', icon: FileCheck2, label: 'Cover Studio & Deck', badge: 'New' },
+  { to: '/curation', icon: LayoutDashboard, label: 'Curation Guardian', badge: undefined },
 ]
 
 export function Sidebar() {
@@ -58,7 +56,7 @@ export function Sidebar() {
       {/* Navigation Links */}
       <nav className="flex-1 space-y-1.5" aria-label="Main Navigation">
         <p className="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Modules</p>
-        {navItems.map((item) => {
+        {(legacyUiEnabled ? [...navItems, ...legacyNavItems] : navItems).map((item) => {
           const isActive = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
           const Icon = item.icon
 

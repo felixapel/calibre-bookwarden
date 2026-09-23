@@ -1,14 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { BrowserRouter, Link, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  KeyRound,
-  LayoutDashboard,
-  ScanSearch,
-  Sparkles,
-  Library,
-  FileCheck2,
-} from 'lucide-react'
+import { KeyRound, LayoutDashboard, ScanSearch, FileCheck2 } from 'lucide-react'
 import clsx from 'clsx'
 
 import { getAuthRevision, getUnauthorized, setApiKey, subscribeAuth } from './api/auth'
@@ -21,12 +14,18 @@ import Audit360 from './pages/Audit360'
 import CoverStudio from './pages/CoverStudio'
 import Curation from './pages/Curation'
 
+const legacyUiEnabled = import.meta.env.VITE_ENABLE_LEGACY_UI === 'true'
+
 const mobileNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Overview' },
-  { to: '/audit-360', icon: ScanSearch, label: '360° Audit' },
-  { to: '/covers', icon: Sparkles, label: 'Covers' },
-  { to: '/curation', icon: Library, label: 'Curation' },
   { to: '/verify', icon: FileCheck2, label: 'Verify' },
+  { to: '/review', icon: ScanSearch, label: 'Review' },
+]
+
+const legacyMobileNavItems = [
+  { to: '/audit-360', icon: ScanSearch, label: '360° Audit' },
+  { to: '/covers', icon: FileCheck2, label: 'Covers' },
+  { to: '/curation', icon: LayoutDashboard, label: 'Curation' },
 ]
 
 function MobileNavigation() {
@@ -36,7 +35,7 @@ function MobileNavigation() {
       aria-label="Mobile navigation"
       className="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-800 bg-[#070b13]/95 backdrop-blur-lg p-2 md:hidden"
     >
-      {mobileNavItems.map((item) => {
+      {(legacyUiEnabled ? [...mobileNavItems, ...legacyMobileNavItems] : mobileNavItems).map((item) => {
         const isActive = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
         const Icon = item.icon
         return (
@@ -89,15 +88,15 @@ export default function App() {
         <main className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0">
           <Routes key={authRevision}>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/command-center" element={<CommandCenter />} />
-            <Route path="/audit-360" element={<Audit360 />} />
-            <Route path="/covers" element={<CoverStudio />} />
-            <Route path="/curation" element={<Curation />} />
+            {legacyUiEnabled && <Route path="/command-center" element={<CommandCenter />} />}
+            {legacyUiEnabled && <Route path="/audit-360" element={<Audit360 />} />}
+            {legacyUiEnabled && <Route path="/covers" element={<CoverStudio />} />}
+            {legacyUiEnabled && <Route path="/curation" element={<Curation />} />}
             <Route path="/verify" element={<Verify />} />
             <Route path="/verify/:runId" element={<Verify />} />
             <Route path="/review" element={<Review />} />
             <Route path="/review/:evidenceId" element={<Review />} />
-            <Route path="*" element={<Dashboard />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
         <MobileNavigation />

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -24,24 +25,42 @@ def validate_combined_status(payload: dict[str, Any], *, sha: str) -> None:
     """Bind release evidence to the exact revision reported by GitHub."""
     if payload.get("sha") != sha:
         raise StatusValidationError("combined status SHA does not match the release revision")
+    if payload.get("state") != "success":
+        raise StatusValidationError("combined canonical Gitea status is not successful")
+
+
+def _status_order_key(status: dict[str, Any]) -> tuple[datetime, int]:
+    """Return a comparable GitHub status order key or reject malformed evidence."""
+    updated_at = status.get("updated_at")
+    status_id = status.get("id")
+    if not isinstance(updated_at, str) or not updated_at:
+        raise StatusValidationError("canonical Gitea status has no usable update time")
+    if isinstance(status_id, bool) or not isinstance(status_id, int):
+        raise StatusValidationError("canonical Gitea status has no usable identifier")
+    try:
+        timestamp = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise StatusValidationError("canonical Gitea status has no usable update time") from error
+    if timestamp.tzinfo is None:
+        raise StatusValidationError("canonical Gitea status has no usable update time")
+    return timestamp, status_id
 
 
 def validate_statuses(statuses: list[Any], *, creator: str) -> dict[str, Any]:
-    """Return the latest full status record for the canonical context."""
-    candidates = [
-        status
-        for status in statuses
-        if isinstance(status, dict)
-        and status.get("context") == CONTEXT
-        and isinstance(status.get("creator"), dict)
-        and status["creator"].get("login") == creator
+    """Return the latest canonical status only when it is owner-attested evidence."""
+    canonical_statuses = [
+        status for status in statuses if isinstance(status, dict) and status.get("context") == CONTEXT
     ]
-    if not candidates:
-        raise StatusValidationError(f"missing owner-attested GitHub status context {CONTEXT!r}")
+    if not canonical_statuses:
+        raise StatusValidationError(f"missing required owner-attested GitHub status context {CONTEXT!r}")
 
-    latest = max(candidates, key=lambda status: (str(status.get("updated_at", "")), int(status.get("id", 0))))
+    latest = max(canonical_statuses, key=_status_order_key)
+    status_creator = latest.get("creator")
+    if not isinstance(status_creator, dict) or status_creator.get("login") != creator:
+        raise StatusValidationError("latest canonical Gitea status was not created by the repository owner")
     if latest.get("state") != "success":
         raise StatusValidationError("latest canonical Gitea status is not successful")
+
     target_url = latest.get("target_url")
     if not isinstance(target_url, str) or not CANONICAL_TARGET_URL.fullmatch(target_url):
         raise StatusValidationError("canonical Gitea status target URL is not an anchored canonical run URL")

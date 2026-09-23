@@ -53,8 +53,25 @@ test('shows the stopped-library sequence and latest run', async ({ page }) => {
 
 test('contains no quarantined production navigation', async ({ page }) => {
   await page.goto('/')
-  for (const label of ['Scan', 'Duplicates', 'Inspect', 'Undo', 'Settings']) {
+  for (const label of ['Command Center', '360° Forensic Audit', 'Cover Studio & Deck', 'Curation Guardian']) {
     await expect(page.getByRole('link', { name: label, exact: true })).toHaveCount(0)
+  }
+  await expect(page.getByRole('navigation', { name: 'Main Navigation' }).getByRole('link')).toHaveText([
+    'Overview',
+    'Verify',
+    'Review',
+  ])
+})
+
+test('redirects client-side navigation to unknown and retired routes back to Overview', async ({ page }) => {
+  await page.goto('/')
+  for (const path of ['/command-center', '/audit-360', '/covers', '/curation', '/unknown']) {
+    await page.evaluate((nextPath) => {
+      window.history.pushState({}, '', nextPath)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    }, path)
+    await expect(page).toHaveURL(/\/$/)
+    await expect(page.getByRole('heading', { name: /Audit your Calibre metadata/ })).toBeVisible()
   }
 })
 

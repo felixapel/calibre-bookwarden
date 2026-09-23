@@ -204,6 +204,13 @@ def test_static_files_use_an_allowlist_and_never_derive_disk_paths_from_urls(
         assert "must-not-leak" not in response.text
 
 
+def test_retired_spa_paths_are_not_directly_served_in_production(
+    production_client: TestClient,
+) -> None:
+    for path in ("/command-center", "/audit-360", "/covers", "/curation", "/unknown"):
+        assert production_client.get(path).status_code == 404, path
+
+
 def test_liveness_is_public_but_all_other_api_routes_require_the_app_key(
     production_client: TestClient,
 ) -> None:

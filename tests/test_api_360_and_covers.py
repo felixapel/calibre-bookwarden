@@ -195,7 +195,10 @@ def test_covers_deck_api(tmp_path: Path):
     test_settings.library.path = lib_dir
     test_settings.profile = "development"
 
-    with patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=test_settings):
+    with (
+        patch("calibre_ai_auditor.web.api.covers_api._legacy_cover_reads_supported", return_value=True),
+        patch("calibre_ai_auditor.web.api.covers_api.load_settings", return_value=test_settings),
+    ):
         client = TestClient(app)
         response = client.get("/api/covers/deck?limit=10")
         assert response.status_code == 200

@@ -1,131 +1,74 @@
-# Homelab Integration & Deployment Guide
+# Homelab deployment: Certificate A
 
-This guide provides configurations for integrating **Calibre Bookwarden**
-with your local homelab services running at **`192.168.0.122`**, plus multi-host inference and Calibre-Web companion setup.
+Bookwarden's supported homelab deployment is the **Linux Docker Compose
+Certificate A profile**. It audits a stopped Calibre library and lets a human
+review sealed evidence. It cannot change Calibre metadata or covers. The
+historical Calibre-Web sidecar, direct writer, and single-container Unraid/TrueNAS
+templates are not supported production installers.
 
----
+Start with [installation](../INSTALL.md) and use the
+[production operations runbook](runbooks/production-operations.md) for actual
+commands, backups, preflight, updates, and recovery. This guide explains how
+that contract fits a homelab; it does not replace either document.
 
-## 1. Homelab Service Registry
+## Boundary to preserve
 
-| Service | Port | App Config Env Var | Default Homelab URL | Purpose |
-|---|---|---|---|---|
-| **Bookwarden WebUI** | `8084` (host) / `8080` (app) | `BOOKAUDIT_PORT` | `http://192.168.0.122:8084` | Bento Dashboard, Cover Deck, REST API |
-| **Calibre-Web** | `8083` | `BOOKAUDIT_CALIBRE_WEB__URL` | `http://192.168.0.122:8083` | Web e-reader, OPDS, and `/reconnect` hot-reload |
-| **Komf** | `8085` | `BOOKAUDIT_PROVIDERS__KOMF_URL` | `http://192.168.0.122:8085` | Comic and Manga metadata provider |
-| **Ollama** | `11434` | `BOOKAUDIT_OLLAMA_BASE_URL` | `http://192.168.0.122:11434/v1` | Local LLM inference & embeddings |
-| **LM Studio** | `1234` | `BOOKAUDIT_LMSTUDIO_BASE_URL` | `http://192.168.0.89:1234/v1` | Multi-host heavy LLM & vision |
-| **Prometheus** | `19090` | `BOOKAUDIT_PROMETHEUS_PORT` | `http://192.168.0.122:19090` | Metrics & worker health |
-| **Paperless-ngx** | `8000` | `BOOKAUDIT_PAPERLESS__BASE_URL` | `http://192.168.0.122:8000` | Ingestion bridge for documents |
-| **Apache Tika** | `9998` | `BOOKAUDIT_EXTRACTORS__TIKA__BASE_URL` | `http://192.168.0.122:9998` | Optional fallback text extractor |
-| **Gotenberg** | `3000` | `BOOKAUDIT_PREVIEW__GOTENBERG_URL` | `http://192.168.0.122:3000` | PDF preview rendering |
-| **Qdrant** | `6333` | `BOOKAUDIT_VECTORS__QDRANT_URL` | `http://192.168.0.122:6333` | Vector embeddings & duplicates |
+| Component | Access to Calibre library | Network exposure |
+| --- | --- | --- |
+| Verifier | The only library mount, `/library:ro` | Internal Compose networks |
+| Web/API | No library mount | Host loopback by default; use reviewed same-host Caddy for TLS and authentication |
+| PostgreSQL and Valkey | No library mount | Internal Compose networks |
+| Optional Prometheus | No library mount | Host loopback by default (`127.0.0.1:19090`) |
 
----
+The Compose profile also applies read-only container roots, dropped Linux
+capabilities, bounded CPU/memory/PIDs, separate database roles, and immutable
+release digests. A legacy web container with a read-only library bind is **not**
+equivalent: it lacks the verifier separation, frozen source checks, and release
+contract.
 
-## 2. Multi-Host Inference Setup
+## Before every audit
 
-Calibre Bookwarden supports **heterogeneous GPU routing** via `HostRegistry`. Configure each inference host in your environment:
+1. Confirm a tested **whole-library restore** exists. A copy of
+   `metadata.db` alone does not back up ebook formats, covers, or OPFs.
+2. Stop Calibre Desktop, Content Server, Calibre-Web, and any other process
+   that could write the same library. A read-only Bookwarden mount does not
+   stop another container from changing the source.
+3. Verify the exact library root and review the preflight result. Do not delete
+   SQLite `-wal` or `-shm` files to make a check pass.
+4. Run the bounded verifier only after the source is stable, then inspect
+   readiness and evidence. Resume the usual readers/writers according to the
+   maintenance plan after the audit finishes.
 
-```env
-# 192.168.0.89 — Gaming PC RTX 3090 (24 GB VRAM)
-# Heavy multimodal vision + large reasoning models
-BOOKAUDIT_LMSTUDIO_ENABLED=true
-BOOKAUDIT_LMSTUDIO_BASE_URL=http://192.168.0.89:1234/v1
+The [readiness checklist](production-readiness.md) records the remaining
+deployment gates, including corpus calibration and external-writer exclusion.
+Do not infer production readiness from a published image or a successful
+development test.
 
-# 192.168.0.122 — Unraid Ollama (RTX 5060 Ti + GTX 1660 SUPER)
-# Bulk OCR + embedding
-BOOKAUDIT_OLLAMA_ENABLED=true
-BOOKAUDIT_OLLAMA_BASE_URL=http://192.168.0.122:11434/v1
-```
+## Installation shape
 
-Verify reachability:
-```bash
-uv run bookwarden hosts
-```
+Use a dedicated Compose project and its `.env.example` contract; do not
+reuse a generic homelab PostgreSQL/Valkey instance or copy a single-container
+template. Pin the Certificate A image to the digest in the matching release's
+`release-images.json` and set `BOOKAUDIT_RELEASE_DIGEST` to that same digest.
+Keep the backend on loopback and protect any remote access through the reviewed
+edge, VPN, and authentication described in the runbook.
 
-Task-based routing rules:
-- `heavy_vision` → RTX 3090 (LM Studio)
-- `bulk_ocr` → RTX 5060 Ti (Ollama)
-- `embedding` → Nearest available host
+Optional integrations such as Calibre-Web reconnect, LM Studio, Ollama,
+Paperless, Tika, Gotenberg, and Qdrant are **not enabled** in Certificate A.
+Enabling them in a development environment does not make them part of the
+supported production profile. Certificate A may query Google Books and Open
+Library with a checksum-valid ISBN; it does not send book text or images.
 
----
+The optional monitoring profile pins Prometheus 3.13.3 LTS. Its two known
+gRPC HIGH findings are a scoped, time-bounded release exception, not a clean
+scan or a reason to expose Prometheus beyond loopback. See
+[ADR-011](decisions/ADR-011-prometheus-lts-publication-exception.md).
 
-## 3. Deployment Modes in Homelab
+## Updating or recovering
 
-Calibre Bookwarden provides two clear operational profiles:
-
-### Mode A: Historical Homelab Sidecar Companion (unsupported)
-Run alongside `calibre-web-automated` using `docker-compose.sidecar.yml`:
-- Mounts `/mnt/user/MEDIA/Books/Calibre Library` into `/calibre`.
-- Mounts `/mnt/user/appdata/calibre-web-automated/thumbnails` into `/thumbnails` to allow zero-privilege file invalidation.
-- Uses SQLite (`BOOKAUDIT_DATABASE__BACKEND=sqlite`) stored persistently in `/config/bookaudit.db`.
-- Hot-reloads Calibre-Web on metadata updates via `GET http://calibre-web:8083/reconnect`.
-
-### Mode B: Cold Forensic & Certificate A Auditing
-For a stopped-library, read-only audit; this reduces risk but does not eliminate it:
-- The personal Calibre instance and Content Server must be fully stopped.
-- Run using `docker-compose.yml` (App + Verifier + PostgreSQL + Valkey).
-- Mounts library as `:ro` into the verifier container only. The Web app has zero library mount.
-
----
-
-## 4. Calibre-Web Hot-Reload & Thumbnail Cache Purging
-
-When Bookwarden updates book metadata, cover art, or author sorts, Calibre-Web must reflect the changes without requiring a container restart:
-
-1. **HTTP Database Reconnection:** Bookwarden issues an HTTP `GET /reconnect` request to Calibre-Web, prompting SQLAlchemy to refresh its session from `metadata.db`.
-2. **Direct Thumbnail Invalidation:** If `/thumbnails` is mounted, Bookwarden removes cached images for the modified book ID (`/thumbnails/<book_id>.*`), forcing Calibre-Web to regenerate the crisp HD cover on the next request.
-3. **Fallback Worker Reload:** If configured with Docker access, Bookwarden sends a graceful `SIGHUP` to Calibre-Web worker processes (`pkill -HUP -f 'cps.py'`).
-
----
-
-## 5. Recommended Environment Configuration (`.env.homelab`)
-
-Create `.env.homelab` (or configure UnRAID/Docker Compose) with:
-
-```env
-# 1. Base Paths & Persistence
-BOOKAUDIT_LIBRARY_PATH=/calibre
-BOOKAUDIT_READ_ONLY=false
-BOOKAUDIT_DATABASE__BACKEND=sqlite
-BOOKAUDIT_DB_PATH=/config/bookaudit.db
-BOOKAUDIT_ARTIFACTS_DIR=/config/artifacts
-BOOKAUDIT_QUEUE__BACKEND=memory
-BOOKAUDIT_RATE_LIMITS__BACKEND=memory
-
-# 2. Calibre-Web Companion Settings
-BOOKAUDIT_CALIBRE_WEB__URL=http://192.168.0.122:8083
-BOOKAUDIT_CALIBRE_WEB__THUMBNAILS_DIR=/thumbnails
-CALIBRE_WEB_CONTAINER=calibre-web-automated
-
-# 3. Multi-Host Inference
-BOOKAUDIT_LMSTUDIO_ENABLED=true
-BOOKAUDIT_LMSTUDIO_BASE_URL=http://192.168.0.89:1234/v1
-BOOKAUDIT_OLLAMA_ENABLED=true
-BOOKAUDIT_OLLAMA_BASE_URL=http://192.168.0.122:11434/v1
-
-# 4. Multimodal AI API
-GEMINI_API_KEY=your-gemini-api-key
-
-# 5. Paperless-ngx Bridge (Optional)
-BOOKAUDIT_PAPERLESS__ENABLED=true
-BOOKAUDIT_PAPERLESS__BASE_URL=http://192.168.0.122:8000
-```
-
----
-
-## 6. Verifying the Setup
-
-```bash
-# 1. System doctor check
-uv run bookwarden doctor
-
-# 2. Multi-host inference discovery
-uv run bookwarden hosts
-
-# 3. Run a 360° read-only audit
-uv run bookwarden audit-360
-
-# 4. Run automated test suite
-uv run pytest -m "not v2_live and not benchmark"
-```
+Use the [operations runbook](runbooks/production-operations.md) for a
+maintenance window, immutable image comparison, database backup, migrations,
+health checks, and rollback. Do not substitute a mutable `latest` tag, an
+old wrapper mounted over the image entrypoint, or a single-container template.
+If a health or schema contract fails, preserve evidence and restore the
+matching image and database state rather than weakening the validator.

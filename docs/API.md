@@ -3,7 +3,7 @@
 > **Historical development API reference:** Certificate A supports only its
 > reviewed read-only verification and sealed-evidence surface. The companion,
 > active-library, legacy write, provider, and performance descriptions below
-> are not v1.3.1 production commitments. Consult the current
+> are not v1.3.2 production commitments. Consult the current
 > [operations runbook](runbooks/production-operations.md) and ADR-005 before
 > using a production endpoint.
 
@@ -49,7 +49,7 @@ Standard service status and runtime metadata.
 {
   "status": "ok",
   "app": "calibre-bookwarden",
-  "version": "1.3.1"
+  "version": "1.3.2"
 }
 ```
 

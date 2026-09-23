@@ -30,7 +30,7 @@ revision label. Its committed Go module lock carries patched dependencies even
 when the latest upstream Caddy image has known fixed HIGH vulnerabilities.
 
 Use only immutable `@sha256:` references from the final release's
-`release-images.json` asset. Do not substitute `1.3.1`, `1.3`, or another tag
+`release-images.json` asset. Do not substitute `1.3.2`, `1.3`, or another tag
 for a digest. The release digest must be the same Certificate A image digest:
 
 ```dotenv
