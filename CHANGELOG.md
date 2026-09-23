@@ -34,6 +34,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   exact source revision must be owner-attested and successful.
 - Corrected generational author suffix handling and cross-platform read-only
   SQLite URI formatting.
+- Updated locked AnyIO from 4.13.0 to 4.14.2 after the exact-revision CI audit
+  identified `CVE-2026-63374` and `CVE-2026-64847`.
 
 ### Security and evidence
 
