@@ -48,7 +48,9 @@ import (
 // subtitle field joins its title in the text path; without a text title a
 // title shortens only by its noise; a title ending in ":", "?" or "!" joins
 // its subtitle with a space.
-const Version = 10
+// 11: a fix is proposed only when an undo could put Calibre's current value
+// back exactly (ADR-048).
+const Version = 11
 
 var (
 	ErrUnknownVersion = errors.New("decide: unknown decision version")
@@ -82,12 +84,12 @@ var sourceClass = map[string]int{
 
 // recordedOnly reports whether a source's records are sealed with the
 // evidence but not decided on at this decision version: Wikidata and
-// Hardcover, up to version 10 (ADR-035, ADR-030 amendment, ADR-036 section 6).
+// Hardcover, up to version 11 (ADR-035, ADR-030 amendment, ADR-036 section 6).
 // Whether they count as independent roots is a precision decision for a later
 // version.
 func recordedOnly(source string, version int) bool {
-	// Up to version 10: independence not established (ADR-035 part 2).
-	return version <= 10 && (source == evidence.SourceWikidata || source == evidence.SourceHardcover)
+	// Up to version 11: independence not established (ADR-035 part 2).
+	return version <= 11 && (source == evidence.SourceWikidata || source == evidence.SourceHardcover)
 }
 
 // Record values at M3.1's capture cap may have been cut, so they're unverified.
@@ -185,6 +187,7 @@ func AtVersion(ctx context.Context, p evidence.Package, version int) (Decision, 
 	if version >= 4 && !v.reasons[reasonOtherWork] {
 		d.Proposals = append(d.Proposals, v.sortProposals(d.Proposals)...)
 	}
+	d.Proposals = v.restorableOnly(d.Proposals)
 	return d, nil
 }
 

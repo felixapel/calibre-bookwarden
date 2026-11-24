@@ -43,4 +43,4 @@ scripts/integration-test.sh
 - **Branches:** the cutover merged `go-rewrite` into `main` on 2026-10-26 (spec section 17); `main` is the trunk, protected by the 6 CI jobs, and Certificate A's last commit is tagged `certificate-a-final`.
 - **Pull requests:** work on a branch off `main`, and open a PR into `main`. Wait for green CI and a `reviewer` agent pass; Felix merges. Nothing is pushed straight to `main`.
 - **CI failures:** never rerun Actions to get past a failure. Push a fix instead.
-- **Commits and docs:** use Conventional Commits, and keep the README, spec and ADRs true to the code. Record lasting decisions as ADRs in `docs/decisions/`; the next number is ADR-048 (ADR-040 is reserved for work-level search).
+- **Commits and docs:** use Conventional Commits, and keep the README, spec and ADRs true to the code. Record lasting decisions as ADRs in `docs/decisions/`; the next number is ADR-049 (ADR-040 is reserved for work-level search).

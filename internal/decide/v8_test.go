@@ -535,9 +535,12 @@ func TestV8CasesAtV7(t *testing.T) {
 // TestV8Seals: every v8 case seals at the current version, opens again and
 // derives the decision the case expects. Version 10 changes one: a record in
 // another language no longer backs replacing a real title (ADR-045 rule 4).
+// Version 11 changes another: an undo couldn't restore Calibre's empty author
+// list, so nothing fills it (ADR-048).
 func TestV8Seals(t *testing.T) {
 	atCurrent := map[string][]evidence.Proposal{
 		"a record that does not match the book": {wantProposal("publisher")},
+		"authors: empty, the text alone":        nil,
 	}
 	for _, tt := range v8Cases() {
 		if tt.unsealable {

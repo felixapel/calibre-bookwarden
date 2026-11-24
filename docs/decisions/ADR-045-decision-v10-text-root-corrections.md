@@ -71,7 +71,7 @@ From decision version 10:
 Wikidata and Hardcover stay recorded-only (ADR-035, ADR-036 §6).
 
 Series proposals, once planned as decision v10 (ADR-037 part 1 in the spec),
-are now v11.
+were then v11; ADR-048 took v11 on 2026-11-24, so they are now v12.
 
 ## Not in v10
 

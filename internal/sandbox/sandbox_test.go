@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,21 +100,26 @@ func helper(args []string) int {
 		// errors or, for keyctl, at most the creation of this UID's own user
 		// keyrings, so only the filter answers EPERM to all of them.
 		calls := []struct {
-			nr   uintptr
-			a, b uintptr
+			nr      uintptr
+			a, b, c uintptr
 		}{
-			{unix.SYS_UNSHARE, 0, 0},
-			{unix.SYS_SETNS, ^uintptr(0), 0},
-			{unix.SYS_KEYCTL, 0, ^uintptr(2)}, // KEYCTL_GET_KEYRING_ID, KEY_SPEC_SESSION_KEYRING
-			{unix.SYS_ADD_KEY, 0, 0},
-			{unix.SYS_REQUEST_KEY, 0, 0},
-			{unix.SYS_BPF, ^uintptr(0), 0},
-			{unix.SYS_USERFAULTFD, 0xffff, 0},
-			{unix.SYS_PERF_EVENT_OPEN, 0, 0},
+			{unix.SYS_UNSHARE, 0, 0, 0},
+			{unix.SYS_SETNS, ^uintptr(0), 0, 0},
+			{unix.SYS_KEYCTL, 0, ^uintptr(2), 0}, // KEYCTL_GET_KEYRING_ID, KEY_SPEC_SESSION_KEYRING
+			{unix.SYS_ADD_KEY, 0, 0, 0},
+			{unix.SYS_REQUEST_KEY, 0, 0, 0},
+			{unix.SYS_BPF, ^uintptr(0), 0, 0},
+			{unix.SYS_USERFAULTFD, 0xffff, 0, 0},
+			{unix.SYS_PERF_EVENT_OPEN, 0, 0, 0},
+			// The mount API with flags no kernel accepts: EINVAL without the
+			// filter, whatever the capabilities.
+			{unix.SYS_OPEN_TREE, ^uintptr(0), 0, 0xffffffff},
+			{unix.SYS_MOUNT_SETATTR, ^uintptr(0), 0, 0xffffffff},
+			{unix.SYS_UMOUNT2, 0, 0xffffffff, 0},
 		}
 		var out []string
 		for _, c := range calls {
-			_, _, e := unix.RawSyscall(c.nr, c.a, c.b, 0)
+			_, _, e := unix.RawSyscall(c.nr, c.a, c.b, c.c)
 			out = append(out, errName(errnoOrNil(e)))
 		}
 		// abort() needs tgkill; signal 0 only checks.
@@ -233,13 +239,13 @@ func TestRunBlocksPtraceMountIOURing(t *testing.T) {
 	want(t, out, err, "EPERM EPERM EPERM")
 }
 
-// TestRunBlocksKernelInterfaces: namespaces, keyrings, BPF, userfaultfd and
-// perf events are refused with EPERM even without Docker's own seccomp
+// TestRunBlocksKernelInterfaces: namespaces, keyrings, BPF, userfaultfd, perf
+// events and the mount API are refused with EPERM even without Docker's own seccomp
 // profile; tgkill, which abort() uses, still works (execve does too, or the
 // helper wouldn't run).
 func TestRunBlocksKernelInterfaces(t *testing.T) {
 	out, err := run(t.Context(), t, nil, "kernel")
-	want(t, out, err, "EPERM EPERM EPERM EPERM EPERM EPERM EPERM EPERM ok")
+	want(t, out, err, "EPERM EPERM EPERM EPERM EPERM EPERM EPERM EPERM EPERM EPERM EPERM ok")
 }
 
 func TestRunCannotReachParent(t *testing.T) {
@@ -287,5 +293,17 @@ func TestRunRelativeProgram(t *testing.T) {
 	_, err := sandbox.Run(t.Context(), sandbox.Spec{Program: "tesseract", Dir: t.TempDir(), Limits: limits(), MaxStdout: 10})
 	if err == nil {
 		t.Fatal("a relative program was accepted")
+	}
+}
+
+// The whole mount API is denied, including the calls that would answer EPERM
+// to an unprivileged tool anyway, so a container run with CAP_SYS_ADMIN
+// doesn't open them (review of B9).
+func TestDeniedCoversTheMountAPI(t *testing.T) {
+	for _, nr := range []uint32{unix.SYS_MOUNT, unix.SYS_UMOUNT2, unix.SYS_PIVOT_ROOT, unix.SYS_OPEN_TREE, unix.SYS_OPEN_TREE_ATTR,
+		unix.SYS_MOVE_MOUNT, unix.SYS_FSOPEN, unix.SYS_FSCONFIG, unix.SYS_FSMOUNT, unix.SYS_FSPICK, unix.SYS_MOUNT_SETATTR} {
+		if !slices.Contains(sandbox.Denied(), nr) {
+			t.Errorf("syscall %d is not denied", nr)
+		}
 	}
 }

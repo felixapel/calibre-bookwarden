@@ -724,3 +724,54 @@ func TestUndoWaitsForAConcurrentUndo(t *testing.T) {
 		t.Fatalf("the waiting undo = %v, want ErrUndoExists", err)
 	}
 }
+
+// An OnlyOpen decision, as "Approve all open fixes" makes, never overwrites
+// one that already stands: a rejection made in another tab while the button
+// ran stays (Felix, 2026-11-24).
+func TestDecideOnlyOpenLeavesADecisionAlone(t *testing.T) {
+	ctx := context.Background()
+	f, r, _ := fixRepo(t)
+	books := refs(1)
+	run := checkedRun(t, r, books)
+	p := titleProposal("New")
+	if err := f.Decide(ctx, run, books[0].ID, []evidence.Proposal{p}, ProposalRejected, "felix", Basis{Mode: DecisionIndividual}); err != nil {
+		t.Fatal(err)
+	}
+	err := f.Decide(ctx, run, books[0].ID, []evidence.Proposal{p}, ProposalApproved, "admin", Basis{Mode: DecisionBulk, OnlyOpen: true})
+	if !errors.Is(err, ErrDecided) {
+		t.Fatalf("OnlyOpen over a rejection: %v, want ErrDecided", err)
+	}
+	if rows, _ := f.Proposals(ctx, run, books[0].ID); len(rows) != 1 || rows[0].Status != ProposalRejected || rows[0].DecisionMode != DecisionIndividual {
+		t.Fatalf("the rejection = %+v, want it untouched", rows)
+	}
+	// An open fix is approved as usual.
+	q := evidence.Proposal{Field: "authors", Proposed: []string{"B"}, Roots: []string{"dnb", "file"}}
+	if err := f.Decide(ctx, run, books[0].ID, []evidence.Proposal{q}, ProposalApproved, "admin", Basis{Mode: DecisionBulk, OnlyOpen: true}); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := f.Proposals(ctx, run, books[0].ID)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v, want the open fix approved", rows)
+	}
+	// An approval, and one in flight, stay as they are too.
+	again := func(want string) {
+		t.Helper()
+		if err := f.Decide(ctx, run, books[0].ID, []evidence.Proposal{q}, ProposalApproved, "admin", Basis{Mode: DecisionBulk, OnlyOpen: true}); !errors.Is(err, ErrDecided) {
+			t.Fatalf("OnlyOpen over %s: %v, want ErrDecided", want, err)
+		}
+	}
+	again("an approval")
+	var authorsID int64
+	for _, r := range rows {
+		if r.Proposal.Field == "authors" {
+			authorsID = r.ID
+		}
+	}
+	if _, err := f.StartOperation(ctx, applyOp(run, books[0].ID), []int64{authorsID}); err != nil {
+		t.Fatal(err)
+	}
+	again("an approval in flight")
+	if rows, _ := f.Proposals(ctx, run, books[0].ID); len(rows) != 2 || rows[0].OperationID == nil && rows[1].OperationID == nil {
+		t.Fatalf("rows = %+v, want the in-flight approval untouched", rows)
+	}
+}

@@ -128,9 +128,10 @@ func TestProposals(t *testing.T) {
 			gb := rec("gb1", T, []string{A}, []string{"deu"}, I)
 			gb.Date = "2000-07-26"
 			p.Lookups[0].Results = append(p.Lookups[0].Results, ok(evidence.SourceGoogleBooks, gb))
-			p.Calibre.PubDate = "2001-01-01T00:00:00+00:00"
+			// Mid-month: from version 11 an undo must be able to restore it.
+			p.Calibre.PubDate = "2001-03-14T00:00:00+00:00"
 			return p
-		}, []evidence.Proposal{prop("pubdate", []string{"2001-01-01T00:00:00+00:00"}, []string{"2000-07-26"}, []string{"file", "googlebooks"})}},
+		}, []evidence.Proposal{prop("pubdate", []string{"2001-03-14T00:00:00+00:00"}, []string{"2000-07-26"}, []string{"file", "googlebooks"})}},
 		{"isbn", func() evidence.Package {
 			p := tierA()
 			p.Calibre.Identifiers = map[string]string{"isbn": "978-0-306-40615-7"}

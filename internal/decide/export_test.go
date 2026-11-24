@@ -13,6 +13,9 @@ func SetSharedRoot(f func(evidence.SourceRecord) string) func() {
 	return func() { sharedRoot = old }
 }
 
+// RecordedOnly exposes recordedOnly.
+func RecordedOnly(source string, version int) bool { return recordedOnly(source, version) }
+
 // PublisherEquivalent exposes the publisher equivalence of ADR-036 3.1.
 func PublisherEquivalent(a, b string) bool { return publisherEquivalent(a, b) }
 

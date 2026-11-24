@@ -674,8 +674,10 @@ func TestApplyBlocked(t *testing.T) {
 			e := setup(t, b)
 			e.cal.names[fAuthors] = tc.names
 			check := e.check
-			if tc.says.date != "" {
-				check = e.checkV9 // v10 no longer proposes a shifted day
+			if tc.says.date != "" || tc.field == "pubdate" {
+				// v10 no longer proposes a shifted day, and v11 nothing an
+				// undo couldn't restore; Apply must still block both.
+				check = e.checkV9
 			}
 			run := check(pkgFor(t, b, tc.says))
 			e.approveStored(run, 2, allFields...)

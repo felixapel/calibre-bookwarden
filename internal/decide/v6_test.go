@@ -46,8 +46,8 @@ func fields(ps []evidence.Proposal) []string {
 }
 
 func TestDecisionVersion(t *testing.T) {
-	if decide.Version != 10 {
-		t.Fatalf("Version = %d, want 10", decide.Version)
+	if decide.Version != 11 {
+		t.Fatalf("Version = %d, want 11", decide.Version)
 	}
 }
 

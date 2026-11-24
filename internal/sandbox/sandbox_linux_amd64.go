@@ -218,6 +218,11 @@ var denied = []uint32{
 	// installed before the tool is exec'ed) and not kill/tgkill (abort()).
 	unix.SYS_UNSHARE, unix.SYS_SETNS, unix.SYS_KEYCTL, unix.SYS_ADD_KEY, unix.SYS_REQUEST_KEY,
 	unix.SYS_BPF, unix.SYS_USERFAULTFD, unix.SYS_PERF_EVENT_OPEN,
+	// The rest of the mount API, old and new. Most of it needs CAP_SYS_ADMIN,
+	// which a container run with that capability would grant; no tool needs
+	// any of it, whatever the capabilities.
+	unix.SYS_UMOUNT2, unix.SYS_PIVOT_ROOT, unix.SYS_OPEN_TREE, unix.SYS_OPEN_TREE_ATTR, unix.SYS_MOVE_MOUNT,
+	unix.SYS_FSOPEN, unix.SYS_FSCONFIG, unix.SYS_FSMOUNT, unix.SYS_FSPICK, unix.SYS_MOUNT_SETATTR,
 }
 
 func filter() []unix.SockFilter {

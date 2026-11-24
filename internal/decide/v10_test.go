@@ -190,32 +190,15 @@ func TestDecisionV10UnwritablePubdate(t *testing.T) {
 	}
 }
 
-// Decide derives with version 10, and a v10 seal opens again.
-func TestDecideUsesVersion10(t *testing.T) {
-	if decide.Version != 10 {
-		t.Fatalf("Version = %d", decide.Version)
-	}
+// Version 10 still derives as it did once version 11 is current.
+func TestDecisionV10StillDerives(t *testing.T) {
 	p := v9Imprint("MIT PRESS", "MIT Press", "")
-	now, err := decide.Decide(t.Context(), p)
-	if err != nil {
-		t.Fatal(err)
-	}
 	at, err := decide.AtVersion(t.Context(), p, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a, b := proposalOf(now, "publisher"), proposalOf(at, "publisher"); a == nil || b == nil || !slices.Equal(a.Proposed, b.Proposed) {
-		t.Fatalf("Decide %+v, AtVersion(10) %+v", a, b)
-	}
-	raw, seal, err := decide.Seal(t.Context(), p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if q, _, err := decide.Open(t.Context(), raw, seal); err != nil || q.DecisionVersion != 10 {
-		t.Fatalf("Open: version %d, %v", q.DecisionVersion, err)
-	}
-	if _, err := decide.AtVersion(t.Context(), p, 11); err == nil {
-		t.Fatal("AtVersion(11) accepted")
+	if b := proposalOf(at, "publisher"); b == nil || !slices.Equal(b.Proposed, []string{"MIT Press"}) {
+		t.Fatalf("AtVersion(10) publisher %+v", b)
 	}
 }
 

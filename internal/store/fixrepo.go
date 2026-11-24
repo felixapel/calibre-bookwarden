@@ -44,6 +44,8 @@ const (
 var (
 	// ErrClosed: a proposal is final, in flight, or not approved.
 	ErrClosed = errors.New("store: proposal is closed")
+	// ErrDecided: an OnlyOpen decision met a fix that already has one.
+	ErrDecided = errors.New("store: proposal is already decided")
 	// ErrBadTransition: the ledger doesn't allow that state next.
 	ErrBadTransition = errors.New("store: operation state transition not allowed")
 	ErrNoOperation   = errors.New("store: no such operation")
@@ -105,6 +107,10 @@ const (
 type Basis struct {
 	Mode          string // DecisionIndividual or DecisionBulk
 	VerdictsShown bool
+	// OnlyOpen decides only fixes nobody has decided yet: Decide returns
+	// ErrDecided, and stores nothing, when one already has a decision. It
+	// is never stored.
+	OnlyOpen bool
 }
 
 // Operation is one write to one book: its immutable header and its newest
@@ -207,7 +213,8 @@ func (r *FixRepo) NewestEvidenceRun(ctx context.Context, libraryID string, bookI
 }
 
 // Decide approves or rejects proposals of one book's evidence. It returns
-// ErrClosed, and stores nothing, when any of them is final or in flight.
+// ErrClosed, and stores nothing, when any of them is final or in flight, and
+// with basis.OnlyOpen ErrDecided when any of them has a decision.
 func (r *FixRepo) Decide(ctx context.Context, runID int64, bookID int, ps []evidence.Proposal, status, by string, basis Basis) error {
 	if status != ProposalApproved && status != ProposalRejected {
 		return fmt.Errorf("store: decide: invalid status %q", status)
@@ -236,12 +243,15 @@ func (r *FixRepo) Decide(ctx context.Context, runID int64, bookID int, ps []evid
 				verdicts_shown = CASE WHEN proposals.status = EXCLUDED.status THEN proposals.verdicts_shown ELSE EXCLUDED.verdicts_shown END,
 				-- A changed decision is a normal one, no longer a copy.
 				carried_from = CASE WHEN proposals.status = EXCLUDED.status THEN proposals.carried_from END
-			WHERE proposals.status IN ('approved', 'rejected') AND proposals.operation_id IS NULL`,
-			runID, bookID, p.Field, string(raw), status, by, basis.Mode, basis.VerdictsShown)
+			WHERE proposals.status IN ('approved', 'rejected') AND proposals.operation_id IS NULL AND NOT $9`,
+			runID, bookID, p.Field, string(raw), status, by, basis.Mode, basis.VerdictsShown, basis.OnlyOpen)
 		if err != nil {
 			return fmt.Errorf("store: decide book %d %s: %w", bookID, p.Field, err)
 		}
 		if tag.RowsAffected() != 1 {
+			if basis.OnlyOpen {
+				return fmt.Errorf("store: decide book %d %s: %w", bookID, p.Field, ErrDecided)
+			}
 			return fmt.Errorf("store: decide book %d %s: %w", bookID, p.Field, ErrClosed)
 		}
 	}

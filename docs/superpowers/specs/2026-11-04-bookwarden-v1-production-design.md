@@ -47,7 +47,7 @@ So v1.0 puts its effort into finding true values in the book itself, and into ma
    - A 200-book sample measures what the text root misses (§6.4).
    - This replaces the M4 design's §9 prerequisite: "≥ 99 % agreement with gold on ≥ 300 items per field".
 4. **Scope of v1.0.** The core (§3) plus series and series index, cover triage, and a public release.
-   - **Amended 2026-11-08 (Felix):** series proposals (decision v11, first planned as v10; renamed by ADR-045, since v10 is the text-root corrections) and the cover triage deck move to after v1.0. Run 16 (the first decision v9 / findings v6 run, 3,212 books) showed series proposals would propose almost nothing, because no root other than the recorded-only ones carries a series, and `cover_better_available` fired for 5 books. The series and cover read paths and their findings stay in v1.0 as a manual worklist.
+   - **Amended 2026-11-08 (Felix):** series proposals (decision v12, first planned as v10; renamed by ADR-045, since v10 is the text-root corrections, and again by ADR-048, since v11 is restorable proposals) and the cover triage deck move to after v1.0. Run 16 (the first decision v9 / findings v6 run, 3,212 books) showed series proposals would propose almost nothing, because no root other than the recorded-only ones carries a series, and `cover_better_available` fired for 5 books. The series and cover read paths and their findings stay in v1.0 as a manual worklist.
 
 ## 3. What production-ready means (v1.0 exit criteria)
 
@@ -91,7 +91,7 @@ The framework stays.
   - Any second service.
 
 ```
-evidence ─→ claims ─→ truth (decide v8–v11) ─→ review (inbox, blind) ─→ guarded write (stale check, readback, undo)
+evidence ─→ claims ─→ truth (decide v8–v12) ─→ review (inbox, blind) ─→ guarded write (stale check, readback, undo)
  Calibre    grounded    text-first,               the only path to
  file OPF   quotes      style-guide equivalence    a write
  excerpts   records     two roots, or one for      labels → /precision → mute
@@ -225,7 +225,7 @@ The nightly dump itself is the server's job (a nightly User Script), not the rep
   - the 600-book gold-set page;
   - the 2 % canaries.
 - **After v1.0:**
-  - decision v11 (first planned as v10; ADR-045), series and index proposals and writes (ADR-037 part 1), deferred 2026-11-08;
+  - decision v12 (first planned as v10, then v11; ADR-045, ADR-048), series and index proposals and writes (ADR-037 part 1), deferred 2026-11-08;
   - the cover triage deck (ADR-037 part 2), deferred 2026-11-08;
   - pooled certification;
   - work-level search (ADR-040);

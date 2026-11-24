@@ -27,6 +27,9 @@ func TestApproveAllOpenFixes(t *testing.T) {
 	second := []report.FixRow{
 		{RunID: 7, BookID: 5, Title: "Five", Tier: "B", Proposal: prop("isbn", "1", "2")},
 		{RunID: 7, BookID: 6, Title: "Six", Tier: "B", Proposal: pubdate},
+		{RunID: 7, BookID: 8, Title: "Eight", Tier: "B", Proposal: prop("title", "Old", "New")},
+		{RunID: 7, BookID: 9, Title: "Nine", Tier: "B", Proposal: prop("title", "Old", "New")},
+		{RunID: 7, BookID: 10, Title: "Ten", Tier: "B", Proposal: prop("title", "Old", "New")},
 	}
 	rep := &fakeReports{fixPages: map[int]report.FixPage{
 		0: {Rows: first, Next: &report.Cursor{RunID: 7, BookID: 4}},
@@ -37,8 +40,15 @@ func TestApproveAllOpenFixes(t *testing.T) {
 			{RunID: 7, BookID: 3, Proposal: first[2].Proposal, Status: "rejected"},
 			{RunID: 7, BookID: 4, Proposal: first[3].Proposal, Status: "approved"},
 		},
-		mute:      []fix.TypeMute{{LibraryID: "library", FixType: store.FixType{Field: "publisher", Path: "text", Kind: "fill"}, Muted: true}, {LibraryID: "other", FixType: store.FixType{Field: "title", Path: "text", Kind: "fill"}, Muted: true}},
-		decideErr: map[int]error{5: fmt.Errorf("x: %w", fix.ErrTextOldVerifier)},
+		mute: []fix.TypeMute{{LibraryID: "library", FixType: store.FixType{Field: "publisher", Path: "text", Kind: "fill"}, Muted: true}, {LibraryID: "other", FixType: store.FixType{Field: "title", Path: "text", Kind: "fill"}, Muted: true}},
+		decideErr: map[int]error{
+			5:  fmt.Errorf("x: %w", fix.ErrTextOldVerifier),
+			8:  fmt.Errorf("x: %w", fix.ErrDecided),    // rejected in another tab meanwhile
+			9:  fmt.Errorf("x: %w", fix.ErrNoProposal), // a newer check replaced the book
+			10: fmt.Errorf("x: %w", fix.ErrNoProposal),
+		},
+		// Book 2's title fails on its own; its authors are still approved.
+		fieldErr: map[string]error{"2:title": fmt.Errorf("x: %w", fix.ErrTextOldVerifier)},
 	}
 	e := fixingEnv(t, f, rep)
 	token := e.csrfToken(t)
@@ -49,19 +59,23 @@ func TestApproveAllOpenFixes(t *testing.T) {
 	}
 	var got []string
 	for _, c := range f.recorded() {
-		if c.Basis != (fix.Basis{Mode: store.DecisionBulk}) || c.Method != "Approve" || c.RunID != 7 {
-			t.Fatalf("call %+v, want a blind bulk approval in run 7", c)
+		if c.Basis != (fix.Basis{Mode: store.DecisionBulk, OnlyOpen: true}) || c.Method != "Approve" || c.RunID != 7 {
+			t.Fatalf("call %+v, want a blind bulk approval of an open fix in run 7", c)
 		}
 		got = append(got, fmt.Sprintf("%d:%s", c.BookID, strings.Join(c.Fields, ",")))
 	}
-	if want := []string{"2:authors,title", "5:isbn"}; !slices.Equal(got, want) {
-		t.Fatalf("approved %v, want %v (open writable fixes on both pages, one call per book)", got, want)
+	if want := []string{"2:title", "2:authors", "5:isbn", "8:title", "9:title", "10:title"}; !slices.Equal(got, want) {
+		t.Fatalf("approved %v, want %v (open writable fixes on both pages, one fix per call)", got, want)
 	}
 	if !slices.Equal(rep.fixFilter.MutedTypes, []report.FixType{{Field: "publisher", Path: "text", Kind: "fill"}}) || rep.fixFilter.Muted {
 		t.Fatalf("filter %+v, want the run library's muted types left out", rep.fixFilter)
 	}
-	for _, want := range []string{"Approved 2 fixes. Left alone: 2 already decided, and the muted fix types; 2 not approved",
-		"Book 5: the printed text was read by an older verifier", "Book 6: Calibre can’t store its pubdate exactly", `href="/runs/7/fixes"`} {
+	// Not approved: 2 superseded, book 2's title, book 5's isbn, book 6's
+	// pubdate.
+	for _, want := range []string{"Approved 1 fix. Left alone: 3 already decided, and the muted fix types; 5 not approved",
+		"2 fixes belong to books a newer check replaced", "Book 2, title: the printed text was read by an older verifier",
+		"Book 5, isbn: the printed text was read by an older verifier",
+		"Book 6, pubdate: Calibre can’t store it exactly", `href="/runs/7/fixes"`} {
 		if !strings.Contains(r.body, want) {
 			t.Errorf("page lacks %q", want)
 		}

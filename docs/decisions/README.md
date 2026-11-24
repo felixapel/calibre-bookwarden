@@ -50,3 +50,4 @@ This directory documents the key architectural, safety, and operational decision
 | [ADR-045](ADR-045-decision-v10-text-root-corrections.md) | Decision v10: corrections to the text root | 2026-11-23 | Accepted |
 | [ADR-046](ADR-046-extract-v4-folds.md) | Extract v4: the verifier folds case, dashes and invisible characters | 2026-11-24 | Accepted |
 | [ADR-047](ADR-047-public-mirror-snapshots.md) | The public mirror is a snapshot per release | 2026-11-23 | Accepted |
+| [ADR-048](ADR-048-decision-v11-restorable-proposals.md) | Decision v11: propose only what an undo can restore | 2026-11-24 | Accepted |

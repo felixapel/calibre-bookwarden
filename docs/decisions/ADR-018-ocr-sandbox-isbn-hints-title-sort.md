@@ -76,3 +76,5 @@ article sets. Versions 1 and 2 keep their historical derivations.
   table language is accepted.
 
 > Amended 2026-11-22 (B9): the filter also returns `EPERM` for `unshare`, `setns`, `keyctl`, `add_key`, `request_key`, `bpf`, `userfaultfd` and `perf_event_open`, so a host without Docker's seccomp profile doesn't leave them open; `execve` (the filter is installed before the tool starts) and `kill`/`tgkill` (`abort()`) stay allowed.
+
+> Amended 2026-11-24: the rest of the mount API is refused with `EPERM` too: `umount2`, `pivot_root`, `open_tree`, `open_tree_attr`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick` and `mount_setattr`, so a container started with `CAP_SYS_ADMIN` doesn't open them to the tools.

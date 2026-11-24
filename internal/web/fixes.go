@@ -660,9 +660,28 @@ func (s *Server) approveAll(w http.ResponseWriter, r *http.Request) {
 			decided[fmt.Sprintf("%d:%s", d.BookID, d.Proposal.Field)] = true
 		}
 	}
-	var books []int
-	fields := map[int][]string{}
-	var problems []string
+	type pick struct {
+		book  int
+		field string
+	}
+	var picks []pick
+	// refused collects, per book and reason in order, the fields not
+	// approved, so a book-wide reason is one line.
+	type refusal struct {
+		book   int
+		why    string
+		fields []string
+	}
+	var refused []refusal
+	refuse := func(book int, field, why string) {
+		for i := range refused {
+			if refused[i].book == book && refused[i].why == why {
+				refused[i].fields = append(refused[i].fields, field)
+				return
+			}
+		}
+		refused = append(refused, refusal{book, why, []string{field}})
+	}
 	skipped := 0
 	for c := (*report.Cursor)(nil); ; {
 		p, err := s.opts.Reports.Fixes(ctx, id, f, c)
@@ -679,43 +698,69 @@ func (s *Server) approveAll(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if fix.Unwritable(row.Proposal) != "" {
-				problems = append(problems, fmt.Sprintf("Book %d: Calibre can’t store its %s exactly", row.BookID, row.Proposal.Field))
+				refuse(row.BookID, row.Proposal.Field, "Calibre can’t store it exactly")
 				continue
 			}
-			if _, ok := fields[row.BookID]; !ok {
-				books = append(books, row.BookID)
-			}
-			fields[row.BookID] = append(fields[row.BookID], row.Proposal.Field)
+			picks = append(picks, pick{row.BookID, row.Proposal.Field})
 		}
 		if p.Next == nil {
 			break
 		}
 		c = p.Next
 	}
-	approved := 0
-	for i, book := range books {
+	// One fix at a time, so a fix that can't be approved holds back no other
+	// of its book, and only where nobody has decided yet: a rejection made
+	// meanwhile stays.
+	approved, superseded, left := 0, 0, 0
+	for i, p := range picks {
 		if ctx.Err() != nil {
-			problems = append(problems, fmt.Sprintf("Time ran out with %d books left; press Approve all again for the rest.", len(books)-i))
+			left = len(picks) - i
 			break
 		}
-		fs := slices.Sorted(slices.Values(fields[book]))
-		err := s.opts.Fixing.Approve(ctx, id, book, fs, actor, fix.Basis{Mode: store.DecisionBulk})
-		if err == nil {
-			approved += len(fs)
+		err := s.opts.Fixing.Approve(ctx, id, p.book, []string{p.field}, actor, fix.Basis{Mode: store.DecisionBulk, OnlyOpen: true})
+		switch {
+		case err == nil:
+			approved++
+			continue
+		case errors.Is(err, fix.ErrDecided):
+			skipped++
+			continue
+		case errors.Is(err, fix.ErrNoProposal):
+			// A newer check of the book, or no such fix: one line for all.
+			superseded++
 			continue
 		}
 		why, ok := decideProblem(err)
 		if !ok {
-			s.opts.Logger.Error("approve all failed", "run", id, "book", book, "error", err)
+			s.opts.Logger.Error("approve all failed", "run", id, "book", p.book, "field", p.field, "error", err)
 		}
-		problems = append(problems, fmt.Sprintf("Book %d: %s", book, why))
+		refuse(p.book, p.field, why)
+	}
+	var problems []string
+	notApproved := superseded + left
+	if superseded > 0 {
+		line := fmt.Sprintf("%d fixes belong to books a newer check replaced; decide them in the newest run.", superseded)
+		if superseded == 1 {
+			line = "1 fix belongs to a book a newer check replaced; decide it in the newest run."
+		}
+		problems = append(problems, line)
+	}
+	for _, rf := range refused {
+		notApproved += len(rf.fields)
+		problems = append(problems, fmt.Sprintf("Book %d, %s: %s", rf.book, strings.Join(rf.fields, ", "), rf.why))
+	}
+	if left > 0 {
+		problems = append(problems, fmt.Sprintf("Time ran out with %d fixes left; press Approve all again for the rest.", left))
 	}
 	notice := fmt.Sprintf("Approved %d fixes. Left alone: %d already decided", approved, skipped)
+	if approved == 1 {
+		notice = fmt.Sprintf("Approved 1 fix. Left alone: %d already decided", skipped)
+	}
 	if len(f.MutedTypes) > 0 {
 		notice += ", and the muted fix types"
 	}
-	if len(problems) > 0 {
-		notice += fmt.Sprintf("; %d not approved, listed below", len(problems))
+	if notApproved > 0 {
+		notice += fmt.Sprintf("; %d not approved, listed below", notApproved)
 	}
 	s.render(w, http.StatusOK, "refused.html", pageData{Title: "Approve all open fixes", SignedIn: true, CSRFToken: sessionFrom(r.Context()).CSRFToken,
 		Notice: notice + ".", Problems: problems, BackURL: back, BackText: "Back to the fixes"})

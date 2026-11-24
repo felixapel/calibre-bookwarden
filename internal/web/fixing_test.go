@@ -38,7 +38,8 @@ type fakeFixing struct {
 	reveals   []store.RevealKey
 	proposals []fix.ProposalRow
 	approved  int
-	decideErr map[int]error // by book
+	decideErr map[int]error    // by book
+	fieldErr  map[string]error // by "book:field", for one-field calls; before decideErr
 	startErr  error
 	status    fix.ApplyStatus
 	ops       []fix.Operation
@@ -80,6 +81,9 @@ func (f *fakeFixing) recorded() []fixCall {
 
 func (f *fakeFixing) Approve(_ context.Context, runID int64, bookID int, fields []string, _ string, basis fix.Basis) error {
 	f.record(fixCall{Method: "Approve", RunID: runID, BookID: bookID, Fields: fields, Basis: basis})
+	if err := f.fieldErr[fmt.Sprintf("%d:%s", bookID, strings.Join(fields, ","))]; err != nil {
+		return err
+	}
 	return f.decideErr[bookID]
 }
 

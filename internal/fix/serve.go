@@ -25,6 +25,7 @@ type (
 
 var (
 	ErrClosed      = store.ErrClosed
+	ErrDecided     = store.ErrDecided
 	ErrNoIncident  = store.ErrNoIncident
 	ErrNoOperation = store.ErrNoOperation
 	ErrNotMuted    = store.ErrNotMuted
