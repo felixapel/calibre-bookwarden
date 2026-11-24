@@ -1,0 +1,707 @@
+{
+  "capture limits": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "metadata_unverified",
+          "format": "EPUB",
+          "field": "title",
+          "reason": "field_too_long"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "metadata_unverified",
+          "format": "EPUB",
+          "field": "title",
+          "reason": "field_too_long"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "metadata_unverified",
+          "format": "EPUB",
+          "field": "title",
+          "reason": "field_too_long"
+        }
+      ]
+    }
+  },
+  "clean": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "cover low": {
+    "1": {
+      "findings": [],
+      "error": "findings: structure: findings: invalid evidence structure"
+    },
+    "2": {
+      "findings": [],
+      "error": "findings: structure: findings: invalid evidence structure"
+    },
+    "3": {
+      "findings": [],
+      "error": "findings: structure: findings: invalid evidence structure"
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "cover_low_resolution"
+        }
+      ]
+    }
+  },
+  "cover ok": {
+    "1": {
+      "findings": [],
+      "error": "findings: structure: findings: invalid evidence structure"
+    },
+    "2": {
+      "findings": [],
+      "error": "findings: structure: findings: invalid evidence structure"
+    },
+    "3": {
+      "findings": [],
+      "error": "findings: structure: findings: invalid evidence structure"
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "empty file": {
+    "1": {
+      "findings": [
+        {
+          "code": "file_empty",
+          "format": "EPUB"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "file_empty",
+          "format": "EPUB"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "file_empty",
+          "format": "EPUB"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "file_empty",
+          "format": "EPUB"
+        }
+      ]
+    }
+  },
+  "future date": {
+    "1": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    }
+  },
+  "january first": {
+    "1": {
+      "findings": [
+        {
+          "code": "date_imprecise",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "date_imprecise",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "date_imprecise",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "date_imprecise",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    }
+  },
+  "joined ampersand": {
+    "1": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    }
+  },
+  "joined and": {
+    "1": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    }
+  },
+  "joined semicolon": {
+    "1": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        }
+      ]
+    }
+  },
+  "junk publisher": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "junk title blank": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "junk title digits": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "junk title ext": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "junk title word": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "no formats": {
+    "1": {
+      "findings": [
+        {
+          "code": "no_formats"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "no_formats"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "no_formats"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "no_formats"
+        }
+      ]
+    }
+  },
+  "noise edition": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "noise prefix": {
+    "1": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        },
+        {
+          "code": "authors_mismatch",
+          "format": "EPUB",
+          "field": "authors"
+        },
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        },
+        {
+          "code": "authors_mismatch",
+          "format": "EPUB",
+          "field": "authors"
+        },
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        },
+        {
+          "code": "authors_mismatch",
+          "format": "EPUB",
+          "field": "authors"
+        },
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "author_sort_mismatch",
+          "field": "author_sort"
+        },
+        {
+          "code": "authors_mismatch",
+          "format": "EPUB",
+          "field": "authors"
+        },
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    }
+  },
+  "noise series": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "noise translator": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "placeholder date": {
+    "1": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "date_mismatch",
+          "format": "EPUB",
+          "field": "pubdate"
+        },
+        {
+          "code": "date_precision_unverified",
+          "field": "pubdate"
+        }
+      ]
+    }
+  },
+  "publisher domain": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "publisher real": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "publisher scanner": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": []
+    },
+    "4": {
+      "findings": []
+    }
+  },
+  "title mismatch": {
+    "1": {
+      "findings": [
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    },
+    "2": {
+      "findings": [
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "title_mismatch",
+          "format": "EPUB",
+          "field": "title"
+        }
+      ]
+    }
+  },
+  "title sort mismatch": {
+    "1": {
+      "findings": []
+    },
+    "2": {
+      "findings": []
+    },
+    "3": {
+      "findings": [
+        {
+          "code": "title_sort_mismatch",
+          "field": "title_sort"
+        }
+      ]
+    },
+    "4": {
+      "findings": [
+        {
+          "code": "title_sort_mismatch",
+          "field": "title_sort"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+query {
+  editions(where: {isbn_13: {_eq: "{ISBN}"}}, limit: 11) {
+    id
+    book_id
+    title
+    subtitle
+    isbn_10
+    isbn_13
+    release_date
+    language { code3 }
+    publisher { name }
+    contributions { contribution author { name } }
+  }
+}

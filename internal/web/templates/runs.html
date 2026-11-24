@@ -1,0 +1,28 @@
+{{define "content"}}
+<h1>Runs</h1>
+{{template "calibre" .}}
+{{template "start" .}}
+{{if .Runs}}<table class="runs">
+<thead><tr><th>Run</th><th>Status</th><th>Started</th><th>Books</th><th>Checked</th><th>Changed</th><th>Failed</th></tr></thead>
+<tbody>{{range .Runs}}
+<tr><td><a href="/runs/{{.Run.ID}}">{{.Run.ID}}</a>{{if .Run.Scope.BookID}} (book {{.Run.Scope.BookID}}){{end}}{{with runKind .Run}} ({{.}}){{end}}</td><td>{{statusText .Run.Status}}</td><td>{{when .Run.StartedAt}}</td><td>{{.Progress.Total}}</td><td>{{.Progress.Checked}}</td><td>{{.Progress.SourceChanged}}</td><td>{{.Progress.Failed}}</td></tr>{{end}}
+</tbody>
+</table>
+<p class="detail">Bookwarden keeps {{if .RetainRuns}}the last {{.RetainRuns}} runs{{else}}every run{{end}}, besides any run a decided fix or an operation points to.</p>
+{{else}}<p>No library check has run yet.</p>{{end}}
+{{with .BurnIn}}<section class="burn-in" aria-labelledby="burn-in">
+<h2 id="burn-in">Burn-in</h2>
+<ul>
+<li>Scheduled runs in a row with no broken seal: <strong>{{.CleanStreak}} of 14</strong>{{if .SealPending}} (the seal check of the newest run is still pending){{end}}</li>
+<li>Daily run, 95th percentile over the last 30 days: <strong>{{if .DailyRuns}}{{clock .DailyP95}}{{else}}no runs yet{{end}}</strong> (target 10:00{{if .DailyRuns}}, {{.DailyRuns}} daily runs{{end}})</li>
+<li>Longest scheduled full run in the last 30 days, finished or not: <strong>{{if .LongestFull}}{{clock .LongestFull}}{{else}}no runs yet{{end}}</strong> (target 2:00:00)</li>
+</ul>
+{{if .Rows}}<table class="runs">
+<caption>The run ledger: one row per run, kept when retention deletes the run itself.</caption>
+<thead><tr><th>Run</th><th>Kind</th><th>Status</th><th>Started</th><th>Duration</th><th>Books</th><th>Re-used</th><th>Broken seals</th></tr></thead>
+<tbody>{{range .Rows}}
+<tr><td>{{.RunID}}</td><td>{{.Kind}}{{if .Scheduled}}, scheduled{{end}}</td><td>{{.Status}}</td><td>{{when .StartedAt}}</td><td>{{if .Duration}}{{clock .Duration}}{{end}}</td><td>{{.Books}}</td><td>{{.Reused}}</td><td>{{with .SealBroken}}{{.}}{{else}}not checked{{end}}</td></tr>{{end}}
+</tbody>
+</table>{{end}}
+</section>{{end}}
+{{end}}

@@ -1,0 +1,219 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer run of the same pull request cancels the older one. Each push to
+# main gets its own group (its run ID): Gitea cancels a run waiting in a group
+# when a newer one joins it, even without cancel-in-progress, and every merge
+# commit must get its own green push run.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint, vulnerabilities and secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+      # Prebuilt release binaries, pinned by SHA-256, instead of compiling
+      # the tools from source on every run.
+      - name: Install golangci-lint and gitleaks
+        env:
+          GOLANGCI_LINT_SHA256: ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -eu
+          bin="${RUNNER_TEMP}/tools/bin"
+          dl="${RUNNER_TEMP}/tools/dl"
+          mkdir -p "$bin" "$dl"
+          curl -fsSL --retry 3 -o "$dl/golangci-lint.tar.gz" https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz
+          echo "${GOLANGCI_LINT_SHA256}  $dl/golangci-lint.tar.gz" | sha256sum -c -
+          tar -xzf "$dl/golangci-lint.tar.gz" -C "$bin" --strip-components=1 golangci-lint-2.14.0-linux-amd64/golangci-lint
+          curl -fsSL --retry 3 -o "$dl/gitleaks.tar.gz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "${GITLEAKS_SHA256}  $dl/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$dl/gitleaks.tar.gz" -C "$bin" gitleaks
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/golangci-lint" version
+          "$bin/gitleaks" version
+      - name: golangci-lint
+        run: |
+          golangci-lint run ./...
+          golangci-lint run --build-tags calibre,live ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - name: gitleaks
+        run: gitleaks git --no-banner --redact --exit-code 1 .
+      # Private addresses, host names and paths stay out of the public tree
+      # (scripts/leak-check.allow lists the deliberate uses).
+      - name: Leak check
+        run: scripts/leak-check.sh
+
+  # The deploy, restore-drill and release scripts have stub-driven tests
+  # that touch nothing real; every scripts/*_test.sh runs here.
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install shellcheck and actionlint
+        env:
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -eu
+          bin="${RUNNER_TEMP}/tools/bin"
+          dl="${RUNNER_TEMP}/tools/dl"
+          mkdir -p "$bin" "$dl"
+          curl -fsSL --retry 3 -o "$dl/shellcheck.tar.xz" https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "${SHELLCHECK_SHA256}  $dl/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$dl/shellcheck.tar.xz" -C "$bin" --strip-components=1 shellcheck-v0.11.0/shellcheck
+          curl -fsSL --retry 3 -o "$dl/actionlint.tar.gz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "${ACTIONLINT_SHA256}  $dl/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$dl/actionlint.tar.gz" -C "$bin" actionlint
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/shellcheck" --version
+          "$bin/actionlint" -version
+      - name: Script tests
+        run: |
+          set -u
+          failed=""
+          for t in scripts/*_test.sh; do
+            echo "::group::$t"
+            if ! "$t" </dev/null; then failed="$failed $t"; fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "::error::failed:$failed"; exit 1; fi
+      - name: shellcheck
+        run: shellcheck scripts/*.sh test/calibre/*.sh
+      # actionlint also runs shellcheck over every run: block.
+      - name: actionlint
+        run: actionlint .gitea/workflows/*.yml
+
+  test:
+    name: Tests on Postgres 18
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+        env:
+          POSTGRES_PASSWORD: bookwarden-ci
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    env:
+      BOOKWARDEN_TEST_DATABASE_URL: postgres://postgres:bookwarden-ci@postgres:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: go test -race
+        run: go test -race -count=1 ./...
+      - name: Postgres tests really ran
+        run: |
+          set -o pipefail
+          go test -count=1 -v ./internal/store/... | tee store-tests.log
+          if grep -q -- '--- SKIP' store-tests.log; then echo "Postgres tests were skipped"; exit 1; fi
+
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Longer fuzzing runs nightly (nightly.yml).
+      - name: Fuzz every parser for 5 s
+        env:
+          FUZZTIME: 5s
+        run: scripts/fuzz-smoke.sh
+
+  image:
+    name: Image size, scan and smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lint, test]
+    env:
+      # Debian's 20.10 client only builds with BuildKit (needed by the
+      # Dockerfile's cache mounts) when this is set.
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The ubuntu-latest job image (node:22-bookworm) has no Docker client;
+      # the runner mounts the host's Docker socket into the job.
+      - name: Install the Docker client
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends docker.io
+          docker version
+      - name: Build
+        run: docker build --build-arg VERSION="ci-${GITHUB_SHA::12}" --build-arg REVISION="${GITHUB_SHA}" -t "bookwarden:ci-${GITHUB_RUN_ID}" .
+      - name: Size budget
+        run: scripts/check-image-size.sh "bookwarden:ci-${GITHUB_RUN_ID}" 100
+      # The same scan as release.yml and nightly.yml.
+      - name: Trivy (HIGH and CRITICAL)
+        run: scripts/scan-image.sh "bookwarden:ci-${GITHUB_RUN_ID}"
+      - name: Smoke test
+        run: scripts/smoke-image.sh "bookwarden:ci-${GITHUB_RUN_ID}"
+      - name: Remove the image
+        if: always()
+        run: docker image rm -f "bookwarden:ci-${GITHUB_RUN_ID}" || true
+
+  integration:
+    name: Read-only run and fixes against Calibre 9.16
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [lint, test]
+    env:
+      # The test Calibre image's Dockerfile needs BuildKit.
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install the Docker client
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends docker.io
+          docker version
+      - name: Integration test
+        run: scripts/integration-test.sh
+      # Debian's docker.io has no Compose plugin. Renovate can't recompute
+      # the hash: bump the version and the SHA-256 together.
+      - name: Install Docker Compose
+        env:
+          COMPOSE_VERSION: v5.6.1
+          COMPOSE_SHA256: 47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0
+        run: |
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+            "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64"
+          echo "${COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c -
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          docker compose version
+      - name: Quick start test
+        run: scripts/quickstart-test.sh

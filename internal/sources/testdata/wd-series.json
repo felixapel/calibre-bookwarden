@@ -1,0 +1,275 @@
+{
+ "head": {
+  "vars": [
+   "item",
+   "field",
+   "value",
+   "ent",
+   "entLabel",
+   "order",
+   "prec"
+  ]
+ },
+ "results": {
+  "bindings": [
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000010"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-7653-2635-5"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000010"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "The Synthetic Cycle"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "2.50"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000010"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "Zed Anthology"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "7"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000011"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-7653-2635-5"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000011"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "Cycle Two"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "1"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000011"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "Cycle Two"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "2"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000012"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-7653-2635-5"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000012"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "Cycle Three"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "II"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000013"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-7653-2635-5"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000013"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "Q42"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000014"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-7653-2635-5"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000014"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "Cycle Five"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000015"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-7653-2635-5"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000015"
+    },
+    "field": {
+     "type": "literal",
+     "value": "series"
+    },
+    "ent": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q9"
+    },
+    "entLabel": {
+     "type": "literal",
+     "value": "Cycle Six"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "1.0"
+    }
+   }
+  ]
+ }
+}

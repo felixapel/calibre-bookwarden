@@ -1,0 +1,18 @@
+{{define "progress"}}<section class="progress">
+<div id="progress" aria-live="polite" aria-atomic="true"{{if not .Run.Run.Status.Terminal}} hx-get="/runs/{{.Run.Run.ID}}/progress" hx-trigger="every 2s" hx-swap="innerHTML"{{end}}>{{template "progress-counts" .}}</div>
+{{if not .Run.Run.Status.Terminal}}<form id="cancel-form" method="post" action="/runs/{{.Run.Run.ID}}/cancel"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit" id="cancel-run">Cancel</button></form>
+<noscript><p><a href="/runs/{{.Run.Run.ID}}">Refresh</a> to see the latest counts.</p></noscript>{{end}}
+</section>{{end}}
+{{define "progress-counts"}}<p class="status"><strong>{{statusText .Run.Run.Status}}</strong>{{with .Run.Run.FinishedAt | when}}, {{.}}{{end}}</p>
+{{with .Run.Run.Error}}<p class="error">{{.}}</p>{{end}}
+{{if .Run.Run.Scope.Incremental}}<p class="detail">Incremental check: {{.Run.Progress.Reused}} of {{.Run.Progress.Checked}} books reused their file evidence{{if not .Run.Run.Status.Terminal}} so far{{end}}. Lookups, findings and fixes were computed again for every book.</p>{{end}}
+{{template "counts" .Run.Progress}}{{end}}
+{{define "progress-end"}}<div id="cancel-form" hx-swap-oob="true"></div>{{end}}
+{{define "counts"}}<dl class="counts">
+<div><dt>Books</dt><dd>{{.Total}}</dd></div>
+<div><dt>Pending</dt><dd>{{.Pending}}</dd></div>
+<div><dt>Checked</dt><dd>{{.Checked}}</dd></div>
+<div><dt>Changed in Calibre</dt><dd>{{.SourceChanged}}</dd></div>
+<div><dt>Failed</dt><dd>{{.Failed}}</dd></div>
+{{if .Reused}}<div><dt>Reused</dt><dd>{{.Reused}}</dd></div>{{end}}
+</dl>{{end}}

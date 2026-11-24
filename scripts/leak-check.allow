@@ -1,0 +1,33 @@
+# Deliberate uses that scripts/leak-check.sh lets pass: "file:pattern", one
+# per line, each with the reason above it.
+
+# git-cliff drops commits whose message names these words, so they stay out
+# of the public changelog. The filter has to name them.
+cliff.toml:service-name
+
+# Unraid's standard share path, the same on every Unraid server: the default
+# dump directory of the deploy script, and the README line listing defaults.
+scripts/deploy-unraid.sh:server-path
+README.md:server-path
+
+# Tests of private-address handling (the dial guard, allow-lists, trusted
+# proxies) need private addresses. All are made-up values in the RFC 1918
+# ranges, not hosts anyone runs.
+cmd/bookwarden/agent_test.go:private-address
+cmd/bookwarden/panel_test.go:private-address
+internal/agent/client_test.go:private-address
+internal/agent/seat_test.go:private-address
+internal/config/agent_test.go:private-address
+internal/config/config_test.go:private-address
+internal/config/envdoc_test.go:private-address
+internal/config/heartbeat_test.go:private-address
+internal/heartbeat/heartbeat_test.go:private-address
+internal/netguard/netguard_test.go:private-address
+internal/sources/client_test.go:private-address
+internal/web/middleware_test.go:private-address
+
+# Tests of the special-purpose range refusals use made-up addresses in
+# Tailscale's range too.
+internal/agent/client_test.go:tailnet-address
+internal/netguard/netguard_test.go:tailnet-address
+internal/sources/client_test.go:tailnet-address

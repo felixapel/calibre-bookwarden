@@ -1,0 +1,8 @@
+{{define "content"}}
+<h1>Incidents</h1>
+<p>An incident is a write that didn’t complete: Calibre stored something else, or the write failed or was interrupted. Bookwarden puts the old values back where it can. While an incident is open, it makes no changes to Calibre. Check the book in Calibre, then acknowledge the incident.</p>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Incident</th><th scope="col">Operation</th><th scope="col">Reason</th><th scope="col">Opened</th><th scope="col">Status</th></tr></thead><tbody>
+{{range .Incidents}}<tr><td>Incident {{.ID}}</td><td><a href="/history/{{.OperationID}}">Operation {{.OperationID}}</a></td><td>{{reasonText "" .Reason}}{{with .Detail}}<br><span class="detail">{{.}}</span>{{end}}</td><td>{{when .CreatedAt}}</td><td>{{if .AcknowledgedAt}}Acknowledged {{when (deref .AcknowledgedAt)}} by {{.AcknowledgedBy}}{{else if eq .OperationState "restoring"}}{{if eq .Reason "interrupted"}}The write was interrupted before the old values were back.{{else}}Calibre could not be reached while restoring this book.{{end}} {{if $.WritesOn}}Bookwarden retries every minute.{{else}}Restoring continues once writes are on.{{end}} It can be acknowledged once the old values are back. <form method="post" action="/incidents/{{.ID}}/retry" class="inline"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button type="submit">Retry now</button></form>{{else}}<form method="post" action="/incidents/{{.ID}}/acknowledge" class="inline"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button type="submit">Acknowledge</button></form>{{end}}</td></tr>
+{{else}}<tr><td colspan="5">No incidents.</td></tr>{{end}}
+</tbody></table></div>
+{{end}}

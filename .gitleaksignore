@@ -1,0 +1,13 @@
+# Test-fixture API keys from the Python implementation (Certificate A), kept in
+# history only: they appear in its test files and nowhere else, and those files
+# were removed in f60e204. New findings still fail CI.
+19953b4ed857e7a4074958a868056054166d12f7:tests/web/test_feedback_api.py:generic-api-key:17
+42e82280d65f88251cf9ef2ceba4d3ac1f044d73:tests/test_v2_supervised_pilot_integration.py:generic-api-key:246
+9dd921066d98c0b9d71012a1e312837cc6e42a4e:tests/web/test_api_auth.py:generic-api-key:6
+d19fc4189ab85f32a96fd3272d122c96fb6c2dbe:tests/test_production_env_validation.py:generic-api-key:22
+d75a81c9b19b8d056eca64d99720a215083ea554:tests/web/test_production_app.py:generic-api-key:14
+fe37e245a5af4d7546c72c87a5b6d6a4a4413f89:tests/web/test_production_verify_api.py:generic-api-key:17
+# Calibre's public marker for typed JSON values (utils/serialize.py), not a secret.
+09e8cb1eaf5775af26d1c5c14268178f6f0e7b9d:internal/library/books.go:generic-api-key:52
+# The fake key the agent seat tests send to an httptest server (ADR-029).
+b2f0dfd81451947ea815aa14a084aed78f868868:internal/agent/seat_test.go:generic-api-key:17

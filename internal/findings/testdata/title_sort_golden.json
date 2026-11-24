@@ -1,0 +1,942 @@
+[
+ {
+  "title": "Die Welt",
+  "lang": "deu",
+  "sort": "Welt, Die"
+ },
+ {
+  "title": "Die Welt",
+  "lang": null,
+  "sort": "Die Welt"
+ },
+ {
+  "title": "El Quijote",
+  "lang": "spa",
+  "sort": "Quijote, El"
+ },
+ {
+  "title": "The Book",
+  "lang": "deu",
+  "sort": "The Book"
+ },
+ {
+  "title": "Das Boot",
+  "lang": "deu",
+  "sort": "Boot, Das"
+ },
+ {
+  "title": "The Book",
+  "lang": null,
+  "sort": "Book, The"
+ },
+ {
+  "title": "The Book",
+  "lang": "xyz",
+  "sort": "Book, The"
+ },
+ {
+  "title": "The Book",
+  "lang": "jpn",
+  "sort": "Book, The"
+ },
+ {
+  "title": "\"The Quote\"",
+  "lang": "eng",
+  "sort": "Quote, The"
+ },
+ {
+  "title": "'The' Book",
+  "lang": "eng",
+  "sort": "The' Book"
+ },
+ {
+  "title": "The \"Book\"",
+  "lang": "eng",
+  "sort": "Book\", The"
+ },
+ {
+  "title": "«The Book»",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "The:Book",
+  "lang": "eng",
+  "sort": "The:Book"
+ },
+ {
+  "title": "THE BOOK",
+  "lang": "eng",
+  "sort": "BOOK, THE"
+ },
+ {
+  "title": "the book",
+  "lang": "eng",
+  "sort": "book, the"
+ },
+ {
+  "title": "De La Terre",
+  "lang": "fra",
+  "sort": "Terre, De La"
+ },
+ {
+  "title": "L'Étranger",
+  "lang": "fra",
+  "sort": "Étranger, L'"
+ },
+ {
+  "title": "  The  Space ",
+  "lang": "eng",
+  "sort": "Space, The"
+ },
+ {
+  "title": "A",
+  "lang": "eng",
+  "sort": "A"
+ },
+ {
+  "title": "The",
+  "lang": "eng",
+  "sort": "The"
+ },
+ {
+  "title": "Theory",
+  "lang": "eng",
+  "sort": "Theory"
+ },
+ {
+  "title": "Thé Book",
+  "lang": "eng",
+  "sort": "Thé Book"
+ },
+ {
+  "title": "The\tBook",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "The\u001cBook",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "",
+  "lang": "eng",
+  "sort": ""
+ },
+ {
+  "title": "   ",
+  "lang": "eng",
+  "sort": ""
+ },
+ {
+  "title": "'n Boek",
+  "lang": "afr",
+  "sort": "n Boek"
+ },
+ {
+  "title": "Des Choses",
+  "lang": "fra",
+  "sort": "Choses, Des"
+ },
+ {
+  "title": "Nişte Cărți",
+  "lang": "ron",
+  "sort": "Cărți, Nişte"
+ },
+ {
+  "title": "Die Welt",
+  "lang": "und",
+  "sort": "Die Welt"
+ },
+ {
+  "title": "Die Welt",
+  "lang": "de",
+  "sort": "Welt, Die"
+ },
+ {
+  "title": "Der Prozess",
+  "lang": "ger",
+  "sort": "Der Prozess"
+ },
+ {
+  "title": "Ogniem i mieczem",
+  "lang": "pol",
+  "sort": "Ogniem i mieczem"
+ },
+ {
+  "title": "A Pole",
+  "lang": "pol",
+  "sort": "A Pole"
+ },
+ {
+  "title": "An Apple",
+  "lang": "eng",
+  "sort": "Apple, An"
+ },
+ {
+  "title": "Le Petit Prince",
+  "lang": "fra",
+  "sort": "Petit Prince, Le"
+ },
+ {
+  "title": "Het Achterhuis",
+  "lang": "nld",
+  "sort": "Achterhuis, Het"
+ },
+ {
+  "title": "'t Hooft",
+  "lang": "nld",
+  "sort": "t Hooft"
+ },
+ {
+  "title": "Il Nome",
+  "lang": "ita",
+  "sort": "Nome, Il"
+ },
+ {
+  "title": "Dell'Amore",
+  "lang": "ita",
+  "sort": "Amore, Dell'"
+ },
+ {
+  "title": "Os Lusíadas",
+  "lang": "por",
+  "sort": "Lusíadas, Os"
+ },
+ {
+  "title": "Bir Gün",
+  "lang": "tur",
+  "sort": "Gün, Bir"
+ },
+ {
+  "title": "Ett År",
+  "lang": "swe",
+  "sort": "År, Ett"
+ },
+ {
+  "title": "Az Ember",
+  "lang": "hun",
+  "sort": "Ember, Az"
+ },
+ {
+  "title": "La Espero",
+  "lang": "epo",
+  "sort": "Espero, La"
+ },
+ {
+  "title": "To Vivlio",
+  "lang": "ell",
+  "sort": "Vivlio, To"
+ },
+ {
+  "title": "Die Welt",
+  "lang": "eng",
+  "sort": "Die Welt"
+ },
+ {
+  "title": "The Book",
+  "lang": "en",
+  "sort": "Book, The"
+ },
+ {
+  "title": "The Book",
+  "lang": "EN-gb",
+  "sort": "Book, The"
+ },
+ {
+  "title": "The Book",
+  "lang": "eng@x",
+  "sort": "Book, The"
+ },
+ {
+  "title": "'n Title Here",
+  "lang": "afr",
+  "sort": "n Title Here"
+ },
+ {
+  "title": "Die Title Here",
+  "lang": "afr",
+  "sort": "Title Here, Die"
+ },
+ {
+  "title": "Das Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Das"
+ },
+ {
+  "title": "Dem Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Dem"
+ },
+ {
+  "title": "Den Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Den"
+ },
+ {
+  "title": "Der Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Der"
+ },
+ {
+  "title": "Des Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Des"
+ },
+ {
+  "title": "Die Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Die"
+ },
+ {
+  "title": "Ein Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Ein"
+ },
+ {
+  "title": "Eine Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Eine"
+ },
+ {
+  "title": "Einem Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Einem"
+ },
+ {
+  "title": "Einen Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Einen"
+ },
+ {
+  "title": "Eines Title Here",
+  "lang": "deu",
+  "sort": "Title Here, Eines"
+ },
+ {
+  "title": "'Ena Title Here",
+  "lang": "ell",
+  "sort": "Ena Title Here"
+ },
+ {
+  "title": "'Enan Title Here",
+  "lang": "ell",
+  "sort": "Enan Title Here"
+ },
+ {
+  "title": "'Enas Title Here",
+  "lang": "ell",
+  "sort": "Enas Title Here"
+ },
+ {
+  "title": "'Mia Title Here",
+  "lang": "ell",
+  "sort": "Mia Title Here"
+ },
+ {
+  "title": "I Title Here",
+  "lang": "ell",
+  "sort": "Title Here, I"
+ },
+ {
+  "title": "O Title Here",
+  "lang": "ell",
+  "sort": "Title Here, O"
+ },
+ {
+  "title": "Ta Title Here",
+  "lang": "ell",
+  "sort": "Title Here, Ta"
+ },
+ {
+  "title": "Tis Title Here",
+  "lang": "ell",
+  "sort": "Title Here, Tis"
+ },
+ {
+  "title": "To Title Here",
+  "lang": "ell",
+  "sort": "Title Here, To"
+ },
+ {
+  "title": "Tus Title Here",
+  "lang": "ell",
+  "sort": "Title Here, Tus"
+ },
+ {
+  "title": "A Title Here",
+  "lang": "eng",
+  "sort": "Title Here, A"
+ },
+ {
+  "title": "An Title Here",
+  "lang": "eng",
+  "sort": "Title Here, An"
+ },
+ {
+  "title": "The Title Here",
+  "lang": "eng",
+  "sort": "Title Here, The"
+ },
+ {
+  "title": "L'Title",
+  "lang": "epo",
+  "sort": "Title, L'"
+ },
+ {
+  "title": "La Title Here",
+  "lang": "epo",
+  "sort": "Title Here, La"
+ },
+ {
+  "title": "L´Title",
+  "lang": "epo",
+  "sort": "Title, L´"
+ },
+ {
+  "title": "D'Title",
+  "lang": "fra",
+  "sort": "Title, D'"
+ },
+ {
+  "title": "De (La )?Title",
+  "lang": "fra",
+  "sort": "(La )?Title, De"
+ },
+ {
+  "title": "Des Title Here",
+  "lang": "fra",
+  "sort": "Title Here, Des"
+ },
+ {
+  "title": "D´Title",
+  "lang": "fra",
+  "sort": "Title, D´"
+ },
+ {
+  "title": "D’Title",
+  "lang": "fra",
+  "sort": "Title, D’"
+ },
+ {
+  "title": "L'Title",
+  "lang": "fra",
+  "sort": "Title, L'"
+ },
+ {
+  "title": "La Title Here",
+  "lang": "fra",
+  "sort": "Title Here, La"
+ },
+ {
+  "title": "Le Title Here",
+  "lang": "fra",
+  "sort": "Title Here, Le"
+ },
+ {
+  "title": "Les Title Here",
+  "lang": "fra",
+  "sort": "Title Here, Les"
+ },
+ {
+  "title": "L´Title",
+  "lang": "fra",
+  "sort": "Title, L´"
+ },
+ {
+  "title": "L’Title",
+  "lang": "fra",
+  "sort": "Title, L’"
+ },
+ {
+  "title": "Un Title Here",
+  "lang": "fra",
+  "sort": "Title Here, Un"
+ },
+ {
+  "title": "Une Title Here",
+  "lang": "fra",
+  "sort": "Title Here, Une"
+ },
+ {
+  "title": "A Title Here",
+  "lang": "hun",
+  "sort": "Title Here, A"
+ },
+ {
+  "title": "Az Title Here",
+  "lang": "hun",
+  "sort": "Title Here, Az"
+ },
+ {
+  "title": "Egy Title Here",
+  "lang": "hun",
+  "sort": "Title Here, Egy"
+ },
+ {
+  "title": "Degli Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Degli"
+ },
+ {
+  "title": "Dei Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Dei"
+ },
+ {
+  "title": "Del Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Del"
+ },
+ {
+  "title": "Dell'Title",
+  "lang": "ita",
+  "sort": "Title, Dell'"
+ },
+ {
+  "title": "Della Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Della"
+ },
+ {
+  "title": "Delle Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Delle"
+ },
+ {
+  "title": "Dello Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Dello"
+ },
+ {
+  "title": "Dell´Title",
+  "lang": "ita",
+  "sort": "Title, Dell´"
+ },
+ {
+  "title": "Gli Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Gli"
+ },
+ {
+  "title": "I Title Here",
+  "lang": "ita",
+  "sort": "Title Here, I"
+ },
+ {
+  "title": "Il Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Il"
+ },
+ {
+  "title": "L'Title",
+  "lang": "ita",
+  "sort": "Title, L'"
+ },
+ {
+  "title": "La Title Here",
+  "lang": "ita",
+  "sort": "Title Here, La"
+ },
+ {
+  "title": "Le Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Le"
+ },
+ {
+  "title": "Lo Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Lo"
+ },
+ {
+  "title": "L´Title",
+  "lang": "ita",
+  "sort": "Title, L´"
+ },
+ {
+  "title": "Un'Title",
+  "lang": "ita",
+  "sort": "Title, Un'"
+ },
+ {
+  "title": "Un Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Un"
+ },
+ {
+  "title": "Una Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Una"
+ },
+ {
+  "title": "Uno Title Here",
+  "lang": "ita",
+  "sort": "Title Here, Uno"
+ },
+ {
+  "title": "Un´Title",
+  "lang": "ita",
+  "sort": "Title, Un´"
+ },
+ {
+  "title": "'n Title Here",
+  "lang": "nld",
+  "sort": "n Title Here"
+ },
+ {
+  "title": "'s Title Here",
+  "lang": "nld",
+  "sort": "s Title Here"
+ },
+ {
+  "title": "'t Title Here",
+  "lang": "nld",
+  "sort": "t Title Here"
+ },
+ {
+  "title": "De Title Here",
+  "lang": "nld",
+  "sort": "Title Here, De"
+ },
+ {
+  "title": "Den Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Den"
+ },
+ {
+  "title": "Der Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Der"
+ },
+ {
+  "title": "Des Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Des"
+ },
+ {
+  "title": "Een Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Een"
+ },
+ {
+  "title": "Ene Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Ene"
+ },
+ {
+  "title": "Ener Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Ener"
+ },
+ {
+  "title": "Enes Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Enes"
+ },
+ {
+  "title": "Het Title Here",
+  "lang": "nld",
+  "sort": "Title Here, Het"
+ },
+ {
+  "title": "A Title Here",
+  "lang": "por",
+  "sort": "Title Here, A"
+ },
+ {
+  "title": "As Title Here",
+  "lang": "por",
+  "sort": "Title Here, As"
+ },
+ {
+  "title": "O Title Here",
+  "lang": "por",
+  "sort": "Title Here, O"
+ },
+ {
+  "title": "Os Title Here",
+  "lang": "por",
+  "sort": "Title Here, Os"
+ },
+ {
+  "title": "Um Title Here",
+  "lang": "por",
+  "sort": "Title Here, Um"
+ },
+ {
+  "title": "Uma Title Here",
+  "lang": "por",
+  "sort": "Title Here, Uma"
+ },
+ {
+  "title": "Umas Title Here",
+  "lang": "por",
+  "sort": "Title Here, Umas"
+ },
+ {
+  "title": "Uns Title Here",
+  "lang": "por",
+  "sort": "Title Here, Uns"
+ },
+ {
+  "title": "Nişte Title Here",
+  "lang": "ron",
+  "sort": "Title Here, Nişte"
+ },
+ {
+  "title": "O Title Here",
+  "lang": "ron",
+  "sort": "Title Here, O"
+ },
+ {
+  "title": "Un Title Here",
+  "lang": "ron",
+  "sort": "Title Here, Un"
+ },
+ {
+  "title": "El Title Here",
+  "lang": "spa",
+  "sort": "Title Here, El"
+ },
+ {
+  "title": "La Title Here",
+  "lang": "spa",
+  "sort": "Title Here, La"
+ },
+ {
+  "title": "Las Title Here",
+  "lang": "spa",
+  "sort": "Title Here, Las"
+ },
+ {
+  "title": "Lo Title Here",
+  "lang": "spa",
+  "sort": "Title Here, Lo"
+ },
+ {
+  "title": "Los Title Here",
+  "lang": "spa",
+  "sort": "Title Here, Los"
+ },
+ {
+  "title": "Un Title Here",
+  "lang": "spa",
+  "sort": "Title Here, Un"
+ },
+ {
+  "title": "Una Title Here",
+  "lang": "spa",
+  "sort": "Title Here, Una"
+ },
+ {
+  "title": "Unas Title Here",
+  "lang": "spa",
+  "sort": "Title Here, Unas"
+ },
+ {
+  "title": "Unos Title Here",
+  "lang": "spa",
+  "sort": "Title Here, Unos"
+ },
+ {
+  "title": "De Title Here",
+  "lang": "swe",
+  "sort": "Title Here, De"
+ },
+ {
+  "title": "Den Title Here",
+  "lang": "swe",
+  "sort": "Title Here, Den"
+ },
+ {
+  "title": "Det Title Here",
+  "lang": "swe",
+  "sort": "Title Here, Det"
+ },
+ {
+  "title": "En Title Here",
+  "lang": "swe",
+  "sort": "Title Here, En"
+ },
+ {
+  "title": "Ett Title Here",
+  "lang": "swe",
+  "sort": "Title Here, Ett"
+ },
+ {
+  "title": "Bir Title Here",
+  "lang": "tur",
+  "sort": "Title Here, Bir"
+ },
+ {
+  "title": "\"The Book\"",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "\"The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "'The Book'",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "'The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "“The Book”",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "“The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "”The Book”",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "”The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "„The Book“",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "„The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "‚The Book‘",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "‚The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "’The Book’",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "’The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "‘The Book’",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "‘The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "‹The Book›",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "‹The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "›The Book‹",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "›The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "《The Book》",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "《The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "〈The Book〉",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "〈The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "»The Book«",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "»The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "«The Book»",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "«The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "「The Book」",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "「The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "『The Book』",
+  "lang": "eng",
+  "sort": "Book, The"
+ },
+ {
+  "title": "『The Book",
+  "lang": "eng",
+  "sort": "Book, The"
+ }
+]

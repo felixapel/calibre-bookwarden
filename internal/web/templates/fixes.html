@@ -1,0 +1,57 @@
+{{define "content"}}
+<h1>Fixes{{if .Run.Run.ID}} · Run {{.Run.Run.ID}}{{end}}</h1>
+<p>Fields where two independent sources, one of them the files or a national library, agree on a value that differs from Calibre. Approve or reject each fix with its own buttons, or tick several and decide them together; approving changes nothing in Calibre until you apply the approved fixes. The agents’ verdicts stay hidden until you ask for them, so your decisions are your own; <a href="/precision">see what they have taught Bookwarden</a>.</p>
+{{with .RevealURL}}<p><a href="{{.}}">{{if $.RevealAsked}}Hide{{else}}Show{{end}} agents’ verdicts</a></p>{{end}}
+{{if and .Run.Run.ID .Run.Run.Status.Terminal}}<form method="post" action="/runs/{{.Run.Run.ID}}/fixes/approve-all" class="start">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<button type="submit">Approve all open fixes</button> <span class="detail">Every undecided fix of this run on every page, except muted types and values Calibre can’t store exactly. Your rejections stay.</span>
+</form>{{end}}
+{{if .ApprovedCount}}<form method="post" action="/fixes/apply" class="start">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<span>{{.ApprovedCount}} approved, waiting</span> <button type="submit">Apply approved fixes</button>
+</form>{{end}}
+{{if and .AgentsOn .Run.Run.ID .Run.Run.Status.Terminal}}<form method="post" action="/runs/{{.Run.Run.ID}}/fixes/review" class="start">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<button type="submit">Review with agents</button> <span class="detail">Three judges review this run’s open fixes, as after a check.</span>
+</form>{{end}}
+{{if .Run.Run.ID}}
+<p><a href="/runs/{{.Run.Run.ID}}">Run and frozen books</a> · <a href="/runs/{{.Run.Run.ID}}/findings">Findings</a></p>
+<form method="get" action="/runs/{{.Run.Run.ID}}/fixes" class="filters">
+<label for="field">Field</label><select id="field" name="field"><option value="">All fields</option>{{range .FixFields}}<option value="{{.}}"{{if eq . $.FixFilter.Field}} selected{{end}}>{{.}}</option>{{end}}</select>
+<label for="tier">Tier</label><select id="tier" name="tier"><option value="">All tiers</option>{{range $t := tiers}}<option value="{{$t}}"{{if eq $t $.FixFilter.Tier}} selected{{end}}>Tier {{$t}}</option>{{end}}</select>
+<label for="q">Search</label><input id="q" name="q" type="search" maxlength="100" placeholder="title or author" value="{{.FixFilter.Query}}">
+<label for="sort">Sort</label><select id="sort" name="sort"{{if .FixPage.Walked}} disabled{{end}}><option value="">Book</option>{{range $o := fixSorts}}<option value="{{$o}}"{{if eq $o $.FixFilter.Sort}} selected{{end}}>{{$o}}</option>{{end}}</select>{{if .FixPage.Walked}} <span class="detail">sorting needs a checked run</span>{{end}}
+<label for="book_id">Book id</label><input id="book_id" name="book_id" inputmode="numeric" pattern="[0-9]+" value="{{if .FixFilter.BookID}}{{.FixFilter.BookID}}{{end}}">
+{{if .RevealAsked}}<input type="hidden" name="verdicts" value="1">{{end}}
+<label for="muted"><input id="muted" name="muted" type="checkbox" value="1"{{if .FixFilter.Muted}} checked{{end}}> Muted types only</label>
+{{if .AgentsOn}}<label for="decided">Decided</label><select id="decided" name="decided"><option value="">Any</option>{{range $d := decidedFilters}}<option value="{{$d}}"{{if eq $d $.FixFilter.Decided}} selected{{end}}>{{$d}}</option>{{end}}</select>
+{{end}}<button type="submit">Apply filters</button>
+</form>
+{{if .FixFilter.Muted}}<p class="notice">These are the fixes of muted types: types whose decisions show poor precision (<a href="/precision">see why</a>). You can still approve or reject them. <a href="{{.MutedURL}}">Back to the inbox</a></p>
+{{else if .FixPage.MutedHidden}}<p class="detail">{{.FixPage.MutedHidden}} {{if eq .FixPage.MutedHidden 1}}fix{{else}}fixes{{end}} hidden in muted types · <a href="{{.MutedURL}}">Show them</a></p>{{end}}
+{{$pickable := anyPickable .FixViews}}
+{{if $pickable}}<form method="post" action="/runs/{{.Run.Run.ID}}/fixes/decide">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">{{template "fixFilterFields" .}}{{end}}
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Pick</th><th scope="col">Book</th><th scope="col">Tier</th><th scope="col">Field</th><th scope="col">Calibre → proposed</th><th scope="col">Supported by</th><th scope="col">Status</th><th scope="col">Decide</th></tr></thead><tbody>
+{{range .FixViews}}<tr data-row="{{.BookID}}-{{.Proposal.Field}}" tabindex="0"><td>{{if .Pickable}}<input type="checkbox" name="pick" value="{{.Pick}}" aria-label="Pick {{.Proposal.Field}} of book {{.BookID}}">{{end}}</td><td><a href="/runs/{{.RunID}}/books/{{.BookID}}">{{.BookID}} · {{.Title}}</a></td><td>Tier {{.Tier}}</td><td>{{.Proposal.Field}}</td><td>{{template "values" .Proposal.Current}} → {{template "values" .Proposal.Proposed}}</td><td>{{range $i, $r := .Proposal.Roots}}{{if $i}}, {{end}}{{$r}}{{end}}</td><td>{{fixStatus .}}{{if .CarriedRun}} · carried from <a href="/runs/{{.CarriedRun}}/books/{{.CarriedBook}}">run {{.CarriedRun}}</a>{{end}}{{if eq .DecidedBy "agent"}} by agent{{end}}{{if .Verdicts}}<details><summary>{{with .AgentNote}}Agents: {{.}}{{else}}Agents’ verdicts{{end}}</summary><ul>{{range .Verdicts}}<li>{{.Seat}}: {{if .ErrorCode}}failed: {{.ErrorCode}}{{else}}{{.Answer}} · {{.Reason}}{{end}}</li>{{end}}</ul></details>{{else}}{{with .AgentNote}}<br>Agents: {{.}}{{end}}{{end}}</td><td>{{if .Pickable}}<button type="submit" form="one-{{.BookID}}-{{.Proposal.Field}}" name="action" value="approve" data-act="approve">Approve</button> <button type="submit" form="one-{{.BookID}}-{{.Proposal.Field}}" name="action" value="reject" data-act="reject">Reject</button>{{end}}</td></tr>{{else}}<tr><td colspan="8">No fixes match this selection.</td></tr>{{end}}
+</tbody></table></div>
+{{with .FixHidden}}<p class="detail">{{.}} rows on this page are hidden by the filter.</p>{{end}}
+{{if $pickable}}<p class="start"><button type="submit" name="action" value="approve">Approve ticked</button> <button type="submit" name="action" value="reject">Reject ticked</button></p>
+</form>
+{{range .FixViews}}{{if .Pickable}}<form method="post" action="/runs/{{$.Run.Run.ID}}/fixes/decide" id="one-{{.BookID}}-{{.Proposal.Field}}">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">{{template "fixFilterFields" $}}<input type="hidden" name="mode" value="individual"><input type="hidden" name="pick" value="{{.Pick}}">
+</form>
+{{end}}{{end}}
+<form method="post" action="/runs/{{.Run.Run.ID}}/fixes/decide" class="start">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">{{template "fixFilterFields" .}}<input type="hidden" name="action" value="approve">
+{{range .FixViews}}{{if and .Pickable (ne .Status "rejected")}}<input type="hidden" name="pick" value="{{.Pick}}">{{end}}{{end}}
+<button type="submit">Approve all shown</button>
+</form>{{end}}
+{{with .NextURL}}<p><a href="{{.}}">Next fixes</a></p>{{end}}
+<p class="detail">Keyboard: j and k move between rows, a approves and r rejects the focused row, s skips to the next row, ? shows this help.</p>
+<div id="inbox-help" class="notice" role="dialog" aria-label="Keyboard help" hidden><strong>Keyboard</strong><ul><li><kbd>j</kbd> / <kbd>k</kbd> next / previous row</li><li><kbd>a</kbd> / <kbd>r</kbd> approve / reject the focused row</li><li><kbd>s</kbd> skip to the next row</li><li><kbd>?</kbd> show or hide this help</li></ul></div>
+<script src="/static/inbox.js" defer></script>
+{{end}}
+{{end}}
+{{define "values"}}{{range $i, $v := .}}{{if $i}}; {{end}}{{display $v}}{{else}}(empty){{end}}{{end}}
+{{define "fixFilterFields"}}{{if .Reveal}}<input type="hidden" name="verdicts" value="1">{{end}}{{with .FixFilter.Field}}<input type="hidden" name="field" value="{{.}}">{{end}}{{with .FixFilter.Tier}}<input type="hidden" name="tier" value="{{.}}">{{end}}{{with .FixFilter.BookID}}<input type="hidden" name="book_id" value="{{.}}">{{end}}{{with .FixFilter.Decided}}<input type="hidden" name="decided" value="{{.}}">{{end}}{{with .FixFilter.Query}}<input type="hidden" name="q" value="{{.}}">{{end}}{{with .FixFilter.Sort}}<input type="hidden" name="sort" value="{{.}}">{{end}}{{if .FixFilter.Muted}}<input type="hidden" name="muted" value="1">{{end}}{{with .Cursor}}<input type="hidden" name="cursor" value="{{.}}">{{end}}{{end}}

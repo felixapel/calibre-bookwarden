@@ -1,0 +1,310 @@
+name: release
+
+# A pushed v* tag builds the image, runs the same size, vulnerability and
+# smoke checks as ci.yml, writes an SBOM, pushes the image to the Gitea
+# registry (and to GHCR and signs it when those secrets exist), and creates
+# the Gitea release with the changelog. A manual run (workflow_dispatch) is
+# always a dry run: the same steps under the version v0.0.0-dryrun.<run id>,
+# without GHCR, with a draft release and an image tag that are deleted again
+# at the end. See "Releases" in the README for the secrets and ADR-042 for
+# the signing choices.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (a manual run always is one)"
+        type: boolean
+        default: true
+
+# Every write goes through REGISTRY_TOKEN; the job token only reads.
+permissions:
+  contents: read
+
+# One run per tag; a second tag waits instead of cancelling a release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, scan, publish and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Debian's 20.10 client only builds with BuildKit (needed by the
+      # Dockerfile's cache mounts) when this is set.
+      DOCKER_BUILDKIT: "1"
+      # The forge's registry host (host:port) and API base URL come from the
+      # repository variables FORGE_REGISTRY and FORGE_API (Settings,
+      # Actions, Variables); the cfg step fails without them.
+      GITEA_REGISTRY: ${{ vars.FORGE_REGISTRY }}
+      GITEA_IMAGE: ${{ vars.FORGE_REGISTRY }}/felix/bookwarden
+      GITEA_API: ${{ vars.FORGE_API }}
+      GHCR_IMAGE: ghcr.io/felixapel/bookwarden
+      SYFT_IMAGE: anchore/syft:v1.56.0@sha256:697ae864af1299cfa43c54b161cea3dd65c6d54de82e3dba66ea3dccb3acc313
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Which optional parts run. Only presence is tested; no value is printed.
+      - name: Check the tag and which secrets exist
+        id: cfg
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Fail in the first minute, not after the build: the push and the
+          # release can't be made without them.
+          if [ -z "$REGISTRY_USER" ] || [ -z "$REGISTRY_TOKEN" ]; then
+            echo "::error::REGISTRY_USER and REGISTRY_TOKEN are required"
+            exit 1
+          fi
+          if [ -z "$GITEA_REGISTRY" ] || [ -z "$GITEA_API" ]; then
+            echo "::error::the repository variables FORGE_REGISTRY and FORGE_API are required"
+            exit 1
+          fi
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            # A manual run is always a dry run, whatever the input says.
+            tag="v0.0.0-dryrun.${GITHUB_RUN_ID}"
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            echo "image_tag=dryrun-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+            echo "::notice::dry run: version ${tag}; the draft release and the image tag are deleted at the end"
+          else
+            tag="${GITHUB_REF_NAME}"
+            if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+              echo "::error::tag '$tag' is not vMAJOR.MINOR.PATCH[-prerelease]"
+              exit 1
+            fi
+            # Only a commit that is on main may be released.
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::tag is not on main"; exit 1; }
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+            echo "image_tag=${tag}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          case "$tag" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+          # Registry logins live in a throwaway Docker config, removed at the end.
+          echo "DOCKER_CONFIG=${RUNNER_TEMP}/docker" >> "$GITHUB_ENV"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "ghcr=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::dry run: the image is not pushed to GHCR."
+          elif [ -n "$GHCR_USER" ] && [ -n "$GHCR_TOKEN" ]; then
+            echo "ghcr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ghcr=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GHCR_USER or GHCR_TOKEN is not set: the image is not pushed to GHCR."
+          fi
+          if [ -n "$COSIGN_KEY" ] && [ -n "$COSIGN_PASSWORD" ]; then
+            echo "cosign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cosign=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::COSIGN_KEY or COSIGN_PASSWORD is not set: the image and the SBOM are not signed."
+          fi
+      # The ubuntu-latest job image (node:22-bookworm) has no Docker client;
+      # the runner mounts the host's Docker socket into the job.
+      - name: Install the Docker client
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends docker.io jq
+          docker version
+      # Prebuilt release binaries, pinned by SHA-256 (bump version and hash
+      # together; Renovate cannot recompute the hash).
+      - name: Install crane, cosign and git-cliff
+        env:
+          CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+          COSIGN_SHA256: 424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
+          CLIFF_SHA256: 24f397c733add5390fdceee3a2088588ab0d5f944ce00d34cb7029b888cf2db4
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/tools/bin"
+          dl="${RUNNER_TEMP}/tools/dl"
+          mkdir -p "$bin" "$dl"
+          curl -fsSL --retry 3 -o "$dl/crane.tar.gz" https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz
+          echo "${CRANE_SHA256}  $dl/crane.tar.gz" | sha256sum -c -
+          tar -xzf "$dl/crane.tar.gz" -C "$bin" crane
+          curl -fsSL --retry 3 -o "$bin/cosign" https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign-linux-amd64
+          echo "${COSIGN_SHA256}  $bin/cosign" | sha256sum -c -
+          chmod +x "$bin/cosign"
+          curl -fsSL --retry 3 -o "$dl/cliff.tar.gz" https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-x86_64-unknown-linux-gnu.tar.gz
+          echo "${CLIFF_SHA256}  $dl/cliff.tar.gz" | sha256sum -c -
+          tar -xzf "$dl/cliff.tar.gz" -C "$bin" --strip-components=1 git-cliff-2.14.2/git-cliff
+          echo "$bin" >> "$GITHUB_PATH"
+          # GITHUB_PATH applies from the next step on, so call them by path here.
+          "$bin/crane" version
+          "$bin/cosign" version
+          "$bin/git-cliff" --version
+      - name: Build
+        env:
+          TAG: ${{ steps.cfg.outputs.tag }}
+        run: docker build --build-arg VERSION="${TAG}" --build-arg REVISION="${GITHUB_SHA}" -t "bookwarden:release-${GITHUB_RUN_ID}" .
+      - name: Size budget
+        run: scripts/check-image-size.sh "bookwarden:release-${GITHUB_RUN_ID}" 100
+      # The same scan as ci.yml and nightly.yml.
+      - name: Trivy (HIGH and CRITICAL)
+        run: scripts/scan-image.sh "bookwarden:release-${GITHUB_RUN_ID}"
+      - name: Smoke test
+        run: scripts/smoke-image.sh "bookwarden:release-${GITHUB_RUN_ID}"
+      # Syft writes the SPDX document to stdout, so no host path is mounted
+      # (the job container's paths do not exist on the host's Docker).
+      - name: SBOM (SPDX JSON)
+        run: |
+          set -euo pipefail
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "${SYFT_IMAGE}" \
+            --quiet "docker:bookwarden:release-${GITHUB_RUN_ID}" -o spdx-json > sbom.spdx.json
+          jq -e '.spdxVersion' sbom.spdx.json
+          jq '.packages | length' sbom.spdx.json
+      # The host's Docker daemon does not trust the plain-HTTP Gitea
+      # registry, and must not be changed, so crane pushes a saved tarball.
+      # crane push prints the pushed reference with its digest on stdout.
+      - name: Push to the Gitea registry
+        env:
+          IMAGE_TAG: ${{ steps.cfg.outputs.image_tag }}
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | crane auth login --insecure "$GITEA_REGISTRY" -u "$REGISTRY_USER" --password-stdin
+          docker save -o image.tar "bookwarden:release-${GITHUB_RUN_ID}"
+          pushed=$(crane push --insecure image.tar "${GITEA_IMAGE}:${IMAGE_TAG}")
+          digest="${pushed##*@}"
+          case "$digest" in sha256:????????????????????????????????????????????????????????????????) ;; *) echo "::error::no digest in crane output"; exit 1 ;; esac
+          echo "${GITEA_IMAGE}@${digest}" | tee -a digests.txt
+          echo "gitea_digest=${digest}" >> "$GITHUB_ENV"
+      - name: Push to GHCR
+        if: steps.cfg.outputs.ghcr == 'true'
+        env:
+          TAG: ${{ steps.cfg.outputs.tag }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GHCR_USER" --password-stdin
+          pushed=$(crane push image.tar "${GHCR_IMAGE}:${TAG}")
+          digest="${pushed##*@}"
+          case "$digest" in sha256:????????????????????????????????????????????????????????????????) ;; *) echo "::error::no digest in crane output"; exit 1 ;; esac
+          echo "${GHCR_IMAGE}@${digest}" | tee -a digests.txt
+          if [ "$digest" != "$gitea_digest" ]; then
+            echo "::warning::GHCR digest ${digest} differs from the Gitea digest ${gitea_digest}"
+          fi
+      # scripts/release-sign.sh holds the commands (scripts/release-rehearsal.sh
+      # proves them and the README's verify commands against a local registry).
+      # The key never touches the disk; there is no transparency log (ADR-042).
+      # TLS stays on for ghcr.io; only the Gitea registry is plain HTTP.
+      - name: Sign the images and attest the SBOM
+        if: steps.cfg.outputs.cosign == 'true'
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          BW_HTTP_REGISTRY: ${{ env.GITEA_REGISTRY }}
+        run: scripts/release-sign.sh digests.txt sbom.spdx.json
+      # The range is previous tag..this tag. For a final tag the previous tag
+      # is the previous final tag, so the release candidates in between are
+      # covered; a pre-release goes back to the nearest tag of any kind. A dry
+      # run has no tag: its range is the last tag..HEAD.
+      # (git-cliff's --current and --ignore-tags do not widen the range, so
+      # the range is explicit.)
+      - name: Changelog for this tag
+        env:
+          TAG: ${{ steps.cfg.outputs.tag }}
+          PRERELEASE: ${{ steps.cfg.outputs.prerelease }}
+          DRY_RUN: ${{ steps.cfg.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          exclude=()
+          if [ "$PRERELEASE" = false ]; then exclude=(--exclude '*-*'); fi
+          head="$TAG"
+          if [ "$DRY_RUN" = true ]; then head=HEAD; fi
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${exclude[@]}" "${head}^" 2>/dev/null || true)
+          range="$head"
+          if [ -n "$prev" ]; then range="${prev}..${head}"; fi
+          echo "changelog range: ${range}"
+          git-cliff --config cliff.toml --tag "$TAG" --output release-notes.md "$range"
+          cat release-notes.md
+      # A draft, then the assets, then published, so nobody sees a release
+      # without its SBOM and digests. A dry run deletes the draft instead of
+      # publishing it (a draft creates no tag).
+      - name: Create the Gitea release
+        env:
+          TAG: ${{ steps.cfg.outputs.tag }}
+          PRERELEASE: ${{ steps.cfg.outputs.prerelease }}
+          DRY_RUN: ${{ steps.cfg.outputs.dry_run }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          auth="Authorization: token ${REGISTRY_TOKEN}"
+          api="${GITEA_API}/repos/${GITHUB_REPOSITORY}/releases"
+          body=$(jq -n --arg tag "$TAG" --arg sha "$GITHUB_SHA" --rawfile notes release-notes.md --argjson pre "$PRERELEASE" \
+            '{tag_name: $tag, target_commitish: $sha, name: $tag, body: $notes, prerelease: $pre, draft: true}')
+          id=$(printf '%s' "$body" | curl -fsS -X POST -H "$auth" -H 'Content-Type: application/json' -d @- "$api" | jq -er .id)
+          if [ -z "$id" ] || [ "$id" = null ]; then echo "::error::no release id"; exit 1; fi
+          # A dry run's draft goes again, also when an upload fails.
+          if [ "$DRY_RUN" = true ]; then
+            trap 'curl -fsS -X DELETE -H "$auth" "${api}/${id}" > /dev/null && echo "dry run: draft release ${id} deleted" || echo "::warning::could not delete draft release ${id}"' EXIT
+          fi
+          assets=(sbom.spdx.json digests.txt)
+          # Felix commits cosign.pub; from then on every release carries it.
+          if [ -f cosign.pub ]; then assets+=(cosign.pub); fi
+          for f in "${assets[@]}"; do
+            curl -fsS -X POST -H "$auth" -F "attachment=@${f}" "${api}/${id}/assets?name=${f}" > /dev/null
+          done
+          if [ "$DRY_RUN" = true ]; then
+            n=$(curl -fsS -H "$auth" "${api}/${id}/assets" | jq length)
+            echo "dry run: draft release ${id} got ${n} of ${#assets[@]} assets"
+            [ "$n" = "${#assets[@]}" ] || { echo "::error::the draft release is missing assets"; exit 1; }
+          else
+            curl -fsS -X PATCH -H "$auth" -H 'Content-Type: application/json' -d '{"draft": false}' "${api}/${id}" > /dev/null
+            echo "Published release ${TAG} (id ${id})"
+          fi
+      # Digests are public, so they are safe to print.
+      - name: Digests
+        run: cat digests.txt
+      # The dry run's image tag, and the tag cosign stores the signature and
+      # attestation under, are package versions; they go again. cosign 3.1.4
+      # writes one sha256-<hex> tag (scripts/release-rehearsal.sh shows it);
+      # older cosigns wrote .sig and .att tags, tried too. A failure here
+      # leaves a tag behind and is only a warning.
+      - name: Delete the dry run's image
+        if: always() && steps.cfg.outputs.dry_run == 'true'
+        env:
+          IMAGE_TAG: ${{ steps.cfg.outputs.image_tag }}
+          COSIGN: ${{ steps.cfg.outputs.cosign }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -uo pipefail
+          auth="Authorization: token ${REGISTRY_TOKEN}"
+          delete() { # prints the HTTP status
+            curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "$auth" \
+              "${GITEA_API}/packages/${GITHUB_REPOSITORY_OWNER}/container/bookwarden/$1"
+          }
+          code=$(delete "$IMAGE_TAG")
+          if [ "$code" = 204 ]; then echo "deleted package version ${IMAGE_TAG}"; else echo "::warning::could not delete package version ${IMAGE_TAG} (HTTP ${code})"; fi
+          if [ -n "${gitea_digest:-}" ] && [ "$COSIGN" = true ]; then
+            sig="sha256-${gitea_digest#sha256:}"
+            deleted=0
+            for v in "$sig" "${sig}.sig" "${sig}.att"; do
+              code=$(delete "$v")
+              case "$code" in
+                204) echo "deleted package version ${v}"; deleted=1 ;;
+                404) ;;
+                *) echo "::warning::could not delete package version ${v} (HTTP ${code})" ;;
+              esac
+            done
+            [ "$deleted" = 1 ] || echo "::warning::no signature tag of ${gitea_digest} was found to delete; list the package's versions"
+          fi
+      - name: Clean up
+        if: always()
+        run: |
+          docker image rm -f "bookwarden:release-${GITHUB_RUN_ID}" || true
+          rm -rf "${DOCKER_CONFIG:-${RUNNER_TEMP}/docker}" image.tar

@@ -1,0 +1,8 @@
+/bin/
+/dist/
+*.test
+coverage.out
+.env
+*.env
+store-tests.log
+/.claude/

@@ -1,0 +1,35 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Bookwarden</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+{{if .SignedIn}}<meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false}'>
+<script src="/static/htmx.min.js" defer></script>
+{{end}}</head>
+<body>
+<header class="top">
+<span class="brand">Bookwarden</span>
+{{if .SignedIn}}<nav aria-label="Main"><a href="/">Overview</a> <a href="/runs">Runs</a> <a href="/findings">Findings</a> <a href="/duplicates">Duplicates</a> <a href="/fixes">Fixes</a> <a href="/sample">Sample</a> <a href="/history">History</a> <a href="/incidents">Incidents</a> <a href="/settings">Settings</a></nav>
+<form method="post" action="/logout" class="inline"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit">Sign out</button></form>{{end}}
+</header>
+<main>
+{{if .Paused}}<p class="error" role="status">Writes are paused until an incident is acknowledged. <a href="/incidents">See the incidents</a>.</p>{{end}}
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}{{if .ActiveRun}} <a href="/runs/{{.ActiveRun}}">See its progress</a>.{{end}}</p>{{end}}
+{{template "content" .}}
+</main>
+</body>
+</html>{{end}}
+{{define "calibre"}}<p class="calibre">Calibre: <strong>{{calibreText .Calibre.State}}</strong>{{with .Calibre.LibraryID}} (library {{.}}){{end}}{{with .Calibre.Message}}<br><span class="detail">{{.}}</span>{{end}}</p>{{end}}
+{{define "start"}}<form method="post" action="/runs" class="start">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<button type="submit">Check the library</button>
+<fieldset class="mode"><legend>Check</legend>
+<label><input type="radio" name="mode" value="full" checked> in full</label>
+<label><input type="radio" name="mode" value="incremental"> incrementally: reuse the file evidence of books that haven't changed</label>
+</fieldset>
+<label>or one book, by Calibre id <input name="book_id" inputmode="numeric" pattern="[0-9]*" size="6"></label>
+</form>{{end}}

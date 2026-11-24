@@ -1,0 +1,39 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 3,
+  "items": [
+    {
+      "kind": "books#volume",
+      "id": "synthetic-other",
+      "volumeInfo": {
+        "title": "Another Book",
+        "authors": ["Someone Else"],
+        "language": "en",
+        "industryIdentifiers": [{"type": "ISBN_13", "identifier": "9780306406157"}]
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "synthetic-match",
+      "volumeInfo": {
+        "title": "Harry Potter und der Stein der Weisen",
+        "authors": ["J. K. Rowling"],
+        "publisher": "Carlsen",
+        "publishedDate": "1998-07-01",
+        "language": "de",
+        "industryIdentifiers": [
+          {"type": "ISBN_10", "identifier": "3551551677"},
+          {"type": "ISBN_13", "identifier": "9783551551672"}
+        ]
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "synthetic-no-isbn",
+      "volumeInfo": {
+        "title": "No ISBN",
+        "industryIdentifiers": [{"type": "OTHER", "identifier": "UOM:39015012345678"}]
+      }
+    }
+  ]
+}

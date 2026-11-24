@@ -1,0 +1,14 @@
+{{define "content"}}
+<h1>Possible duplicates{{if .Run.Run.ID}} · Run {{.Run.Run.ID}}{{end}}</h1>
+{{if .Run.Run.ID}}
+<p><a href="/runs/{{.Run.Run.ID}}">Run and frozen books</a> · <a href="/runs/{{.Run.Run.ID}}/findings">Findings for this run</a></p>
+<p>Books that may be the same book. Bookwarden never merges or deletes books; near-identical covers can be different books. Merging is done in Calibre.</p>
+{{if not .Duplicates.Unavailable}}
+<nav aria-label="Kinds"><p><a href="/runs/{{.Run.Run.ID}}/duplicates"{{if not .DuplicateKind}} aria-current="page"{{end}}>All</a>{{range duplicateKinds}} · <a href="/runs/{{$.Run.Run.ID}}/duplicates?kind={{.}}"{{if eq . $.DuplicateKind}} aria-current="page"{{end}}>{{duplicateKind .}} ({{index $.Duplicates.Counts .}})</a>{{end}}</p></nav>
+{{range .Duplicates.Groups}}<section><h2>{{duplicateKind .Kind}}{{with .Label}} · {{.}}{{end}}</h2>
+<ul>{{range .Members}}<li><a href="/runs/{{$.Run.Run.ID}}/books/{{.BookID}}">{{.BookID}} · {{.Title}}</a>{{with .Detail}} · {{.}}{{end}}</li>{{end}}{{with .More}}<li>and {{.}} more</li>{{end}}</ul></section>
+{{else}}<p>No possible duplicates in this check.</p>{{end}}
+{{with .PrevURL}}<p><a href="{{.}}">Previous groups</a></p>{{end}}{{with .NextURL}}<p><a href="{{.}}">Next groups</a></p>{{end}}
+{{end}}
+{{end}}
+{{end}}

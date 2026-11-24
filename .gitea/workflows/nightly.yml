@@ -1,0 +1,100 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: Long fuzz run on main
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # 25 targets at 45 s each: about 19 minutes of fuzzing plus compile time.
+      - name: Fuzz every parser for 45 s
+        env:
+          FUZZTIME: 45s
+        run: |
+          touch /tmp/fuzz-start
+          scripts/fuzz-smoke.sh
+      # The job container is thrown away, so print any new crasher inputs
+      # (Go writes them to testdata/fuzz/) to reproduce the failure locally.
+      - name: Print new fuzz inputs
+        if: failure()
+        run: |
+          # find, not git ls-files: git can refuse the runner's workspace, and
+          # then this step printed nothing (nightly runs 6739 and 6746). Only
+          # files written after fuzzing started are new; committed seeds aren't.
+          find . -path '*/testdata/fuzz/*' -type f -newer /tmp/fuzz-start | while read -r f; do echo "== $f"; cat "$f"; done
+
+  # A new vulnerability in Go, a module or the base image shows within a day,
+  # even when no pull request runs CI.
+  scan:
+    name: Vulnerability and image scan of main
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Debian's 20.10 client only builds with BuildKit (needed by the
+      # Dockerfile's cache mounts) when this is set.
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # The version ci.yml pins.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      # The ubuntu-latest job image (node:22-bookworm) has no Docker client;
+      # the runner mounts the host's Docker socket into the job.
+      - name: Install the Docker client
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends docker.io
+          docker version
+      - name: Build
+        run: |
+          set -euo pipefail
+          # git can refuse the runner's workspace without this.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          rev=$(git rev-parse HEAD)
+          docker build --build-arg VERSION="nightly-${GITHUB_RUN_ID}" --build-arg REVISION="$rev" -t "bookwarden:nightly-${GITHUB_RUN_ID}" .
+      - name: Trivy (HIGH and CRITICAL)
+        run: scripts/scan-image.sh "bookwarden:nightly-${GITHUB_RUN_ID}"
+      - name: Remove the image
+        if: always()
+        run: docker image rm -f "bookwarden:nightly-${GITHUB_RUN_ID}" || true
+
+  # Kuma alerts when this beat stays away (a red or missing nightly); the
+  # monitor's interval is 26 hours. The URL holds a token and is never echoed.
+  alive:
+    name: Tell Kuma the nightly is green
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [fuzz, scan]
+    steps:
+      - name: Push the beat
+        env:
+          KUMA_NIGHTLY_URL: ${{ secrets.KUMA_NIGHTLY_URL }}
+        run: |
+          if [ -z "$KUMA_NIGHTLY_URL" ]; then
+            echo "::notice::KUMA_NIGHTLY_URL is not set: no alive signal is sent."
+            exit 0
+          fi
+          curl -fsS -m 10 "$KUMA_NIGHTLY_URL" > /dev/null

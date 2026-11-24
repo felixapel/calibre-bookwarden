@@ -1,0 +1,17 @@
+{{define "content"}}
+<h1>Findings{{if .Run.Run.ID}} · Run {{.Run.Run.ID}}{{end}}</h1>
+{{if .Run.Run.ID}}
+<p><a href="/runs/{{.Run.Run.ID}}">Run and frozen books</a></p>
+<form method="get" action="/runs/{{.Run.Run.ID}}/findings" class="filters">
+<label for="code">Finding</label><select id="code" name="code"><option value="">All findings</option>{{range .Catalog}}<option value="{{.Code}}"{{if eq .Code $.Filter.Code}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+<label for="format">Format</label><input id="format" name="format" value="{{.Filter.Format}}" placeholder="EPUB" pattern="[A-Z0-9_]{1,32}" maxlength="32">
+<label for="book_id">Book id</label><input id="book_id" name="book_id" inputmode="numeric" pattern="[0-9]+" value="{{if .Filter.BookID}}{{.Filter.BookID}}{{end}}">
+<button type="submit">Apply filters</button>
+</form>
+<p><a href="{{.CSVURL}}">Download this selection as CSV</a></p>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Book</th><th scope="col">Finding</th><th scope="col">Format / field</th></tr></thead><tbody>
+{{range .FindingPage.Rows}}<tr><td><a href="/runs/{{.RunID}}/books/{{.BookID}}">{{.BookID}} · {{.Title}}</a></td><td>{{$code := .Finding.Code}}{{findingLabel $code}}{{with .Finding.Reason}}<br>{{findingReason $code .}}{{end}}</td><td>{{.Finding.Format}}{{with .Finding.Field}} · {{.}}{{end}}</td></tr>{{else}}<tr><td colspan="3">No findings match this selection.</td></tr>{{end}}
+</tbody></table></div>
+{{with .NextURL}}<p><a href="{{.}}">Next findings</a></p>{{end}}
+{{end}}
+{{end}}

@@ -1,0 +1,35 @@
+{
+  "data": {
+    "editions": [
+      {
+        "id": 30000001,
+        "book_id": 20000001,
+        "title": "The Synthetic Chronicle",
+        "subtitle": "A Test",
+        "isbn_10": "0765326353",
+        "isbn_13": "9780765326355",
+        "release_date": "2008-04-01",
+        "language": {"code3": "eng"},
+        "publisher": {"name": "Example Press"},
+        "contributions": [
+          {"contribution": null, "author": {"name": "Ay Author"}},
+          {"contribution": "Illustrator", "author": {"name": "Cee Drawer"}},
+          {"contribution": "Author", "author": {"name": "Bee Author"}},
+          {"contribution": "Translator", "author": {"name": "Dee Translator"}}
+        ]
+      },
+      {
+        "id": 30000002,
+        "book_id": 20000002,
+        "title": "Other Book",
+        "subtitle": null,
+        "isbn_10": null,
+        "isbn_13": "9780306406157",
+        "release_date": null,
+        "language": null,
+        "publisher": null,
+        "contributions": []
+      }
+    ]
+  }
+}

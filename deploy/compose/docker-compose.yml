@@ -1,0 +1,95 @@
+# Bookwarden with its own Postgres 18. Copy .env.example to .env and edit it.
+# A variable left empty stops that service at start with a message that names
+# it (Postgres refuses an empty password), so nothing runs half set up.
+# Writes to Calibre are off until you turn them on in Settings, and there is
+# no setting that applies fixes without your approval.
+name: bookwarden
+
+services:
+  bookwarden:
+    image: ghcr.io/felixapel/bookwarden:${BOOKWARDEN_VERSION:-v2.0.0}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${BOOKWARDEN_PORT:-8399}:8080"
+    environment:
+      BOOKWARDEN_DATABASE_URL: postgres://bookwarden:${POSTGRES_PASSWORD:-}@postgres:5432/bookwarden?sslmode=disable
+      BOOKWARDEN_CALIBRE_URL: ${BOOKWARDEN_CALIBRE_URL:-}
+      BOOKWARDEN_CALIBRE_USER: ${BOOKWARDEN_CALIBRE_USER:-}
+      BOOKWARDEN_CALIBRE_PASSWORD: ${BOOKWARDEN_CALIBRE_PASSWORD:-}
+      BOOKWARDEN_CALIBRE_LIBRARY: ${BOOKWARDEN_CALIBRE_LIBRARY:-}
+      BOOKWARDEN_ALLOWED_HOSTS: ${BOOKWARDEN_ALLOWED_HOSTS:-}
+      BOOKWARDEN_LOG_LEVEL: ${BOOKWARDEN_LOG_LEVEL:-info}
+      BOOKWARDEN_SCHEDULE_INCREMENTAL: ${BOOKWARDEN_SCHEDULE_INCREMENTAL:-}
+      BOOKWARDEN_SCHEDULE_FULL: ${BOOKWARDEN_SCHEDULE_FULL:-}
+      BOOKWARDEN_HEARTBEAT_URL: ${BOOKWARDEN_HEARTBEAT_URL:-}
+      BOOKWARDEN_HEARTBEAT_ALLOW_CIDR: ${BOOKWARDEN_HEARTBEAT_ALLOW_CIDR:-}
+      BOOKWARDEN_RETAIN_RUNS: ${BOOKWARDEN_RETAIN_RUNS:-}
+      BOOKWARDEN_TRUSTED_PROXIES: ${BOOKWARDEN_TRUSTED_PROXIES:-}
+      BOOKWARDEN_METRICS_TOKEN: ${BOOKWARDEN_METRICS_TOKEN:-}
+      BOOKWARDEN_GOOGLE_BOOKS_KEY: ${BOOKWARDEN_GOOGLE_BOOKS_KEY:-}
+      BOOKWARDEN_HARDCOVER_TOKEN: ${BOOKWARDEN_HARDCOVER_TOKEN:-}
+      BOOKWARDEN_EXTRACTOR_KEY: ${BOOKWARDEN_EXTRACTOR_KEY:-}
+      BOOKWARDEN_EXTRACTOR_BIFROST_URL: ${BOOKWARDEN_EXTRACTOR_BIFROST_URL:-}
+      BOOKWARDEN_EXTRACTOR_ALLOW_CIDR: ${BOOKWARDEN_EXTRACTOR_ALLOW_CIDR:-}
+      # Anything else in the README's environment reference (the agent
+      # panel's keys, per-extractor overrides, BOOKWARDEN_STOP_GRACE):
+      # add it here.
+      TZ: ${TZ:-UTC}
+    # The same limits as the Unraid template's extra parameters.
+    read_only: true
+    tmpfs:
+      - /tmp:size=1536m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 256
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/bookwarden", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
+      retries: 3
+    networks:
+      - db
+      - default
+
+  postgres:
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bookwarden
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: bookwarden
+    volumes:
+      # Postgres 18 keeps its data in a version directory below this path.
+      - pgdata:/var/lib/postgresql
+    # The image's entrypoint starts as root and drops to postgres, so it
+    # keeps the few capabilities that needs and nothing else.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookwarden -d bookwarden"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - db
+
+networks:
+  # Postgres is only on this network, which has no route out.
+  db:
+    internal: true
+
+volumes:
+  pgdata:

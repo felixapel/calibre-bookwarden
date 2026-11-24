@@ -1,0 +1,23 @@
+{{define "content"}}
+<h1>Run {{.Run.Run.ID}}</h1>
+<p>{{if .Run.Run.Scope.BookID}}Book {{.Run.Run.Scope.BookID}}{{else}}The whole library{{end}}{{with .Run.Run.LibraryID}}, library {{.}}{{end}}. Started {{when .Run.Run.StartedAt}}{{with .Run.Run.AppVersion}} by bookwarden {{.}}{{end}}.{{if not .Run.Run.Scope.ScheduledFor.IsZero}} Started by the schedule, for the slot of {{localWhen .Run.Run.Scope.ScheduledFor}}.{{end}}</p>
+{{template "progress" .}}
+<form method="post" action="/runs/{{.Run.Run.ID}}/pin" class="inline"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}">{{if .Run.Run.Pinned}}<input type="hidden" name="value" value="off"><button type="submit">Unpin</button> This run is kept whatever the retention setting says.{{else}}<input type="hidden" name="value" value="on"><button type="submit">Keep this run</button> Retention will not delete a run you keep, such as the baseline of a rule-change measurement.{{end}}</form>
+{{with .AgentSummary}}{{if .Reviewed}}<p>Agents: {{if .Approved}}{{.Approved}} approved ({{.Applied}} applied), {{end}}{{if .Rejected}}{{.Rejected}} rejected, {{end}}{{.ForYou}} for you · <a href="/runs/{{$.Run.Run.ID}}/fixes">Fixes</a>{{if .Tokens}}<br><span class="detail">Tokens: {{range $seat, $n := .Tokens}}{{$seat}} {{$n}} {{end}}</span>{{end}}</p>{{end}}{{end}}
+{{with .TimeSpent}}<h2>Where the time went</h2>
+<p class="detail">Each stage's time is summed over the workers, so the stages can add up to more than the run took.</p>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Stage</th><th scope="col">Time</th></tr></thead><tbody>
+{{range .Stages}}<tr><td>{{.Label}}</td><td>{{.Time}}</td></tr>{{end}}
+</tbody></table></div>
+{{if .Lookups}}<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Source</th><th scope="col">Lookups</th></tr></thead><tbody>
+{{range .Lookups}}<tr><td>{{.Source}}</td><td>{{.Counts}}</td></tr>{{end}}
+</tbody></table></div>{{end}}
+<p>Extractors: {{.Extractor.Calls}} calls, {{.Extractor.Cached}} cached, {{.Extractor.Failed}} failed.</p>
+{{end}}<p><a href="/runs/{{.Run.Run.ID}}/findings">Findings for this run</a> · <a href="/runs/{{.Run.Run.ID}}/duplicates">Possible duplicates</a></p>
+<h2>Frozen books</h2>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Book</th><th scope="col">Outcome</th></tr></thead><tbody>
+{{range .BookPage.Rows}}<tr><td><a href="/runs/{{$.Run.Run.ID}}/books/{{.Ref.ID}}">{{.Ref.ID}}{{with .Title}} · {{.}}{{end}}</a></td><td>{{.State}}{{with .Reason}} · {{.}}{{end}}</td></tr>{{else}}<tr><td colspan="2">No books on this page.</td></tr>{{end}}
+</tbody></table></div>
+{{with .NextURL}}<p><a href="{{.}}">Next books</a></p>{{end}}
+<p><a href="/runs">All runs</a></p>
+{{end}}

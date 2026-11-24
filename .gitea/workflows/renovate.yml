@@ -1,0 +1,77 @@
+name: renovate
+
+# Opens update PRs for Go modules, the Dockerfile's pinned images, the pinned
+# actions and images in the workflows, the pinned images in scripts/ and
+# deploy/compose/ and the Go pin in mise.toml (renovate.json). Needs the
+# FORGE_API repository variable (the forge's API base URL) and the
+# RENOVATE_TOKEN repository secret: a Gitea token of the account that opens
+# the PRs, with read:user, write:repository and write:issue. Without the
+# optional RENOVATE_GITHUB_COM_TOKEN (a read-only GitHub token, no scopes) it
+# cannot look up GitHub-hosted actions or mise.toml's Go, so those pins are not
+# updated. The schedule in renovate.json applies to manual runs too.
+
+on:
+  schedule:
+    - cron: "43 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    name: Renovate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RENOVATE_IMAGE: ghcr.io/renovatebot/renovate:44.212.0@sha256:11f3f39f324d4b7a1f6e491e44224b5b61cf5506528f146cdf6c7d08c631e569
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+      # The forge's API base URL, from the repository variable FORGE_API.
+      FORGE_API: ${{ vars.FORGE_API }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check the token
+        id: cfg
+        run: |
+          set -euo pipefail
+          if [ -n "$RENOVATE_TOKEN" ]; then
+            if [ -z "$FORGE_API" ]; then
+              echo "::error::the repository variable FORGE_API is required"
+              exit 1
+            fi
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RENOVATE_TOKEN is not set: Renovate is skipped."
+          fi
+          if [ -z "$RENOVATE_GITHUB_COM_TOKEN" ]; then
+            echo "::notice::RENOVATE_GITHUB_COM_TOKEN is not set: pinned GitHub actions and the mise.toml Go pin are not updated."
+          fi
+      - name: Install the Docker client
+        if: steps.cfg.outputs.run == 'true'
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends docker.io
+      # Renovate clones the repository itself, so no checkout is needed.
+      - name: Run Renovate
+        if: steps.cfg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          args=(-e RENOVATE_TOKEN)
+          if [ -n "$RENOVATE_GITHUB_COM_TOKEN" ]; then args+=(-e RENOVATE_GITHUB_COM_TOKEN); fi
+          docker run --rm "${args[@]}" \
+            -e RENOVATE_PLATFORM=gitea \
+            -e RENOVATE_ENDPOINT="$FORGE_API" \
+            -e RENOVATE_REPOSITORIES=felix/calibre-bookwarden \
+            -e RENOVATE_ONBOARDING=false \
+            -e RENOVATE_REQUIRE_CONFIG=required \
+            -e RENOVATE_GIT_AUTHOR="Renovate <renovate@localhost>" \
+            -e LOG_LEVEL=info \
+            "${RENOVATE_IMAGE}"

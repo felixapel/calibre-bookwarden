@@ -1,0 +1,31 @@
+version: "2"
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - revive
+    - unconvert
+  exclusions:
+    presets:
+      - comments           # revive's doc-comment rules
+      - std-error-handling # unchecked Close, Flush and fmt.Fprint* errors
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx]
+      # The session cookie's Secure flag follows the request scheme on purpose:
+      # login over a plain-HTTP LAN port needs it off (spec section 12).
+      - path: internal/web/session\.go
+        linters: [gosec]
+        text: G124
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/felixapel/calibre-bookwarden

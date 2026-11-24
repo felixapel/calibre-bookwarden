@@ -1,0 +1,24 @@
+{{define "content"}}
+{{with .SampleBook}}
+<h1>Book {{.Position}} of {{.Size}}</h1>
+<p class="detail">Answer from Calibre’s values and the text below alone. Keys: Alt+Shift+1 to 6 pick “Calibre right” for a field, then use the arrow keys to move along its choices; Alt+Shift+S saves and moves on.</p>
+{{if .Closed}}<p class="notice" role="status">This sample is closed: its results were shown, so its answers are final.</p>{{end}}
+<form method="post" action="{{.AnswerURL}}" class="sample">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+{{range .Fields}}<fieldset><legend>{{.Label}}</legend>
+<p class="calibre">Calibre: {{if .Calibre}}<strong>{{.Calibre}}</strong>{{else}}<em>(empty)</em>{{end}}</p>
+<label><input type="radio" name="answer_{{.Name}}" value="calibre_right" accesskey="{{.Key}}"{{if eq .Answer "calibre_right"}} checked{{end}}> Calibre right</label>
+<label><input type="radio" name="answer_{{.Name}}" value="calibre_wrong"{{if eq .Answer "calibre_wrong"}} checked{{end}}> Calibre wrong</label>
+<label><input type="radio" name="answer_{{.Name}}" value="skip"{{if eq .Answer "skip"}} checked{{end}}> Skip</label>
+<label>Right value, if Calibre is wrong <input type="text" name="typed_{{.Name}}" value="{{.Typed}}" maxlength="500" autocomplete="off"></label>{{with .Hint}}<span class="detail">{{.}}</span>{{end}}
+</fieldset>
+{{end}}
+{{if not .Closed}}<p><button type="submit" accesskey="s">Save and next</button></p>{{end}}
+</form>
+<p>{{if .PrevURL}}<a href="{{.PrevURL}}">Previous book</a> · {{end}}{{if .NextURL}}<a href="{{.NextURL}}">Next book</a> · {{end}}<a href="/sample">Back to the sample</a></p>
+<h2>Front matter</h2>
+{{range .Excerpts}}<section><h3>{{.Format}}</h3>
+<details open><summary>Front matter text ({{.Chars}} characters{{if .Truncated}}, truncated{{end}}{{if not .Complete}}, incomplete: a document could not be read{{end}})</summary>{{if .Available}}<pre class="excerpt">{{.Text}}</pre>{{else}}<p>Text unavailable</p>{{end}}</details></section>
+{{else}}<p>No front-matter text was kept for this book.</p>{{end}}
+{{end}}
+{{end}}

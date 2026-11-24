@@ -1,0 +1,18 @@
+{{define "content"}}
+<h1>Precision</h1>
+<p>What your decisions have taught Bookwarden, per fix type over all runs. A fix type is a field, the evidence path that supports it, and whether it fills an empty value or replaces one. Only a decision you made on one fix at a time, with the agents’ verdicts hidden, counts as a label. Approving, whether or not the fix was applied since, is correct; rejecting is a miss. Ticked batches, “Approve all shown”, decisions made with the verdicts shown and the agents’ own decisions never count.</p>
+<p>Each type is judged alone: 598 labels with zero misses put the one-sided 95 % lower bound on its precision at 99.5 %. Nothing is automated yet.</p>
+{{if .Precision}}<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Field</th><th scope="col">Evidence path</th><th scope="col">Kind</th><th scope="col">Labels</th><th scope="col">Misses</th><th scope="col">Lower bound (95 %)</th><th scope="col">Progress</th></tr></thead><tbody>
+{{range .Precision}}<tr><td>{{.Field}}</td><td>{{.Path}}</td><td>{{.Kind}}</td><td>{{.Labels}}</td><td>{{.Misses}}</td><td>{{.Bound}}</td><td>{{.Progress}}</td></tr>
+{{end}}</tbody></table></div>
+{{else}}<p>No labels yet. Decide fixes one at a time on the Fixes page, without showing the agents’ verdicts.</p>{{end}}
+<h2>Muting</h2>
+<p>A type whose decisions show poor precision is muted: its fixes leave the Fixes page’s default view and stay under the “muted types only” filter, where you can still decide them. This counts every decision you made on a fix, one at a time or in a batch, with the verdicts shown or not; each fix counts once, by your latest decision. Carried and agent decisions don’t count. Approving is correct, rejecting is a miss, and so is undoing an applied fix. A type with at least 10 decided fixes is muted when the one-sided 95 % upper bound on its precision is under 50 %. Unmuting holds until 10 more fixes of the type have been decided.</p>
+{{if .Muting}}<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Library</th><th scope="col">Field</th><th scope="col">Evidence path</th><th scope="col">Kind</th><th scope="col">Decided fixes</th><th scope="col">Misses</th><th scope="col">Upper bound (95 %)</th><th scope="col">State</th><th scope="col">Unmute</th></tr></thead><tbody>
+{{range .Muting}}<tr><td>{{.LibraryID}}</td><td>{{.Field}}</td><td>{{.Path}}</td><td>{{.Kind}}</td><td>{{.Fixes}}</td><td>{{.Misses}}</td><td>{{.Bound}}</td><td>{{.State}}</td><td>{{if .Muted}}<form method="post" action="/precision/unmute">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="library_id" value="{{.LibraryID}}"><input type="hidden" name="field" value="{{.Field}}"><input type="hidden" name="path" value="{{.Path}}"><input type="hidden" name="kind" value="{{.Kind}}">
+<button type="submit">Unmute</button></form>{{end}}</td></tr>
+{{end}}</tbody></table></div>
+{{else}}<p>No decided fixes yet.</p>{{end}}
+<p><a href="/fixes">Back to the fixes</a> · <a href="/sample">Recall sample</a></p>
+{{end}}

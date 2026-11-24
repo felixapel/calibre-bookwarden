@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>bookwarden</Name>
+  <Repository>ghcr.io/felixapel/bookwarden:v2.0.0</Repository>
+  <Registry>https://ghcr.io/felixapel/bookwarden</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/felixapel/calibre-bookwarden</Support>
+  <Project>https://github.com/felixapel/calibre-bookwarden</Project>
+  <Overview>Checks every book in your Calibre library against the files and national-library records, and applies only the fixes you approve, through Calibre's content server. On first start the container log shows a one-time setup code.&#xD;
+&#xD;
+Networks: Bookwarden must reach your Calibre content server and a Postgres 18 database. On the default bridge network, use their LAN addresses (the Unraid server's IP and the port each container publishes). If they sit on custom Docker networks, add both networks at the end of Extra Parameters: --network &lt;Calibre's network&gt; --network &lt;the database's network&gt; (one --network if they share one). Unraid then ignores Network Type, and two networks need Docker 25 or newer. Bookwarden can then reach both by container name.</Overview>
+  <Category>Tools: MediaApp:Books</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <ExtraParams>--read-only --tmpfs /tmp:size=1536m,mode=1777 --cap-drop ALL --security-opt no-new-privileges --memory 2g --pids-limit 256 --stop-timeout 30</ExtraParams>
+  <PostArgs/>
+  <Config Name="Web UI" Target="8080" Default="8399" Mode="tcp" Description="LAN port for the web UI." Type="Port" Display="always" Required="true" Mask="false">8399</Config>
+  <Config Name="Database URL" Target="BOOKWARDEN_DATABASE_URL" Default="" Mode="" Description="postgres://bookwarden:PASSWORD@HOST:5432/bookwarden, where HOST is the Postgres container's name on a shared network or the server's LAN address. Use letters and digits only in the password." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Calibre URL" Target="BOOKWARDEN_CALIBRE_URL" Default="" Mode="" Description="Calibre content server as this container reaches it: http://CONTAINER-NAME:8081 on a shared network, or http://LAN-IP:PORT." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Calibre user" Target="BOOKWARDEN_CALIBRE_USER" Default="bookwarden" Mode="" Description="Calibre account for bookwarden. Keep it read-only until you turn on fixes." Type="Variable" Display="always" Required="true" Mask="false">bookwarden</Config>
+  <Config Name="Calibre password" Target="BOOKWARDEN_CALIBRE_PASSWORD" Default="" Mode="" Description="Password of the Calibre account." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Calibre library" Target="BOOKWARDEN_CALIBRE_LIBRARY" Default="" Mode="" Description="Library id. Empty means the server's default library." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Allowed hosts" Target="BOOKWARDEN_ALLOWED_HOSTS" Default="" Mode="" Description="Comma-separated host names or IPs you open bookwarden by, without ports, such as the server's LAN IP." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Google Books API key" Target="BOOKWARDEN_GOOGLE_BOOKS_KEY" Default="" Mode="" Description="Optional." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Hardcover API token" Target="BOOKWARDEN_HARDCOVER_TOKEN" Default="" Mode="" Description="Optional. Hardcover records are saved with each check but don't change any decision yet." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Trusted proxies" Target="BOOKWARDEN_TRUSTED_PROXIES" Default="" Mode="" Description="Only with a reverse proxy in front: its IP addresses or CIDRs, no wider than /16 (or /48 for IPv6)." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Metrics token" Target="BOOKWARDEN_METRICS_TOKEN" Default="" Mode="" Description="Optional bearer token that enables /metrics, at least 32 characters." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Log level" Target="BOOKWARDEN_LOG_LEVEL" Default="info" Mode="" Description="debug, info, warn or error." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Incremental check schedule" Target="BOOKWARDEN_SCHEDULE_INCREMENTAL" Default="" Mode="" Description="Optional daily time (HH:MM, container TZ) for an incremental check that reuses unchanged files' evidence. Empty = off." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Full check schedule" Target="BOOKWARDEN_SCHEDULE_FULL" Default="" Mode="" Description="Optional weekly full check, e.g. 'sun 04:00' (container TZ). On that day it replaces the incremental check. Empty = off." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Runs to keep" Target="BOOKWARDEN_RETAIN_RUNS" Default="10" Mode="" Description="How many recent runs keep their evidence; runs with decisions or operations are always kept. 0 = keep all." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Heartbeat URL" Target="BOOKWARDEN_HEARTBEAT_URL" Default="" Mode="" Description="Optional Uptime Kuma push monitor URL (http://host:3001/api/push/TOKEN). After each run Bookwarden reports up or down to it. Contains a secret token." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Heartbeat allowed addresses" Target="BOOKWARDEN_HEARTBEAT_ALLOW_CIDR" Default="" Mode="" Description="Exact addresses the heartbeat may dial, e.g. &lt;kuma-ip&gt;/32. Needed for plain http or a private address." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Stop grace" Target="BOOKWARDEN_STOP_GRACE" Default="25s" Mode="" Description="How long a stop waits for the book in hand and a write in progress. Must be at least 5 s below the container's stop timeout (--stop-timeout 30 in the extra parameters), so raise both together." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

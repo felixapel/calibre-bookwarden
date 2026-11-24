@@ -1,0 +1,1243 @@
+{
+ "hints and a metadata ISBN/v1": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "hints and a metadata ISBN/v2": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "hints and a metadata ISBN/v3": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "hints and a metadata ISBN/v4": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "hints and a metadata ISBN/v5": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "hints and a metadata ISBN/v6": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, confirmed/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, confirmed/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, confirmed/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, confirmed/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, confirmed/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, confirmed/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "identity_frontmatter",
+   "isbn_missing"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, other work/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, other work/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, other work/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, other work/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, other work/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, other work/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "frontmatter_isbn_unconfirmed",
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, two/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, two/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, two/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, two/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, two/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "hints, no metadata ISBN, two/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "frontmatter_isbn_ambiguous",
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "isbn proposal, record authors differ/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "records_disagree"
+  ],
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal, record authors differ/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "records_disagree"
+  ],
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal, record authors differ/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "records_disagree"
+  ],
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal, record authors differ/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "records_disagree"
+  ],
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal, record authors differ/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "records_disagree"
+  ],
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal, record authors differ/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "records_disagree"
+  ],
+  "Proposals": null
+ },
+ "isbn proposal/v1": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal/v2": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal/v3": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal/v4": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal/v5": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "isbn proposal/v6": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "isbn",
+    "current": [
+     "978-0-306-40615-7"
+    ],
+    "proposed": [
+     "9783551551672"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "language proposal/v1": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "languages",
+    "current": [],
+    "proposed": [
+     "deu"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "language proposal/v2": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "languages",
+    "current": [],
+    "proposed": [
+     "deu"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "language proposal/v3": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "languages",
+    "current": [],
+    "proposed": [
+     "deu"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "language proposal/v4": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "languages",
+    "current": [],
+    "proposed": [
+     "deu"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "language proposal/v5": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "languages",
+    "current": [],
+    "proposed": [
+     "deu"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "language proposal/v6": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "languages",
+    "current": [],
+    "proposed": [
+     "deu"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "no records/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "no records/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "no records/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "no records/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "no records/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "no records/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "other work on the v5 path/v1": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "other work on the v5 path/v2": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "other work on the v5 path/v3": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "other work on the v5 path/v4": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "other work on the v5 path/v5": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "other work on the v5 path/v6": {
+  "Tier": "C",
+  "Reasons": [
+   "other_work"
+  ],
+  "Proposals": null
+ },
+ "tier A/v1": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "tier A/v2": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "tier A/v3": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "tier A/v4": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "tier A/v5": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "tier A/v6": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": null
+ },
+ "v6: Calibre's e-book ISBN, the page prints the print ISBN/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: Calibre's e-book ISBN, the page prints the print ISBN/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: Calibre's e-book ISBN, the page prints the print ISBN/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: Calibre's e-book ISBN, the page prints the print ISBN/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: Calibre's e-book ISBN, the page prints the print ISBN/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: Calibre's e-book ISBN, the page prints the print ISBN/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "identity_frontmatter",
+   "isbn_missing"
+  ],
+  "Proposals": null
+ },
+ "v6: front matter, record conflict/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: front matter, record conflict/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: front matter, record conflict/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: front matter, record conflict/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: front matter, record conflict/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: front matter, record conflict/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "frontmatter_isbn_unconfirmed",
+   "isbn_missing",
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "v6: other work, files and records agree/v1": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: other work, files and records agree/v2": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: other work, files and records agree/v3": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: other work, files and records agree/v4": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: other work, files and records agree/v5": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Someone Else"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: other work, files and records agree/v6": {
+  "Tier": "C",
+  "Reasons": [
+   "other_work"
+  ],
+  "Proposals": null
+ },
+ "v6: placeholder Calibre authors/v1": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Unknown"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: placeholder Calibre authors/v2": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Unknown"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: placeholder Calibre authors/v3": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Unknown"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: placeholder Calibre authors/v4": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Unknown"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: placeholder Calibre authors/v5": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Unknown"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "v6: placeholder Calibre authors/v6": {
+  "Tier": "A",
+  "Reasons": null,
+  "Proposals": [
+   {
+    "field": "title",
+    "current": [
+     "Another Book"
+    ],
+    "proposed": [
+     "Harry Potter und der Stein der Weisen"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   },
+   {
+    "field": "authors",
+    "current": [
+     "Unknown"
+    ],
+    "proposed": [
+     "J. K. Rowling"
+    ],
+    "roots": [
+     "dnb",
+     "file"
+    ]
+   }
+  ]
+ },
+ "wikidata and hardcover/v1": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "wikidata and hardcover/v2": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "wikidata and hardcover/v3": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "wikidata and hardcover/v4": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "wikidata and hardcover/v5": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ },
+ "wikidata and hardcover/v6": {
+  "Tier": "B",
+  "Reasons": [
+   "no_record"
+  ],
+  "Proposals": null
+ }
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Europe/Berlin",
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "postUpdateOptions": ["gomodTidy"],
+  "enabledManagers": ["gomod", "dockerfile", "github-actions", "custom.regex", "mise", "docker-compose"],
+  "pinDigests": true,
+  "github-actions": {
+    "managerFilePatterns": ["/^\\.gitea/workflows/[^/]+\\.ya?ml$/"]
+  },
+  "customManagers": [
+    {
+      "description": "Images pinned as name:tag@sha256 in the docker run commands and env vars of the ci, release and renovate workflows, the scripts and the compose example",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.gitea/workflows/(ci|release|renovate)\\.ya?ml$/", "/^scripts/.+\\.sh$/", "/^deploy/compose/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "(?<depName>(?:[a-z0-9.-]+\\.[a-z]+/)?[a-z0-9_.-]+(?:/[a-z0-9_.-]+)*):(?<currentValue>[A-Za-z0-9_.-]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "One PR a week for Go module minor and patch updates",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "go modules (minor and patch)"
+    },
+    {
+      "description": "The go directive in go.mod, the Go pin in mise.toml and the golang image in the Dockerfile move together",
+      "matchDepNames": ["go", "golang"],
+      "groupName": "go toolchain"
+    },
+    {
+      "description": "golangci-lint and gitleaks in mise.toml move with their SHA-256-pinned downloads in ci.yml, which stay manual",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["golangci-lint", "gitleaks"],
+      "enabled": false
+    },
+    {
+      "description": "Update the tag and the digest of a pinned image together",
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    }
+  ]
+}

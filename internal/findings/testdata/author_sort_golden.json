@@ -1,0 +1,676 @@
+{
+ "tweaks": {
+  "author_sort_copy_method": "comma",
+  "author_use_surname_prefixes": false
+ },
+ "cases": [
+  {
+   "name": "Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada B. Quill",
+   "sort": "Quill, Ada B."
+  },
+  {
+   "name": "Quill",
+   "sort": "Quill"
+  },
+  {
+   "name": "",
+   "sort": ""
+  },
+  {
+   "name": "   ",
+   "sort": "   "
+  },
+  {
+   "name": "Ada  Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada\tQuill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": " Ada Quill ",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Quill, Ada",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada Quill, Jr.",
+   "sort": "Ada Quill, Jr."
+  },
+  {
+   "name": "Ada von Quill",
+   "sort": "Quill, Ada von"
+  },
+  {
+   "name": "Ada le Quill",
+   "sort": "Quill, Ada le"
+  },
+  {
+   "name": "Ada de la Quill",
+   "sort": "Quill, Ada de la"
+  },
+  {
+   "name": "A.B.C. Quill",
+   "sort": "Quill, A.B.C."
+  },
+  {
+   "name": "J.R.R. Quill",
+   "sort": "Quill, J.R.R."
+  },
+  {
+   "name": "A. B. Quill",
+   "sort": "Quill, A. B."
+  },
+  {
+   "name": "Ada Quill (Editor)",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada (B) Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada Quill [ed.]",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada Quill {x}",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada (B (C) D) Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada Quill)",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada ( Quill",
+   "sort": "Ada ( Quill"
+  },
+  {
+   "name": "Ada ] Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "(Ada Quill)",
+   "sort": "(Ada Quill)"
+  },
+  {
+   "name": "Ada Quill-Brook",
+   "sort": "Quill-Brook, Ada"
+  },
+  {
+   "name": "Ada O'Quill",
+   "sort": "O'Quill, Ada"
+  },
+  {
+   "name": "Ada Quíll",
+   "sort": "Quíll, Ada"
+  },
+  {
+   "name": "Ádá Quill",
+   "sort": "Quill, Ádá"
+  },
+  {
+   "name": "Иван Перо",
+   "sort": "Перо, Иван"
+  },
+  {
+   "name": "山田 太郎",
+   "sort": "太郎, 山田"
+  },
+  {
+   "name": "Ada Quill III",
+   "sort": "Quill, Ada III"
+  },
+  {
+   "name": "Quill III",
+   "sort": "Quill III"
+  },
+  {
+   "name": "Jr. Quill",
+   "sort": "Quill, Jr."
+  },
+  {
+   "name": "Ada Jr",
+   "sort": "Ada Jr"
+  },
+  {
+   "name": "Jr Sr",
+   "sort": "Jr Sr"
+  },
+  {
+   "name": "Mr Mrs",
+   "sort": "Mr Mrs"
+  },
+  {
+   "name": "Mr. Ada",
+   "sort": "Ada"
+  },
+  {
+   "name": "Mr Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Mrs. Ada Quill Jr.",
+   "sort": "Quill, Ada Jr."
+  },
+  {
+   "name": "Dr. Prof. Ada Quill Ph.D",
+   "sort": "Quill, Ada Ph.D"
+  },
+  {
+   "name": "Prof Ada Quill PhD",
+   "sort": "Quill, Ada PhD"
+  },
+  {
+   "name": "Ada Quill M.D.",
+   "sort": "Quill, Ada M.D."
+  },
+  {
+   "name": "Ada Quill MD",
+   "sort": "Quill, Ada MD"
+  },
+  {
+   "name": "Ada Quill md",
+   "sort": "Quill, Ada md"
+  },
+  {
+   "name": "ada quill jr",
+   "sort": "quill, ada jr"
+  },
+  {
+   "name": "ADA QUILL JR.",
+   "sort": "QUILL, ADA JR."
+  },
+  {
+   "name": "Ada Quill I",
+   "sort": "Quill, Ada I"
+  },
+  {
+   "name": "Ada Quill Junior",
+   "sort": "Quill, Ada Junior"
+  },
+  {
+   "name": "Ada Quill Senior",
+   "sort": "Quill, Ada Senior"
+  },
+  {
+   "name": "Ada Quill Inc",
+   "sort": "Quill, Ada Inc"
+  },
+  {
+   "name": "Ada Quill IV",
+   "sort": "Quill, Ada IV"
+  },
+  {
+   "name": "I Ada",
+   "sort": "Ada, I"
+  },
+  {
+   "name": "Ada Quill, PhD",
+   "sort": "Ada Quill, PhD"
+  },
+  {
+   "name": "Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada\u001cQuill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Saint Ada Quill",
+   "sort": "Quill, Saint Ada"
+  },
+  {
+   "name": "Ada of Quill",
+   "sort": "Quill, Ada of"
+  },
+  {
+   "name": "Ada the Quill",
+   "sort": "Quill, Ada the"
+  },
+  {
+   "name": "Ada Quill and Bea Brook",
+   "sort": "Brook, Ada Quill and Bea"
+  },
+  {
+   "name": "Ada & Bea",
+   "sort": "Bea, Ada &"
+  },
+  {
+   "name": "Mr Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Mr. Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "mr Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Mrs Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Mrs. Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "mrs Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ms Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ms. Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "ms Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Dr Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Dr. Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "dr Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Prof Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Prof. Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "prof Ada Quill",
+   "sort": "Quill, Ada"
+  },
+  {
+   "name": "Ada Quill Jr",
+   "sort": "Quill, Ada Jr"
+  },
+  {
+   "name": "Ada Quill Jr.",
+   "sort": "Quill, Ada Jr."
+  },
+  {
+   "name": "Ada B. Quill JR",
+   "sort": "Quill, Ada B. JR"
+  },
+  {
+   "name": "Ada Quill Sr",
+   "sort": "Quill, Ada Sr"
+  },
+  {
+   "name": "Ada Quill Sr.",
+   "sort": "Quill, Ada Sr."
+  },
+  {
+   "name": "Ada B. Quill SR",
+   "sort": "Quill, Ada B. SR"
+  },
+  {
+   "name": "Ada Quill Inc",
+   "sort": "Quill, Ada Inc"
+  },
+  {
+   "name": "Ada Quill Inc.",
+   "sort": "Ada Quill Inc."
+  },
+  {
+   "name": "Ada B. Quill INC",
+   "sort": "Quill, Ada B. INC"
+  },
+  {
+   "name": "Ada Quill Ph.D",
+   "sort": "Quill, Ada Ph.D"
+  },
+  {
+   "name": "Ada Quill Ph.D.",
+   "sort": "Quill, Ada Ph.D."
+  },
+  {
+   "name": "Ada B. Quill PH.D",
+   "sort": "Quill, Ada B. PH.D"
+  },
+  {
+   "name": "Ada Quill Phd",
+   "sort": "Quill, Ada Phd"
+  },
+  {
+   "name": "Ada Quill Phd.",
+   "sort": "Quill, Ada Phd."
+  },
+  {
+   "name": "Ada B. Quill PHD",
+   "sort": "Quill, Ada B. PHD"
+  },
+  {
+   "name": "Ada Quill MD",
+   "sort": "Quill, Ada MD"
+  },
+  {
+   "name": "Ada Quill MD.",
+   "sort": "Quill, Ada MD."
+  },
+  {
+   "name": "Ada B. Quill MD",
+   "sort": "Quill, Ada B. MD"
+  },
+  {
+   "name": "Ada Quill M.D",
+   "sort": "Quill, Ada M.D"
+  },
+  {
+   "name": "Ada Quill M.D.",
+   "sort": "Quill, Ada M.D."
+  },
+  {
+   "name": "Ada B. Quill M.D",
+   "sort": "Quill, Ada B. M.D"
+  },
+  {
+   "name": "Ada Quill I",
+   "sort": "Quill, Ada I"
+  },
+  {
+   "name": "Ada Quill I.",
+   "sort": "Quill, Ada I."
+  },
+  {
+   "name": "Ada B. Quill I",
+   "sort": "Quill, Ada B. I"
+  },
+  {
+   "name": "Ada Quill II",
+   "sort": "Quill, Ada II"
+  },
+  {
+   "name": "Ada Quill II.",
+   "sort": "Quill, Ada II."
+  },
+  {
+   "name": "Ada B. Quill II",
+   "sort": "Quill, Ada B. II"
+  },
+  {
+   "name": "Ada Quill III",
+   "sort": "Quill, Ada III"
+  },
+  {
+   "name": "Ada Quill III.",
+   "sort": "Quill, Ada III."
+  },
+  {
+   "name": "Ada B. Quill III",
+   "sort": "Quill, Ada B. III"
+  },
+  {
+   "name": "Ada Quill IV",
+   "sort": "Quill, Ada IV"
+  },
+  {
+   "name": "Ada Quill IV.",
+   "sort": "Quill, Ada IV."
+  },
+  {
+   "name": "Ada B. Quill IV",
+   "sort": "Quill, Ada B. IV"
+  },
+  {
+   "name": "Ada Quill Junior",
+   "sort": "Quill, Ada Junior"
+  },
+  {
+   "name": "Ada Quill Junior.",
+   "sort": "Quill, Ada Junior."
+  },
+  {
+   "name": "Ada B. Quill JUNIOR",
+   "sort": "Quill, Ada B. JUNIOR"
+  },
+  {
+   "name": "Ada Quill Senior",
+   "sort": "Quill, Ada Senior"
+  },
+  {
+   "name": "Ada Quill Senior.",
+   "sort": "Quill, Ada Senior."
+  },
+  {
+   "name": "Ada B. Quill SENIOR",
+   "sort": "Quill, Ada B. SENIOR"
+  },
+  {
+   "name": "Quill Agency",
+   "sort": "Quill Agency"
+  },
+  {
+   "name": "Quill agency Brook",
+   "sort": "Quill agency Brook"
+  },
+  {
+   "name": "AGENCY Quill",
+   "sort": "AGENCY Quill"
+  },
+  {
+   "name": "Quill Corporation",
+   "sort": "Quill Corporation"
+  },
+  {
+   "name": "Quill corporation Brook",
+   "sort": "Quill corporation Brook"
+  },
+  {
+   "name": "CORPORATION Quill",
+   "sort": "CORPORATION Quill"
+  },
+  {
+   "name": "Quill Company",
+   "sort": "Quill Company"
+  },
+  {
+   "name": "Quill company Brook",
+   "sort": "Quill company Brook"
+  },
+  {
+   "name": "COMPANY Quill",
+   "sort": "COMPANY Quill"
+  },
+  {
+   "name": "Quill Co.",
+   "sort": "Quill Co."
+  },
+  {
+   "name": "Quill co. Brook",
+   "sort": "Quill co. Brook"
+  },
+  {
+   "name": "CO. Quill",
+   "sort": "CO. Quill"
+  },
+  {
+   "name": "Quill Council",
+   "sort": "Quill Council"
+  },
+  {
+   "name": "Quill council Brook",
+   "sort": "Quill council Brook"
+  },
+  {
+   "name": "COUNCIL Quill",
+   "sort": "COUNCIL Quill"
+  },
+  {
+   "name": "Quill Committee",
+   "sort": "Quill Committee"
+  },
+  {
+   "name": "Quill committee Brook",
+   "sort": "Quill committee Brook"
+  },
+  {
+   "name": "COMMITTEE Quill",
+   "sort": "COMMITTEE Quill"
+  },
+  {
+   "name": "Quill Inc.",
+   "sort": "Quill Inc."
+  },
+  {
+   "name": "Quill inc. Brook",
+   "sort": "Quill inc. Brook"
+  },
+  {
+   "name": "INC. Quill",
+   "sort": "INC. Quill"
+  },
+  {
+   "name": "Quill Institute",
+   "sort": "Quill Institute"
+  },
+  {
+   "name": "Quill institute Brook",
+   "sort": "Quill institute Brook"
+  },
+  {
+   "name": "INSTITUTE Quill",
+   "sort": "INSTITUTE Quill"
+  },
+  {
+   "name": "Quill National",
+   "sort": "Quill National"
+  },
+  {
+   "name": "Quill national Brook",
+   "sort": "Quill national Brook"
+  },
+  {
+   "name": "NATIONAL Quill",
+   "sort": "NATIONAL Quill"
+  },
+  {
+   "name": "Quill Society",
+   "sort": "Quill Society"
+  },
+  {
+   "name": "Quill society Brook",
+   "sort": "Quill society Brook"
+  },
+  {
+   "name": "SOCIETY Quill",
+   "sort": "SOCIETY Quill"
+  },
+  {
+   "name": "Quill Club",
+   "sort": "Quill Club"
+  },
+  {
+   "name": "Quill club Brook",
+   "sort": "Quill club Brook"
+  },
+  {
+   "name": "CLUB Quill",
+   "sort": "CLUB Quill"
+  },
+  {
+   "name": "Quill Team",
+   "sort": "Quill Team"
+  },
+  {
+   "name": "Quill team Brook",
+   "sort": "Quill team Brook"
+  },
+  {
+   "name": "TEAM Quill",
+   "sort": "TEAM Quill"
+  },
+  {
+   "name": "Quill Software",
+   "sort": "Quill Software"
+  },
+  {
+   "name": "Quill software Brook",
+   "sort": "Quill software Brook"
+  },
+  {
+   "name": "SOFTWARE Quill",
+   "sort": "SOFTWARE Quill"
+  },
+  {
+   "name": "Quill Games",
+   "sort": "Quill Games"
+  },
+  {
+   "name": "Quill games Brook",
+   "sort": "Quill games Brook"
+  },
+  {
+   "name": "GAMES Quill",
+   "sort": "GAMES Quill"
+  },
+  {
+   "name": "Quill Entertainment",
+   "sort": "Quill Entertainment"
+  },
+  {
+   "name": "Quill entertainment Brook",
+   "sort": "Quill entertainment Brook"
+  },
+  {
+   "name": "ENTERTAINMENT Quill",
+   "sort": "ENTERTAINMENT Quill"
+  },
+  {
+   "name": "Quill Media",
+   "sort": "Quill Media"
+  },
+  {
+   "name": "Quill media Brook",
+   "sort": "Quill media Brook"
+  },
+  {
+   "name": "MEDIA Quill",
+   "sort": "MEDIA Quill"
+  },
+  {
+   "name": "Quill Studios",
+   "sort": "Quill Studios"
+  },
+  {
+   "name": "Quill studios Brook",
+   "sort": "Quill studios Brook"
+  },
+  {
+   "name": "STUDIOS Quill",
+   "sort": "STUDIOS Quill"
+  }
+ ]
+}

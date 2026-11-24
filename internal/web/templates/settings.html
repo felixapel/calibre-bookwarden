@@ -1,0 +1,41 @@
+{{define "content"}}
+<h1>Settings</h1>
+<h2>Changes to Calibre</h2>
+<p>Allow changes to Calibre: <strong>{{if .WritesOn}}On{{else}}Off{{end}}</strong></p>
+<form method="post" action="/settings/writes">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<input type="hidden" name="value" value="{{if .WritesOn}}off{{else}}on{{end}}">
+<button type="submit">{{if .WritesOn}}Stop changes to Calibre{{else}}Allow changes to Calibre{{end}}</button>
+</form>
+<p class="detail">Least privilege: make the Calibre account read-write before turning this on, and read-only after. While it is off, approved fixes wait and nothing is written.</p>
+<h3>Changes to this switch</h3>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Set to</th><th scope="col">By</th><th scope="col">When</th></tr></thead><tbody>
+{{range .SettingChanges}}<tr><td>{{if .Value}}On{{else}}Off{{end}}</td><td>{{.ChangedBy}}</td><td>{{when .ChangedAt}}</td></tr>
+{{else}}<tr><td colspan="3">Never changed: off by default.</td></tr>{{end}}
+</tbody></table></div>
+{{if .AgentsOn}}<h2>Agent fixing</h2>
+<p>Agent fixing: <strong>{{if eq .AgentMode "shadow"}}Shadow{{else}}Off{{end}}</strong></p>
+<form method="post" action="/settings/agent" class="start">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<button type="submit" name="value" value="off">Off</button> <button type="submit" name="value" value="shadow">Shadow</button>
+</form>
+<p class="detail">After each check, three judges from three vendors review its open fixes. Shadow records their verdicts as a second opinion, shown after you decide. They never approve, reject or apply anything.</p>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Judge</th><th scope="col">Model</th><th scope="col">Family</th><th scope="col">Status</th></tr></thead><tbody>
+{{range .AgentSeats}}<tr><td>{{.Name}}</td><td>{{.Model}}</td><td>{{.Family}}</td><td>{{if .Configured}}configured{{if not .QuotaAt.IsZero}}; out of quota at {{.QuotaAt.UTC.Format "2006-01-02 15:04"}} UTC{{if .QuotaRetryAfter}}, retry after {{.QuotaRetryAfter}}{{end}}{{end}}{{else}}missing: no key{{end}}</td></tr>
+{{end}}</tbody></table></div>
+<p class="detail">Up to {{.AgentMaxTokens}} tokens per check.</p>
+{{end}}<h2>Scheduled checks</h2>
+<p>Scheduled checks: <strong>{{if .Schedule.Enabled}}On{{else}}Off{{end}}</strong></p>
+{{if .Schedule.Enabled}}<p>{{if .Schedule.Incremental}}Incremental check, every day at <strong>{{.Schedule.Incremental}}</strong>{{else}}Incremental check: <strong>off</strong>{{end}}.<br>
+{{if .Schedule.Full}}Full check, every <strong>{{.Schedule.Full}}</strong>{{else}}Full check: <strong>off</strong>{{end}}.<br>
+Times are in {{.Schedule.Zone}}. On a day with a full check, the incremental one is left out.</p>
+<p>{{with .Schedule.NextIncremental}}Next incremental check: {{localWhen .}}.<br>{{end}}{{with .Schedule.NextFull}}Next full check: {{localWhen .}}.{{end}}</p>
+{{with .Schedule.Last}}<p>Last scheduled check: <a href="/runs/{{.RunID}}">run {{.RunID}}</a>, {{.Slot.Kind}}, for the slot of {{localWhen .Slot.At}} ({{.Status}}).</p>{{end}}
+{{with .Schedule.Skipped}}<p class="detail">Skipped: the {{.Slot.Kind}} check of {{localWhen .Slot.At}} did not start ({{.Reason}}). A skipped slot is not retried.</p>{{end}}
+{{else}}<p class="detail">Set BOOKWARDEN_SCHEDULE_INCREMENTAL to a daily time such as 03:30, and BOOKWARDEN_SCHEDULE_FULL to a weekday and time such as sun 04:00, then restart. The incremental check reuses the file evidence of books that haven't changed.</p>{{end}}
+<p class="detail">Bookwarden keeps {{if .RetainRuns}}the last {{.RetainRuns}} runs{{else}}every run{{end}}, besides any run a decided fix or an operation points to.</p>
+<h2>Metadata sources</h2>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Source</th><th scope="col">Status</th></tr></thead><tbody>
+{{range .Sources}}<tr><td>{{.Name}}</td><td>{{.State}}</td></tr>
+{{end}}</tbody></table></div>
+{{end}}

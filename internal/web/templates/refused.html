@@ -1,0 +1,4 @@
+{{define "content"}}
+{{with .Problems}}<ul>{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{with .BackURL}}<p><a href="{{.}}">{{$.BackText}}</a></p>{{end}}
+{{end}}

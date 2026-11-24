@@ -1,0 +1,47 @@
+# Release-notes configuration for the changelog step of
+# .gitea/workflows/release.yml. Conventional Commits only; nothing links to an
+# external site.
+
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+## {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}\
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
+{% if commit.breaking %}**BREAKING** {% endif %}\
+{{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+{% endfor %}
+{% endfor %}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = false
+filter_commits = false
+topo_order = false
+sort_commits = "oldest"
+# Only v* tags are releases (certificate-a-final is not).
+tag_pattern = "v[0-9].*"
+
+# The HTML comments only fix the order of the groups; striptags removes them.
+commit_parsers = [
+  { message = "^[Mm]erge", skip = true },
+  # Internal commits: work logs for specs, plans and the cutover, and anything
+  # naming the maintainer's machines or the gateway in use.
+  { message = "^[a-z]+\\((spec|plan|cutover)\\)", skip = true },
+  { message = "(?i)felix|bifrost|hermes|cutover|runbook|unraid token", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+  { message = "^docs", group = "<!-- 4 -->Documentation" },
+  { message = "^ci", group = "<!-- 5 -->CI" },
+  { message = "^test", group = "<!-- 6 -->Tests" },
+  { message = "^chore", group = "<!-- 7 -->Chores" },
+  { message = "^(build|style|revert)", group = "<!-- 8 -->Other" },
+]

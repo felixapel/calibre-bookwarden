@@ -1,0 +1,27 @@
+{{define "content"}}
+{{with .Operation}}
+<h1>Operation {{.ID}} · {{opKind .Kind}}</h1>
+<dl class="metadata">
+<dt>Book</dt><dd>{{.BookID}} (library {{.LibraryID}})</dd>
+{{with .RunID}}<dt>From check</dt><dd><a href="/runs/{{.}}/fixes">Run {{.}}</a></dd>{{end}}
+{{with .Undoes}}<dt>Undoes</dt><dd><a href="/history/{{.}}">Operation {{.}}</a></dd>{{end}}
+<dt>State</dt><dd>{{.State}}</dd>
+<dt>Requested</dt><dd>{{when .CreatedAt}} by {{.RequestedBy}}</dd>
+{{with $.FieldDecisions}}<dt>Decided</dt><dd>{{range $i, $d := .}}{{if $i}} · {{end}}{{$d.Proposal.Field}}: approved by {{$d.DecidedBy}}{{end}}{{end}}{{if $.FieldDecisions}}{{$b := .BookID}}{{with .RunID}} · <a href="/runs/{{.}}/fixes?book_id={{$b}}">the judges’ verdicts</a>{{end}}</dd>{{end}}
+</dl>
+<h2>Changes</h2>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Field</th><th scope="col">Before</th><th scope="col">Written</th><th scope="col">After</th></tr></thead><tbody>
+{{$op := .}}{{range .Changes}}<tr><td>{{.Field}}</td><td>{{recordField $op.Before .Field}}</td><td>{{valueText .Value}}</td><td>{{if $op.After}}{{recordField $op.After .Field}}{{else}}—{{end}}</td></tr>
+{{end}}</tbody></table></div>
+{{end}}
+{{range .Incidents}}<h2>Incident {{.ID}}</h2>
+<p class="error">{{reasonText "" .Reason}}{{with .Detail}} ({{.}}){{end}}. {{if .AcknowledgedAt}}Acknowledged {{when (deref .AcknowledgedAt)}} by {{.AcknowledgedBy}}.{{else}}Open: writes are paused until it is acknowledged.{{end}} <a href="/incidents">Incidents</a></p>
+{{end}}
+<h2>Timeline</h2>
+<ol>{{range .Events}}<li>{{.State}}{{with .Detail}} · {{.}}{{end}} · {{when .At}}</li>{{end}}</ol>
+{{if .Undoable}}<form method="post" action="/history/{{.Operation.ID}}/undo">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<button type="submit">Undo this operation</button>
+</form>{{end}}
+<p><a href="/history">Back to the history</a></p>
+{{end}}

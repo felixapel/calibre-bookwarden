@@ -1,0 +1,31 @@
+{{define "content"}}
+<h1>Recall sample</h1>
+<p>A blind sample of 200 books, to measure what Bookwarden misses. For each book you see Calibre’s values and the front-matter text, and say per field whether Calibre is right, wrong (with the right value, if you like) or skip. Your answers are confirmations, not labels: they measure recall and never certify or apply anything.</p>
+{{with .Sample}}
+<p>Sample {{.ID}}, drawn {{.CreatedAt.UTC.Format "2006-01-02 15:04"}} UTC by {{.CreatedBy}} with seed {{.Seed}}. {{.Answered}} of {{.Size}} books answered.</p>
+{{if .Next}}<p><a href="/sample/{{.ID}}/book/{{.Next}}" accesskey="c">{{if eq .Answered 0}}Start answering{{else}}Continue at book {{.Next}}{{end}}</a> · <a href="/sample/{{.ID}}/book/1">Start from book 1</a></p>
+<p class="detail">The results appear once every book has an answer, so that nothing Bookwarden proposed can colour the answers. Showing them closes the sample: its answers are final from then on.</p>
+{{else}}<p><a href="/sample/{{.ID}}/book/1">Look through the books from book 1</a></p>{{end}}
+{{with .Results}}<h2>Recall per field</h2>
+<p>This sample is closed: its results were shown on {{.ClosedAt.UTC.Format "2006-01-02 15:04"}} UTC, and its answers are final. The fixes counted are those the sampled run had when the sample was drawn, under findings version {{.FindingsVersion}} and decision version {{.DecisionVersion}}.</p>
+<p>Recall is the share of books you called wrong that Bookwarden has a fix for. If you typed the right value, the fix must propose the same value under the style guide’s equivalences. Skips count nowhere. Each book stands for its stratum’s share of the library, so the figures are reweighted by stratum size. The interval is approximate (effective sample size): a 95 % Clopper-Pearson interval at n<sub>eff</sub> = (Σw)² / Σw² over the wrong books. Unequal weights act like a smaller sample and widen it.</p>
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Field</th><th scope="col">Wrong</th><th scope="col">Found</th><th scope="col">Other value</th><th scope="col">n<sub>eff</sub></th><th scope="col">Recall</th><th scope="col">95 % interval, approximate (effective sample size)</th><th scope="col">Right</th><th scope="col">Skipped</th><th scope="col">False alarms</th></tr></thead><tbody>
+{{range .Rows}}<tr><td>{{.Field}}</td><td>{{.Wrong}}</td><td>{{.Found}}</td><td>{{.WrongValue}}</td><td>{{.EffectiveN}}</td><td>{{.Recall}}</td><td>{{.Interval}}</td><td>{{.Right}}</td><td>{{.Skipped}}</td><td>{{.FalseAlarms}}</td></tr>
+{{end}}</tbody></table></div>
+<p class="detail">“Other value” counts books you called wrong and typed a value for, where the fix proposes something else.</p>
+{{if .FalseAlarms}}<h3>False alarms</h3>
+<p>Books whose Calibre value you called right but that have a fix for the field. Precision itself stays with the decisions on the Fixes page.</p>
+<ul>{{range .FalseAlarms}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .Unrepresented}}<p class="detail">{{.Unrepresented}} of {{.Library}} library books are in strata that got no sampled book; the weights can’t speak for them.</p>{{end}}
+{{end}}
+<h2>Start another sample</h2>
+{{else}}
+<h2>Start a sample</h2>
+{{end}}
+<form method="post" action="/sample" class="start">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<label for="seed">Seed (optional)</label><input id="seed" name="seed" inputmode="numeric" pattern="[0-9]+" maxlength="19" placeholder="random">
+<button type="submit">Draw the sample</button>
+</form>
+<p class="detail">The sample is drawn from the latest checked run, stratified by format, language, tier and whether the book has a fix; strata too small for a book of their own are pooled. The same seed on the same library gives the same books.</p>
+{{end}}

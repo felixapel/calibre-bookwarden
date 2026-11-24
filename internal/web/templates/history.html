@@ -1,0 +1,10 @@
+{{define "content"}}
+<h1>History</h1>
+<p>Every write to Calibre, newest first. An operation’s page shows each value before, as written and after, and can undo a completed one.</p>
+{{with .Apply}}{{if .Running}}<p class="notice" role="status">Applying… started {{when .Started}}. Reload the page to follow it.</p>{{else if not .Finished.IsZero}}<p class="{{if .Err}}error{{else}}notice{{end}}" role="status">Last apply: {{.Summary.Applied}} applied, {{.Summary.Stale}} stale, {{.Summary.Blocked}} blocked, {{.Summary.Failed}} failed, finished {{when .Finished}}.{{with .Err}} {{.}}{{end}}</p>{{end}}{{end}}
+<div class="table-scroll"><table class="runs"><thead><tr><th scope="col">Operation</th><th scope="col">Kind</th><th scope="col">Book</th><th scope="col">State</th><th scope="col">Fields</th><th scope="col">Requested</th></tr></thead><tbody>
+{{range .Operations}}<tr><td><a href="/history/{{.ID}}">{{.ID}}</a></td><td>{{opKind .Kind}}</td><td>{{.BookID}}</td><td>{{.State}}</td><td>{{changeFields .Changes}}</td><td>{{when .CreatedAt}}</td></tr>
+{{else}}<tr><td colspan="6">Nothing has been written to Calibre yet.</td></tr>{{end}}
+</tbody></table></div>
+{{with .NextURL}}<p><a href="{{.}}">Older</a></p>{{end}}
+{{end}}

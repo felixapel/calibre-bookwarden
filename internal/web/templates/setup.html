@@ -1,0 +1,12 @@
+{{define "content"}}
+<h1>Set up Bookwarden</h1>
+<p>Enter the setup code from the container log, then choose the admin account.</p>
+<p>Browsers send cookies to every port of a host. If other services share this server's address, give Bookwarden a host name of its own and list only that name in <code>BOOKWARDEN_ALLOWED_HOSTS</code>, so they never see the admin's session.</p>
+<form method="post" action="/setup" class="stack">
+<label>Setup code <input name="code" autocomplete="off" required></label>
+<label>Username <input name="username" autocomplete="username" required value="{{.Username}}"></label>
+<label>Password <input type="password" name="password" autocomplete="new-password" minlength="12" required></label>
+<label>Repeat password <input type="password" name="confirm" autocomplete="new-password" minlength="12" required></label>
+<button type="submit">Create admin</button>
+</form>
+{{end}}

@@ -1,0 +1,336 @@
+{
+ "head": {
+  "vars": [
+   "item",
+   "field",
+   "value",
+   "ent",
+   "entLabel",
+   "order",
+   "prec"
+  ]
+ },
+ "results": {
+  "bindings": [
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "author"
+    },
+    "entLabel": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Bee Author"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "2"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "title"
+    },
+    "value": {
+     "type": "literal",
+     "value": "The Synthetic Chronicle"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-7653-2635-5"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "author"
+    },
+    "entLabel": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Ay Author"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "1"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "authorstring"
+    },
+    "value": {
+     "type": "literal",
+     "value": "Ignored String"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "subtitle"
+    },
+    "value": {
+     "type": "literal",
+     "value": "A Test"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "language"
+    },
+    "value": {
+     "type": "literal",
+     "value": "eng"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "publisher"
+    },
+    "entLabel": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Example Press"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "date"
+    },
+    "value": {
+     "type": "literal",
+     "value": "2008-04-01T00:00:00Z"
+    },
+    "prec": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+     "value": "11"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn10"
+    },
+    "value": {
+     "type": "literal",
+     "value": "0-7653-2635-3"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000001"
+    },
+    "field": {
+     "type": "literal",
+     "value": "date"
+    },
+    "value": {
+     "type": "literal",
+     "value": "2010-01-01T00:00:00Z"
+    },
+    "prec": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+     "value": "9"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000002"
+    },
+    "field": {
+     "type": "literal",
+     "value": "title"
+    },
+    "value": {
+     "type": "literal",
+     "value": "Second Synthetic Item"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000002"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn10"
+    },
+    "value": {
+     "type": "literal",
+     "value": "0-7653-2635-3"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000002"
+    },
+    "field": {
+     "type": "literal",
+     "value": "authorstring"
+    },
+    "value": {
+     "type": "literal",
+     "value": "Zed String"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "2"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000002"
+    },
+    "field": {
+     "type": "literal",
+     "value": "authorstring"
+    },
+    "value": {
+     "type": "literal",
+     "value": "Yan String"
+    },
+    "order": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "value": "1"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000002"
+    },
+    "field": {
+     "type": "literal",
+     "value": "language"
+    },
+    "value": {
+     "type": "literal",
+     "value": "en"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000002"
+    },
+    "field": {
+     "type": "literal",
+     "value": "publisher"
+    },
+    "entLabel": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Q55555555"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000002"
+    },
+    "field": {
+     "type": "literal",
+     "value": "date"
+    },
+    "value": {
+     "type": "literal",
+     "value": "2009-01-01T00:00:00Z"
+    },
+    "prec": {
+     "type": "literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+     "value": "9"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000003"
+    },
+    "field": {
+     "type": "literal",
+     "value": "title"
+    },
+    "value": {
+     "type": "literal",
+     "value": "Other Book"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q100000003"
+    },
+    "field": {
+     "type": "literal",
+     "value": "isbn13"
+    },
+    "value": {
+     "type": "literal",
+     "value": "978-0-306-40615-7"
+    }
+   }
+  ]
+ }
+}
